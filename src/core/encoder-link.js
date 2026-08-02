@@ -1,11 +1,15 @@
 'use strict';
 /**
- * One encoder <-> one disguise destination.
+ * One encoder -> one or more disguise destinations.
  *
  * Owns a TCP client socket to the encoder (port 6000, data AND commands) and a
- * connected UDP socket to the d3 server. Everything on the data path lives
+ * connected UDP socket per destination. Everything on the data path lives
  * here, in the main process: a renderer GC pause must never be able to delay a
  * packet.
+ *
+ * Fan-out belongs here rather than in a second connection because the TCP
+ * socket is the scarce resource — the encoder accepts only a handful of
+ * clients — while an extra UDP send costs microseconds.
  *
  * Latency rules observed in _onLine/_forward, and worth preserving:
  *   - parse and send synchronously in the socket's data handler, no queue
@@ -50,8 +54,8 @@ class EncoderLink extends EventEmitter {
     this._nextRetryMs = 0;
 
     this._socket = null;
-    this._udp = null;
-    this._udpReady = false;
+    /** One connected UDP socket per enabled destination. */
+    this._sinks = [];
     this._reconnectTimer = null;
     this._watchdog = null;
     this._stopping = false;
@@ -146,11 +150,7 @@ class EncoderLink extends EventEmitter {
       this._socket.destroy();
       this._socket = null;
     }
-    if (this._udp) {
-      try { this._udp.close(); } catch { /* already closed */ }
-      this._udp = null;
-      this._udpReady = false;
-    }
+    this._closeUdp();
     this._assembler.reset();
     this._setState(STATE.IDLE, 'stopped');
   }
@@ -169,29 +169,75 @@ class EncoderLink extends EventEmitter {
   // UDP toward disguise
   // -------------------------------------------------------------------------
 
+  /**
+   * One connected socket per destination.
+   *
+   * Fanning out here rather than by defining a second connection is deliberate:
+   * the scarce resource is the *TCP* socket to the encoder, which accepts only
+   * a handful of clients, and on site a leftover Java applet or an old
+   * d3driver.exe may already hold one. An extra UDP destination costs one more
+   * `send` in the same tick — microseconds, and no added latency for the
+   * destinations ahead of it.
+   */
   _openUdp() {
-    if (this._udp) return;
-    const { d3 } = this.config;
-    const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-    this._udp = udp;
-    this._udpReady = false;
+    if (this._sinks.length) return;
 
-    udp.on('error', (err) => {
-      this.counters.txErrors++;
-      this._warn(`UDP to ${d3.host}:${d3.port} failed: ${err.message}`);
-    });
+    for (const dest of this.config.destinations) {
+      if (dest.enabled === false) continue;
 
-    const afterBind = () => {
-      // Connecting the datagram socket removes a per-send address lookup and,
-      // unlike the legacy unconnected sendto, lets ICMP errors reach us.
-      udp.connect(d3.port, d3.host, () => { this._udpReady = true; });
-    };
+      const udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      const sink = {
+        dest,
+        udp,
+        ready: false,
+        // Per destination, so one unreachable disguise machine reads as that
+        // machine being down rather than as a general fault on the link.
+        tx: 0,
+        txErrors: 0,
+        lastError: null,
+        onError: (err) => {
+          if (!err) return;
+          sink.txErrors++;
+          this.counters.txErrors++;
+          sink.lastError = err.message;
+          if (sink.txErrors === 1 || sink.txErrors % 500 === 0) {
+            this._warn(`UDP to ${dest.host}:${dest.port} failed (${sink.txErrors}x): ${err.message}`);
+          }
+        }
+      };
 
-    if (d3.localAddress || d3.localPort) {
-      udp.bind(d3.localPort || 0, d3.localAddress || undefined, afterBind);
-    } else {
-      afterBind();
+      udp.on('error', sink.onError);
+
+      const afterBind = () => {
+        // Connecting the datagram socket removes a per-send address lookup and,
+        // unlike the legacy unconnected sendto, lets ICMP errors reach us.
+        udp.connect(dest.port, dest.host, () => { sink.ready = true; });
+      };
+
+      try {
+        if (dest.localAddress || dest.localPort) {
+          udp.bind(dest.localPort || 0, dest.localAddress || undefined, afterBind);
+        } else {
+          afterBind();
+        }
+      } catch (err) {
+        sink.lastError = err.message;
+        this._warn(`Could not bind UDP for ${dest.host}:${dest.port}: ${err.message}`);
+      }
+
+      this._sinks.push(sink);
     }
+
+    if (!this._sinks.length) {
+      this._warn('No enabled destinations — position data has nowhere to go.');
+    }
+  }
+
+  _closeUdp() {
+    for (const sink of this._sinks) {
+      try { sink.udp.close(); } catch { /* already closed */ }
+    }
+    this._sinks = [];
   }
 
   // -------------------------------------------------------------------------
@@ -384,30 +430,36 @@ class EncoderLink extends EventEmitter {
 
   /** Write one disguise packet. Allocation-free. */
   _forward(pos, vel) {
-    if (!this._udpReady) return;
-
     if (this._minSendGapMs > 0) {
       const now = performance.now();
       if (now - this._lastSendMs < this._minSendGapMs) return;
       this._lastSendMs = now;
     }
 
-    const buf = this._pool[this._poolIdx];
-    this._poolIdx = (this._poolIdx + 1) % POOL_SIZE;
-    const len = writePacket(buf, this.config.d3.devid, pos, vel);
+    const sinks = this._sinks;
+    let buf = null;
+    let len = 0;
+    let builtFor = -1;
 
-    // Byte-identical to the legacy `snprintf(out, "%d:%d,%d;\n", ...)`.
-    this._udp.send(buf, 0, len, this._onSendError);
-    this.counters.tx++;
-  }
+    for (let i = 0; i < sinks.length; i++) {
+      const sink = sinks[i];
+      if (!sink.ready) continue;
 
-  _onSendError = (err) => {
-    if (!err) return;
-    this.counters.txErrors++;
-    if (this.counters.txErrors === 1 || this.counters.txErrors % 500 === 0) {
-      this._warn(`UDP send failed (${this.counters.txErrors}x): ${err.message}`);
+      // Destinations usually share a device ID, so the packet is built once and
+      // sent to each. Only rebuild when a destination overrides it.
+      if (sink.dest.devid !== builtFor) {
+        buf = this._pool[this._poolIdx];
+        this._poolIdx = (this._poolIdx + 1) % POOL_SIZE;
+        // Byte-identical to the legacy `snprintf(out, "%d:%d,%d;\n", ...)`.
+        len = writePacket(buf, sink.dest.devid, pos, vel);
+        builtFor = sink.dest.devid;
+      }
+
+      sink.udp.send(buf, 0, len, sink.onError);
+      sink.tx++;
+      this.counters.tx++;
     }
-  };
+  }
 
   _resolveVelocity(r, pos, nowMs, total) {
     const policy = this.config.velocityPolicy;
@@ -786,7 +838,20 @@ class EncoderLink extends EventEmitter {
       unknownLines: this.counters.unknownLines,
       latencyUs: percentiles(this._latencyUs, this._latencyCount),
       gapMs: percentiles(this._gapMs, this._gapCount),
-      uptimeMs: this.counters.startedAtMs ? Date.now() - this.counters.startedAtMs : 0
+      uptimeMs: this.counters.startedAtMs ? Date.now() - this.counters.startedAtMs : 0,
+      // Per destination, so the UI can show which disguise machine is not
+      // receiving rather than only that something is wrong.
+      destinations: this._sinks.map((s) => ({
+        id: s.dest.id,
+        name: s.dest.name,
+        host: s.dest.host,
+        port: s.dest.port,
+        devid: s.dest.devid,
+        ready: s.ready,
+        tx: s.tx,
+        txErrors: s.txErrors,
+        lastError: s.lastError
+      }))
     };
   }
 
@@ -871,6 +936,27 @@ function percentiles(arr, count) {
   };
 }
 
+/**
+ * Accepts either shape: `destinations[]` (schema 2) or a lone `d3` (schema 1),
+ * so the link can be driven straight from an un-migrated object — which the
+ * test harness and `tools/link-harness.js` both do.
+ */
+function normaliseDestinations(c) {
+  const raw = Array.isArray(c.destinations) && c.destinations.length
+    ? c.destinations
+    : [c.d3 || {}];
+  return raw.map((d, i) => ({
+    id: d.id || `dest-${i}`,
+    name: d.name || '',
+    host: d.host || '127.0.0.1',
+    port: d.port || 6000,
+    devid: d.devid != null ? d.devid : 1,
+    enabled: d.enabled !== false,
+    localAddress: d.localAddress || null,
+    localPort: d.localPort || null
+  }));
+}
+
 function normaliseConfig(c) {
   const meta = c.encoderMeta || {};
   return {
@@ -881,13 +967,7 @@ function normaliseConfig(c) {
       port: (c.encoder && c.encoder.port) || 6000,
       localAddress: (c.encoder && c.encoder.localAddress) || null
     },
-    d3: {
-      host: (c.d3 && c.d3.host) || '127.0.0.1',
-      port: (c.d3 && c.d3.port) || 6000,
-      devid: (c.d3 && c.d3.devid) != null ? c.d3.devid : 1,
-      localAddress: (c.d3 && c.d3.localAddress) || null,
-      localPort: (c.d3 && c.d3.localPort) || null
-    },
+    destinations: normaliseDestinations(c),
     velocityPolicy: c.velocityPolicy || 'zero',
     udpSendPolicy: c.udpSendPolicy || 'every',
     maxSendHz: c.maxSendHz || 0,

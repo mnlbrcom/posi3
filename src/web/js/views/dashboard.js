@@ -163,8 +163,7 @@ function buildCard(conn) {
         onclick: () => store.setView('detail', conn.id)
       }),
       pillHolder),
-    el('div', { class: 'card-target' },
-      `${conn.encoder.host}:${conn.encoder.port} → ${conn.d3.host}:${conn.d3.port} · id ${conn.d3.devid}`),
+    el('div', { class: 'card-target', title: targetTitle(conn) }, targetLine(conn)),
     detail,
     el('div', { class: 'card-body' },
       el('div', { class: 'card-readout' }, posValue, posDerived),
@@ -222,6 +221,27 @@ function buildCard(conn) {
       return t;
     }
   };
+}
+
+/** "encoder → first destination (+N more)". Full list on hover. */
+function destsOf(conn) {
+  return (conn.destinations && conn.destinations.length ? conn.destinations : [conn.d3])
+    .filter(Boolean);
+}
+
+function targetLine(conn) {
+  const on = destsOf(conn).filter((d) => d.enabled !== false);
+  const first = on[0];
+  const extra = on.length - 1;
+  if (!first) return `${conn.encoder.host}:${conn.encoder.port} → nowhere`;
+  return `${conn.encoder.host}:${conn.encoder.port} → ${first.host}:${first.port}` +
+    ` · id ${first.devid}${extra > 0 ? `  +${extra} more` : ''}`;
+}
+
+function targetTitle(conn) {
+  return destsOf(conn)
+    .map((d) => `${d.host}:${d.port} · id ${d.devid}${d.enabled === false ? ' (disabled)' : ''}`)
+    .join('\n');
 }
 
 function metric(label, caption) {

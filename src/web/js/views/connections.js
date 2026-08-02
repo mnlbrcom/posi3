@@ -102,9 +102,9 @@ export function renderConnections(root) {
           : null),
       el('td', { title: `${conn.encoder.host}:${conn.encoder.port}` },
         el('span', { class: 'route', text: `${conn.encoder.host}:${conn.encoder.port}` })),
-      el('td', { title: `${conn.d3.host}:${conn.d3.port}` },
-        el('span', { class: 'route', text: `${conn.d3.host}:${conn.d3.port}` })),
-      el('td', { class: 'right num', text: String(conn.d3.devid) }),
+      el('td', { title: destSummary(conn).full },
+        el('span', { class: 'route', text: destSummary(conn).short })),
+      el('td', { class: 'right num', text: destSummary(conn).ids }),
       posCell,
       rateCell,
       el('td', { class: 'right nowrap' },
@@ -133,25 +133,50 @@ export function renderConnections(root) {
   };
 }
 
+/**
+ * One row has to describe a fan-out. Show the first destination and how many
+ * more there are, with the full list on hover — a row that silently displayed
+ * only the first would hide half the routing.
+ */
+function destSummary(conn) {
+  const ds = (conn.destinations && conn.destinations.length ? conn.destinations : [conn.d3])
+    .filter(Boolean);
+  const on = ds.filter((d) => d.enabled !== false);
+  const first = on[0] || ds[0];
+  const extra = on.length - 1;
+  const ids = [...new Set(on.map((d) => d.devid))].join(', ') || '—';
+  return {
+    short: first ? `${first.host}:${first.port}${extra > 0 ? `  +${extra}` : ''}` : '—',
+    full: ds.map((d) => `${d.host}:${d.port} · id ${d.devid}${d.enabled === false ? ' (disabled)' : ''}`).join('\n'),
+    ids
+  };
+}
+
 /** Two connections sharing a device ID collide silently inside disguise. */
 function duplicateWarnings(connections) {
   const byDevid = new Map();
   const byEncoder = new Map();
   const out = new Map();
+  const dests = (c) => c.destinations || [c.d3];
+
   for (const c of connections) {
-    const dk = `${c.d3.host}:${c.d3.port}/${c.d3.devid}`;
-    byDevid.set(dk, (byDevid.get(dk) || 0) + 1);
+    // Every destination counts: two encoders whose *second* destinations
+    // collide would silently fight over one axis in disguise just as surely as
+    // if their first ones did.
+    for (const d of dests(c)) byDevid.set(destKey(d), (byDevid.get(destKey(d)) || 0) + 1);
     const ek = `${c.encoder.host}:${c.encoder.port}`;
     byEncoder.set(ek, (byEncoder.get(ek) || 0) + 1);
   }
   for (const c of connections) {
-    const dk = `${c.d3.host}:${c.d3.port}/${c.d3.devid}`;
+    const clash = dests(c).find((d) => byDevid.get(destKey(d)) > 1);
     const ek = `${c.encoder.host}:${c.encoder.port}`;
-    if (byDevid.get(dk) > 1) out.set(c.id, `duplicate device ID ${c.d3.devid}`);
+    if (clash) out.set(c.id, `duplicate device ID ${clash.devid}`);
     else if (byEncoder.get(ek) > 1) out.set(c.id, 'same encoder as another connection');
   }
   return out;
 }
+
+const destKey = (d) => `${d.host}:${d.port}/${d.devid}`;
 
 async function openRowMenu(conn) {
   const ok = await confirmModal({
@@ -190,6 +215,94 @@ async function openRowMenu(conn) {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The destination list.
+ *
+ * One encoder can feed several disguise machines — a redundant rig needs the
+ * same tracking data on every machine that might take over. This is done by
+ * fanning out the UDP send rather than by defining a second connection,
+ * because the scarce resource is the TCP socket to the encoder: it accepts
+ * only a handful of clients, and on site a leftover Java applet or an old
+ * d3driver.exe may already be holding one.
+ */
+function destinationsEditor(c, nics, info) {
+  const list = el('div', { class: 'dest-list' });
+
+  const draw = () => {
+    clear(list);
+    c.destinations.forEach((d, i) => list.appendChild(destinationRow(c, d, i, nics, draw)));
+    list.appendChild(el('div', { class: 'dest-foot' },
+      el('button', {
+        class: 'btn sm', type: 'button', text: '+ Add destination',
+        onclick: () => {
+          const prev = c.destinations[c.destinations.length - 1] || {};
+          c.destinations.push({
+            id: `dest-${Date.now()}`,
+            name: '',
+            host: '',
+            // A second disguise machine almost always mirrors the first, so
+            // carry the port and axis over rather than making them retype it.
+            port: prev.port || info.constants.DEFAULT_D3_PORT,
+            devid: prev.devid != null ? prev.devid : 1,
+            enabled: true,
+            localAddress: prev.localAddress || null,
+            localIfName: prev.localIfName || null,
+            localPort: null
+          });
+          draw();
+        }
+      }),
+      el('span', {
+        class: 'hint',
+        text: `The NavigatorDriver port in disguise must match (it defaults to ${info.constants.D3_FACTORY_PORT}), ` +
+          'and the Axis id must match the device ID.'
+      })));
+  };
+
+  draw();
+  return el('div', { class: 'dest-block' },
+    el('div', { class: 'dest-title', text: 'disguise destinations' }),
+    list);
+}
+
+function destinationRow(c, d, index, nics, redraw) {
+  const only = c.destinations.length === 1;
+
+  return el('div', { class: 'dest-row' + (d.enabled === false ? ' off' : '') },
+    el('div', { class: 'row-inline' },
+      field(index === 0 ? 'disguise server address' : 'Address', input({
+        class: 'mono-input', value: d.host,
+        oninput: (e) => { d.host = e.target.value.trim(); }
+      })),
+      field('Port', input({
+        class: 'num-input', type: 'number', value: d.port, style: 'width:88px',
+        oninput: (e) => { d.port = Number(e.target.value); }
+      })),
+      field('Device ID', input({
+        class: 'num-input', type: 'number', value: d.devid, style: 'width:88px',
+        oninput: (e) => { d.devid = Number(e.target.value); }
+      }))),
+    el('div', { class: 'row-inline' },
+      field('Label', input({
+        value: d.name, placeholder: index === 0 ? 'e.g. director' : 'e.g. understudy',
+        oninput: (e) => { d.name = e.target.value; }
+      })),
+      field('Interface',
+        select(nics, d.localAddress || '', (v) => {
+          d.localAddress = v || null;
+          d.localIfName = nicNameFor(nics, v);
+        }))),
+    el('div', { class: 'dest-actions' },
+      checkbox('Enabled', d.enabled !== false, (v) => {
+        d.enabled = v;
+        redraw();
+      }),
+      only ? null : el('button', {
+        class: 'btn sm ghost', type: 'button', text: 'Remove',
+        onclick: () => { c.destinations.splice(index, 1); redraw(); }
+      })));
+}
+
 /** Interface name for an address, remembered so a moved DHCP lease is diagnosable. */
 function nicNameFor(nics, address) {
   if (!address) return null;
@@ -204,12 +317,20 @@ export async function openEditor(existing) {
     : {
       name: `Encoder ${store.connections.length + 1}`,
       encoder: { host: info.constants.DEFAULT_ENCODER_IP, port: info.constants.DEFAULT_ENCODER_PORT, localAddress: null },
-      d3: { host: '', port: info.constants.DEFAULT_D3_PORT, devid: nextDevid(), localAddress: null, localPort: null },
+      destinations: [{
+        id: `dest-${Date.now()}`, name: '', host: '', port: info.constants.DEFAULT_D3_PORT,
+        devid: nextDevid(), enabled: true, localAddress: null, localIfName: null, localPort: null
+      }],
       velocityPolicy: 'zero',
       udpSendPolicy: 'every',
       autoStart: false,
       encoderMeta: { countsPerRev: info.constants.COUNTS_PER_REV, totalCounts: info.constants.TOTAL_COUNTS, cycleTimeMs: 10 }
     };
+
+  // A profile written before destinations existed still arrives d3-shaped.
+  if (!Array.isArray(c.destinations) || !c.destinations.length) {
+    c.destinations = [Object.assign({ enabled: true }, c.d3)];
+  }
 
   // Enumerated when the form opens, not taken from the startup snapshot: a
   // USB-Ethernet adapter plugged in at the venue, or a DHCP lease that moved,
@@ -225,7 +346,7 @@ export async function openEditor(existing) {
   // A saved profile can name an address that is no longer present — a different
   // venue, a different subnet. Keep it selectable and say so, rather than
   // silently resetting the field to "Any" and quietly changing the routing.
-  for (const addr of [c.encoder.localAddress, c.d3.localAddress]) {
+  for (const addr of [c.encoder.localAddress, ...c.destinations.map((d) => d.localAddress)]) {
     if (addr && !nics.some((n) => n.value === addr)) {
       nics.push({ value: addr, label: `${addr} — not present on this machine` });
     }
@@ -247,22 +368,7 @@ export async function openEditor(existing) {
       `Factory default is ${info.constants.DEFAULT_ENCODER_IP} on TCP ${info.constants.DEFAULT_ENCODER_PORT}. ` +
       'Hardware switch 2 in the connection cap forces that address regardless of what is programmed.'),
 
-    el('div', { class: 'row-inline' },
-      field('disguise server address', input({
-        class: 'mono-input', value: c.d3.host,
-        oninput: (e) => { c.d3.host = e.target.value.trim(); }
-      })),
-      field('Port', input({
-        class: 'num-input', type: 'number', value: c.d3.port, style: 'width:90px',
-        oninput: (e) => { c.d3.port = Number(e.target.value); }
-      })),
-      field('Device ID', input({
-        class: 'num-input', type: 'number', value: c.d3.devid, style: 'width:90px',
-        oninput: (e) => { c.d3.devid = Number(e.target.value); }
-      }))),
-    el('div', { class: 'hint', style: 'margin:-8px 0 12px' },
-      `The NavigatorDriver port in disguise must match this port (disguise defaults it to ${info.constants.D3_FACTORY_PORT}), ` +
-      'and the Axis id must match the device ID.'),
+    destinationsEditor(c, nics, info),
 
     // Two pickers, not one. The bridge has always bound the encoder socket and
     // the disguise socket independently — the form just tied them together, so
@@ -275,15 +381,11 @@ export async function openEditor(existing) {
           c.encoder.localIfName = nicNameFor(nics, v);
         }),
         'Which NIC to reach the encoder from.'),
-      field('disguise interface',
-        select(nics, c.d3.localAddress || '', (v) => {
-          c.d3.localAddress = v || null;
-          c.d3.localIfName = nicNameFor(nics, v);
-        }),
-        'Usually the same; set it separately when the encoder is on an isolated network.')),
+      el('div')),
     el('div', { class: 'hint', style: 'margin:-8px 0 12px' },
-      'Leave both on “Any” to use the routing table. Pinning is worth it on a show server ' +
-      'with several networks, where the default route may not be the one you want.'),
+      'Which NIC to reach the encoder from. Each destination has its own interface ' +
+      'setting above, so an isolated encoder network and a production disguise ' +
+      'network can be used at the same time.'),
 
     field('Velocity sent to disguise',
       segmented([
@@ -312,7 +414,10 @@ export async function openEditor(existing) {
 }
 
 function nextDevid() {
-  const used = new Set(store.connections.map((c) => Number(c.d3.devid)));
+  const used = new Set();
+  for (const c of store.connections) {
+    for (const d of c.destinations || [c.d3]) used.add(Number(d.devid));
+  }
   let id = 1;
   while (used.has(id)) id++;
   return id;
