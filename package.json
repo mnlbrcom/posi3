@@ -1,0 +1,26 @@
+{
+  "name": "posi3",
+  "productName": "posi3",
+  "version": "3.0.0",
+  "description": "Bridges POSITAL IXARC rotary encoders to disguise (d3) media servers, with a web interface.",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/desktop/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "headless": "node bin/posi3.js --headless",
+    "test": "node --test \"test/*.test.js\"",
+    "mock": "node tools/mock-encoder.js",
+    "sink": "node tools/udp-sink.js",
+    "bench": "node tools/latency-bench.js",
+    "harness": "node tools/link-harness.js",
+    "icon": "electron tools/make-icon.js",
+    "dist:mac": "electron-builder --mac --arm64 --x64",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3"
+  }
+}

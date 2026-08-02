@@ -1,0 +1,12 @@
+# Oracle's JRE 7 installer, 29 MB of the 38 MB reference archive. Not ours to
+# redistribute, permanent once in git history, and made obsolete by the native
+# encoder config panel. It stays in Dropbox with the rest of the venue material.
+input/**/jre-*.exe
+
+node_modules/
+release/
+build/icon.icns
+build/icon.png
+build/icon.iconset/
+*.log
+.DS_Store
