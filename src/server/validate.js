@@ -19,6 +19,9 @@ const constants = require('../shared/constants');
 const { ENCODER_VAR_BY_NAME, VELOCITY_POLICIES, UDP_SEND_POLICIES } = constants;
 const { assertSafeValue } = require('../core/encoder-link');
 
+/** Sanity bound on fan-out. A redundant disguise rig is a handful of machines. */
+const MAX_DESTINATIONS = 16;
+
 function fail(code, message) {
   const err = new Error(message);
   err.code = code;
@@ -92,15 +95,39 @@ function sanitiseConnection(raw) {
     localIfName: enc.localIfName ? String(enc.localIfName).slice(0, 120) : null
   };
 
-  const d3 = raw.d3 || {};
-  out.d3 = {
-    host: checkHost(d3.host, 'disguise address'),
-    port: checkPort(d3.port, 'disguise port'),
-    devid: checkDevid(d3.devid),
-    localAddress: d3.localAddress ? checkHost(d3.localAddress, 'Local interface') : null,
-    localIfName: d3.localIfName ? String(d3.localIfName).slice(0, 120) : null,
-    localPort: d3.localPort ? checkPort(d3.localPort, 'Local source port') : null
-  };
+  // Destinations. Accepts the schema-1 lone `d3` too, so an older profile or a
+  // script written against the previous API still validates.
+  const rawDests = Array.isArray(raw.destinations) && raw.destinations.length
+    ? raw.destinations
+    : [raw.d3 || {}];
+  if (rawDests.length > MAX_DESTINATIONS) {
+    fail('EINVAL', `At most ${MAX_DESTINATIONS} destinations per encoder`);
+  }
+  out.destinations = rawDests.map((d, i) => ({
+    id: d.id ? String(d.id).slice(0, 64) : `dest-${i}`,
+    name: String(d.name || '').slice(0, 120),
+    host: checkHost(d.host, 'disguise address'),
+    port: checkPort(d.port, 'disguise port'),
+    devid: checkDevid(d.devid),
+    enabled: d.enabled !== false,
+    localAddress: d.localAddress ? checkHost(d.localAddress, 'Local interface') : null,
+    localIfName: d.localIfName ? String(d.localIfName).slice(0, 120) : null,
+    localPort: d.localPort ? checkPort(d.localPort, 'Local source port') : null
+  }));
+
+  // Two destinations on the same address and port would send disguise the same
+  // axis twice per sample — harmless for position, but it doubles the traffic
+  // and makes the rate figures lie, so it is almost certainly a mistake.
+  const seen = new Set();
+  for (const d of out.destinations) {
+    const key = `${d.host}:${d.port}/${d.devid}`;
+    if (seen.has(key)) fail('EINVAL', `Duplicate destination ${key}`);
+    seen.add(key);
+  }
+
+  // Mirror of the first destination, for the screens that legitimately mean
+  // "the primary destination". Derived, never authoritative.
+  out.d3 = Object.assign({}, out.destinations[0]);
 
   out.velocityPolicy = VELOCITY_POLICIES.includes(raw.velocityPolicy) ? raw.velocityPolicy : 'zero';
   out.udpSendPolicy = UDP_SEND_POLICIES.includes(raw.udpSendPolicy) ? raw.udpSendPolicy : 'every';

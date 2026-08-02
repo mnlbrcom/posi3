@@ -17,7 +17,7 @@ const {
   DEFAULT_D3_PORT, DEFAULT_TELEMETRY_HZ
 } = require('../shared/constants');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const SAVE_DEBOUNCE_MS = 300;
 
 function defaultSettings() {
@@ -32,13 +32,34 @@ function defaultSettings() {
   };
 }
 
+function defaultDestination(overrides = {}) {
+  return Object.assign({
+    id: crypto.randomUUID(),
+    name: '',
+    host: '127.0.0.1',
+    port: DEFAULT_D3_PORT,
+    devid: 1,
+    enabled: true,
+    localAddress: null,
+    localIfName: null,
+    localPort: null
+  }, overrides);
+}
+
 function defaultConnection(overrides = {}) {
   return Object.assign({
     id: crypto.randomUUID(),
     name: 'New encoder',
     autoStart: false,
-    encoder: { host: DEFAULT_ENCODER_IP, port: DEFAULT_ENCODER_PORT, localAddress: null },
-    d3: { host: '127.0.0.1', port: DEFAULT_D3_PORT, devid: 1, localAddress: null, localPort: null },
+    encoder: { host: DEFAULT_ENCODER_IP, port: DEFAULT_ENCODER_PORT, localAddress: null, localIfName: null },
+    /**
+     * Where the position goes. An array since schema 2: a redundant disguise
+     * system (director + understudy + actors) needs the same tracking data on
+     * every machine that might take over, and duplicating the connection to
+     * achieve that would open a second TCP socket to an encoder that only
+     * accepts a handful of clients.
+     */
+    destinations: [defaultDestination()],
     velocityPolicy: 'zero',
     udpSendPolicy: 'every',
     maxSendHz: 0,
@@ -127,7 +148,7 @@ class ConfigStore {
     if (Number(data.version) > SCHEMA_VERSION) {
       // Written by a newer build. Show it, but refuse to save over it.
       this.readOnly = true;
-      this.loadWarning = `This profile was written by a newer version of d3driver ` +
+      this.loadWarning = `This profile was written by a newer version of posi3 ` +
         `(schema ${data.version}, this build understands ${SCHEMA_VERSION}). ` +
         `It has been loaded read-only so it cannot be downgraded.`;
     }
@@ -173,7 +194,14 @@ class ConfigStore {
     copy.id = crypto.randomUUID();
     copy.name = `${src.name} copy`;
     copy.autoStart = false; // never silently start a clone
-    copy.d3.devid = this.nextFreeDevid();
+    // A clone needs its own axis, and fresh destination ids so the two
+    // connections cannot be confused in the UI.
+    const devid = this.nextFreeDevid();
+    for (const d of copy.destinations) {
+      d.id = crypto.randomUUID();
+      d.devid = devid;
+    }
+    copy.d3 = Object.assign({}, copy.destinations[0]);
     this.profile.connections.push(copy);
     this.save();
     return copy;
@@ -181,7 +209,10 @@ class ConfigStore {
 
   /** Lowest device id not already claimed — duplicate ids silently collide in d3. */
   nextFreeDevid() {
-    const used = new Set(this.profile.connections.map((c) => Number(c.d3.devid)));
+    const used = new Set();
+    for (const c of this.profile.connections) {
+      for (const d of c.destinations || []) used.add(Number(d.devid));
+    }
     let id = 1;
     while (used.has(id)) id++;
     return id;
@@ -268,12 +299,29 @@ function migrateConnection(c) {
   const base = defaultConnection();
   const out = Object.assign({}, base, c);
   out.encoder = Object.assign({}, base.encoder, c.encoder);
-  out.d3 = Object.assign({}, base.d3, c.d3);
   out.parser = Object.assign({}, base.parser, c.parser);
   out.encoderMeta = Object.assign({}, base.encoderMeta, c.encoderMeta);
   out.reconnect = Object.assign({}, base.reconnect, c.reconnect);
   out.mapping = Object.assign({}, base.mapping, c.mapping);
+  out.destinations = migrateDestinations(c);
+  // `d3` is kept as a mirror of the first destination — read-only by
+  // convention. Several screens legitimately mean "the primary destination"
+  // (the mapping helper computes one axis), and this saves them reaching into
+  // the array. Never write through it: writes go to `destinations`.
+  out.d3 = Object.assign({}, out.destinations[0]);
   return out;
+}
+
+/**
+ * Schema 1 stored a single `d3` object; schema 2 stores `destinations[]`.
+ * A v1 profile is upgraded by promoting `d3` to the first destination, so a
+ * profile written by the previous build keeps working untouched.
+ */
+function migrateDestinations(c) {
+  const list = Array.isArray(c.destinations) && c.destinations.length
+    ? c.destinations
+    : [c.d3 || {}];
+  return list.map((d) => defaultDestination(d));
 }
 
 module.exports = {

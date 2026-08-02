@@ -621,3 +621,25 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   font-variant-numeric: tabular-nums;
 }
 .target-hint { font-size: 11px; color: var(--text-faint); }
+
+/* ------------------------------------------------------ destination editor */
+
+.dest-block { margin-bottom: 14px; }
+.dest-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-faint); margin-bottom: 6px;
+}
+.dest-row {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px 4px; margin-bottom: 8px; background: var(--surface-2);
+}
+/* A disabled destination stays visible and editable — it is a rig that is not
+   in use tonight, not a mistake to be hidden. */
+.dest-row.off { opacity: .55; }
+.dest-actions {
+  display: flex; align-items: center; gap: 12px;
+  border-top: 1px solid var(--border-soft); margin-top: 2px; padding: 7px 0 4px;
+}
+.dest-actions label { margin: 0; }
+.dest-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dest-foot .hint { margin: 0; flex: 1 1 260px; }

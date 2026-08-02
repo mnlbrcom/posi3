@@ -29,7 +29,7 @@ old driver (`<devid>:<pos>,<vel>;\n`), so existing d3 projects need no changes. 
 |---|---|---|
 | Line reassembly | `src/core/line-assembler.js` | Buffers the TCP stream, splits on newline, keeps the partial remainder, resynchronises after an overflow. Fixes the old driver's worst bug. |
 | Wire protocol | `src/core/protocol.js` | Classifies each line (sample / reply / ERROR / flash-commit event), parses ASCII_SHORT and ASCII, writes the disguise packet, wrap-aware position maths. Allocation-free on the data path. |
-| Per-connection link | `src/core/encoder-link.js` | TCP to encoder + connected UDP to disguise, state machine, stall watchdog, exponential-backoff reconnect, velocity policy, latency histogram, **encoder variable cache and flash-write policy**. |
+| Per-connection link | `src/core/encoder-link.js` | TCP to encoder + one connected UDP socket **per destination**, state machine, stall watchdog, exponential-backoff reconnect, velocity policy, latency histogram, **encoder variable cache and flash-write policy**. |
 | Command channel | `src/core/command-queue.js` | Serialised `read` / `set` / `Run!` over the socket shared with the data stream; replies matched by variable name, every request deadlined. |
 | Link registry | `src/core/link-manager.js` | Owns all links; one 30 Hz timer emits a single telemetry message for all of them. |
 | Config | `src/core/config-store.js` | Atomic profile persistence (tmp → fsync → rename), rotated backup, corruption quarantine. |
@@ -394,3 +394,45 @@ Still no browser automation in this session, so the new dashboard and target bar
 looked at**. Verified: all 12 web modules parse, 63 tests pass, two simultaneous encoders stream
 to distinct device IDs, and the telemetry the dashboard consumes is present and correct.
 Rendering, layout and cross-engine behaviour remain unchecked.
+
+## 2026-08-03 — One encoder, several disguise servers
+
+Implements the fan-out identified in the architecture question above.
+
+**Schema 2.** A connection's single `d3` object becomes `destinations[]`. A schema-1 profile is
+upgraded on load by promoting `d3` to the first destination, so a profile written by the
+previous build keeps working with nothing to do. `d3` survives as a **derived mirror of
+`destinations[0]`**, because several screens legitimately mean "the primary destination" — the
+mapping helper computes one axis. It is read-only by convention; writes go to the array.
+
+**The fan-out is on the UDP side of one link, not a second connection.** That is the whole
+point: the scarce resource is the TCP socket to the encoder, which accepts only a handful of
+clients, and on site a leftover Java applet or an old `d3driver.exe` may already hold one. An
+extra UDP destination is one more `send` in the same tick.
+
+Each destination gets its own connected socket, its own optional source interface, its own
+device ID, an enable toggle, and **its own error counters** — so one unreachable disguise
+machine reads as that machine being down rather than as a general fault on the link. The packet
+is built once per sample and reused across destinations, rebuilt only when a destination
+overrides the device ID.
+
+**Verified:** a v1 profile upgraded in place, a second destination added live, and both stand-ins
+received 100 pkt/s of the same axis (356 samples in → 356 to each, 712 total). Latency is
+unchanged: 6000/6000 with zero loss, internal parse→send p50 31.8 µs, p99 141.3 µs.
+
+Ten new tests, of which the load-bearing one is that a **single destination still emits exactly
+`1:12345,0;\n`** — the contract with every existing disguise project. Also covered: identical
+delivery to several destinations, per-destination device-ID override, disabled destinations
+opening no socket at all, per-destination counters, socket cleanup on stop, schema-1 promotion,
+duplicate rejection, same host/port with different device IDs being legal, and the 16-destination
+bound.
+
+**UI.** The connection editor now has a destination list with add, remove, label, enable and
+per-destination interface. The connections table and dashboard card show the first destination
+plus "+N", with the full list on hover — a row that silently showed only the first would hide
+half the routing. Duplicate-device-ID detection now checks **every** destination, not just the
+first: two encoders whose *second* destinations collide would fight over one axis in disguise
+just as surely as if their first ones did.
+
+**Still not verified:** no browser automation in this session, so the destination editor has not
+been looked at.
