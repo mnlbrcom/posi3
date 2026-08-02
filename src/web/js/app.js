@@ -11,6 +11,10 @@
  * is independent of the telemetry rate.
  */
 
+// Installs window.d3d over fetch + EventSource when no Electron preload has
+// already provided it. Imported first so it exists before boot() runs.
+import './api.js';
+
 import { el, clear, hz, toast, banner } from './ui.js';
 import { store } from './store.js';
 import { renderConnections } from './views/connections.js';
@@ -61,6 +65,8 @@ async function boot() {
 
   wireNav();
   wireEvents();
+  wireShortcuts();
+  wireVisibility();
   store.subscribe(onStoreChange);
 
   // Lets the main process drive navigation when capturing screenshots.
@@ -68,6 +74,48 @@ async function boot() {
 
   renderView();
   requestAnimationFrame(tick);
+
+  // Backfill the log. The stream only carries lines produced from now on, so a
+  // browser opened after something went wrong would otherwise show an empty
+  // console — exactly when the history matters most.
+  try {
+    ingestLog({ lines: await window.d3d.log.tail({ limit: 500 }), dropped: 0 });
+  } catch { /* the console simply starts empty */ }
+}
+
+/**
+ * Keyboard shortcuts.
+ *
+ * These used to be a native Electron menu, which a browser does not have. The
+ * accelerators cannot be carried over as-is: Cmd/Ctrl+R meant "start all
+ * connections" and in a browser it reloads the page. On a show that is the
+ * difference between engaging the encoders and dropping every link, so the
+ * bindings moved to Shift and are handled in-page.
+ */
+function wireShortcuts() {
+  window.addEventListener('keydown', (ev) => {
+    const mod = ev.metaKey || ev.ctrlKey;
+    if (!mod || !ev.shiftKey) return;
+    const key = ev.key.toLowerCase();
+    if (key === 'r') {
+      ev.preventDefault();
+      window.d3d.link.startAll().catch((err) => toast('error', err.message));
+    } else if (key === '.') {
+      ev.preventDefault();
+      window.d3d.link.stopAll().catch((err) => toast('error', err.message));
+    }
+  });
+}
+
+/**
+ * Browsers throttle requestAnimationFrame to a standstill in a background tab,
+ * so the whole UI freezes mid-value when it is not visible. The store keeps the
+ * newest frame regardless, so returning to the tab just needs one repaint.
+ */
+function wireVisibility() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') renderView();
+  });
 }
 
 function wireNav() {
@@ -85,6 +133,14 @@ function wireEvents() {
   });
 
   window.d3d.events.onLog((batch) => ingestLog(batch));
+
+  // Several browsers can now be open at once. Without this, every client except
+  // the one that made an edit shows stale config until it is reloaded by hand.
+  window.d3d.events.onConfigChanged(async () => {
+    try {
+      store.setProfile(await window.d3d.config.get());
+    } catch { /* the next successful call will resync */ }
+  });
 
   window.d3d.events.onEncoderEvent((e) => {
     const conn = store.find(e.id);

@@ -28,6 +28,13 @@ const {
  */
 function createApi(ctx) {
   const { manager, store } = ctx;
+  const changed = ctx.onConfigChanged || (() => {});
+
+  /** Announce a config mutation, then hand the value back to the caller. */
+  const announce = (value) => {
+    changed();
+    return value;
+  };
 
   const requireLink = (id) => {
     const link = manager.get(checkId(id));
@@ -92,33 +99,33 @@ function createApi(ctx) {
     configSaveConnection: (payload) => {
       const saved = store.upsertConnection(sanitiseConnection(payload));
       ctx.syncLink(saved);
-      return saved;
+      return announce(saved);
     },
 
     configDeleteConnection: ({ id }) => {
       const key = checkId(id);
       manager.remove(key);
-      return store.deleteConnection(key);
+      return announce(store.deleteConnection(key));
     },
 
     configDuplicateConnection: ({ id }) => {
       const copy = store.duplicateConnection(checkId(id));
       if (!copy) fail('ENOENT', 'No such connection');
       ctx.syncLink(copy);
-      return copy;
+      return announce(copy);
     },
 
     configReorder: ({ ids }) => {
       if (!Array.isArray(ids)) fail('EINVAL', 'Expected an array of ids');
       store.reorder(ids.map(checkId));
-      return store.profile.connections.map((c) => c.id);
+      return announce(store.profile.connections.map((c) => c.id));
     },
 
     configSetSettings: (partial) => {
       const s = store.setSettings(partial || {});
       manager.setTelemetryHz(s.telemetryHz);
       if (ctx.onSettings) ctx.onSettings(s);
-      return s;
+      return announce(s);
     },
 
     /**
@@ -134,7 +141,7 @@ function createApi(ctx) {
       for (const id of manager.ids()) manager.remove(id);
       const profile = store.replaceProfile(data);
       for (const conn of profile.connections) ctx.syncLink(conn);
-      return { imported: true, profile };
+      return announce({ imported: true, profile });
     },
 
     // -- links --------------------------------------------------------------

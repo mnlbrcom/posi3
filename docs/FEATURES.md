@@ -50,8 +50,9 @@ old driver (`<devid>:<pos>,<vel>;\n`), so existing d3 projects need no changes. 
 
 | Entry | File | Notes |
 |---|---|---|
-| Headless | `bin/posi3.js` | `node bin/posi3.js --port 8710`. No Electron, no window. |
-| Desktop | `src/desktop/main.js` | Electron. **Still on the old IPC transport pending the web UI shim.** |
+| Headless | `bin/posi3.js` | `node bin/posi3.js --port 8710`. No Electron, no window. Serves the web UI. |
+| Desktop | `src/desktop/main.js` | Electron. **Still on the old IPC transport; the window moves onto HTTP with the tray work.** |
+| Browser transport | `src/web/js/api.js` | Installs `window.d3d` over fetch + EventSource with the preload's exact surface, so no view needed changing. Inert if a preload already provided it. |
 
 ### User interface — `src/web/js/views/`
 
@@ -258,3 +259,57 @@ would never have connected anything.
   that `;` is absent, so this deserves a real check.
 - `encoder-link.js`, `link-manager.js` and `config-store.js` still have no unit tests beyond
   the new flash-policy suite.
+
+## 2026-08-02 — The web interface
+
+→ **`src/web/js/api.js`**: installs `window.d3d` over `fetch` and `EventSource` with exactly
+the surface the Electron preload exposes. Every view calls the same method names and gets the
+same shapes back, so **not one view needed changing to run in a browser** — the sandboxed IPC
+boundary had already forced a JSON-only interface. The module is inert when a preload has
+already installed `window.d3d`, so both transports coexist while the desktop window catches up.
+
+Guarded by `test/web-api-surface.test.js`, which reads the shim's source and checks that every
+operation name it calls exists on the server, and that the preload's surface is a subset of the
+shim's. Operation names are strings in the shim, so a typo would otherwise only appear when
+somebody clicked the button.
+
+### Browser-only work
+
+- **CSP `connect-src` `'none'` → `'self'`.** The shipped policy was correct for a `file://`
+  renderer talking over IPC and fatal for one that must reach its own API. Served over HTTP the
+  real policy is a response header, which additionally sets `frame-ancestors 'none'` — a `<meta>`
+  tag cannot express that.
+- **The three native file dialogs are gone.** `dialog.showSaveDialog` would have opened a file
+  picker on the show server rather than on the operator's machine. Profile and log export are
+  now ordinary downloads with `Content-Disposition`; import is a file input.
+- **`Cmd/Ctrl+R` no longer means "start all connections".** It came from the native Electron
+  menu; in a browser it reloads the page, which on a show is the difference between engaging
+  the encoders and dropping every link. The bindings moved to `Cmd/Ctrl+Shift+R` and
+  `Cmd/Ctrl+Shift+.`, handled in-page.
+- **Repaint on `visibilitychange`.** The whole UI paints from one `requestAnimationFrame` loop,
+  which a browser throttles to a standstill in a background tab, freezing every value
+  mid-update. The store keeps the newest frame, so returning to the tab needs one repaint.
+- **The access token never stays in the address bar.** It arrives once as `?token=…`, moves to
+  sessionStorage, and the URL is rewritten — a token in a URL gets pasted into tickets and chat.
+
+### Defects fixed
+
+- **`configChanged` is emitted at last.** The channel was declared and never fired, which was
+  harmless with a single window and means stale config in every browser but the editing one now
+  that several can be open. All six mutating operations announce it.
+- **The log backfills on connect.** `log.tail()` was implemented and exposed but never called,
+  so a browser opened *after* something went wrong showed an empty console — exactly when the
+  history matters. It now loads the last 500 lines before following the stream.
+- **The duplicate-Preset refusal is now actionable in the UI**, not just an error string. "Zero
+  here" on an already-zeroed encoder offers the two-cycle path behind a confirmation that states
+  the cost.
+- **The Pixway wordmark `<img>` is now text.** The PNG was produced by a build step and never
+  committed, so it 404'd from a clean checkout. The branding is being dropped anyway.
+
+### Not verified
+
+The browser UI has **not been opened in a browser** — no browser automation was available in
+this session. What is verified: all 11 web modules parse as ES modules, every operation the shim
+calls exists, static assets and the CSP header serve correctly, `configChanged` fires, `logTail`
+returns history, and both downloads carry the right `Content-Disposition`. Rendering, layout and
+cross-engine behaviour in Chrome, Safari and Firefox are still unchecked.

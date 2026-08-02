@@ -53,10 +53,15 @@ async function startService(opts = {}) {
   // settings to the whole LAN, so it is never token-less.
   const token = opts.token || (isLoopback(bindHost) ? null : newToken());
 
+  // Set once the HTTP server exists; every config mutation pokes it so other
+  // open browsers refetch instead of quietly showing stale settings.
+  let announceConfigChange = () => {};
+
   const api = createApi({
     manager,
     store,
     syncLink: (conn) => manager.upsert(conn),
+    onConfigChanged: () => announceConfigChange(),
     onSettings: opts.onSettings,
     env: () => Object.assign({
       version: require('../../package.json').version,
@@ -75,6 +80,7 @@ async function startService(opts = {}) {
   for (const conn of store.connections) manager.upsert(conn);
 
   const http = createServer({ api, manager, bindHost, port, token });
+  announceConfigChange = () => http.hub.broadcast('configChanged', { t: Date.now() });
   await http.listen();
 
   /**

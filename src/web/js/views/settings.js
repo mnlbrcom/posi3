@@ -51,7 +51,9 @@ export function renderSettings(root) {
         onclick: async () => {
           try {
             const r = await window.d3d.config.exportFile();
-            if (r.written) toast('info', `Saved to ${r.filePath}`);
+            // In a browser the file goes wherever downloads go, and there is no
+            // path to report — showing the server's would be actively wrong.
+            if (r.written) toast('info', r.filePath ? `Saved to ${r.filePath}` : 'Profile downloaded');
           } catch (err) { toast('error', err.message); }
         }
       }),
