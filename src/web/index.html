@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- No remote anything. Dynamic styling goes through the CSSOM (el.style.*),
+       which CSP permits, so style-src can stay at 'self'. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>d3driver</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="titlebar" class="titlebar">
+    <span class="titlebar-name"><span class="d3">d3</span>driver</span>
+    <span class="titlebar-sub" id="titlebar-sub"></span>
+  </div>
+
+  <div id="banners" class="banners"></div>
+
+  <div class="shell">
+    <nav class="sidebar" id="sidebar">
+      <div class="brandmark">
+        <img src="assets/pixway-wordmark.png" alt="Pixway">
+      </div>
+      <button class="nav-item" data-view="connections">
+        <span class="nav-dot"></span>Connections
+      </button>
+      <button class="nav-item" data-view="encoder">
+        <span class="nav-dot"></span>Encoder config
+      </button>
+      <button class="nav-item" data-view="mapping">
+        <span class="nav-dot"></span>disguise mapping
+      </button>
+      <button class="nav-item" data-view="log">
+        <span class="nav-dot"></span>Log
+      </button>
+      <button class="nav-item" data-view="settings">
+        <span class="nav-dot"></span>Settings
+      </button>
+      <div class="sidebar-foot">
+        <div class="agg" id="aggregate">—</div>
+        <div class="ver" id="version"></div>
+      </div>
+    </nav>
+
+    <main class="content" id="content"></main>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
