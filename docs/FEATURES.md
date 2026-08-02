@@ -77,6 +77,7 @@ still reached through the Electron IPC bridge until the desktop window switches 
 | `udp-sink.js` | disguise stand-in; validates packets, reports rate, gaps and jitter. **Also the on-site diagnostic** — prove the bridge before blaming d3. |
 | `latency-bench.js` | Single-process end-to-end latency measurement. |
 | `link-harness.js` | Drives the bridge headless, no Electron. |
+| `uicheck.js` | Headless layout audit. Drives Chrome over the DevTools protocol at a range of viewport widths, reports anything overflowing its container and any console error, optionally writes screenshots. Zero dependencies — Node's built-in WebSocket speaks CDP. `npm run uicheck`. |
 | `make-assets.js`, `make-icon.js` | Brand asset and app icon generation. |
 
 ### Installers
@@ -480,3 +481,46 @@ regression guard, not a substitute for looking.
 been seen rendered, because browser automation is not connected in this session. Four milestones
 of UI have now been built without once looking at it, which is why these bugs reached the user
 instead of being caught in the making.
+
+## 2026-08-03 — Looking at the page instead of reasoning about it
+
+Reported that Chrome should be connected. It is not reaching this session — the browser skill
+and its tools are both absent — so rather than keep guessing, the audit was built directly:
+**`tools/uicheck.js`** drives a local Chrome over the DevTools protocol with no dependencies
+(Node's built-in `WebSocket` speaks CDP), loads the UI at six viewport widths across all six
+screens, and reports anything that overflows its container plus any console error. `--shots`
+writes a PNG per width; `--eval` runs an expression in the page. It exits non-zero, so it can
+gate CI.
+
+`test/layout-invariants.test.js` asserts the stylesheet; this asserts the rendering. Both are
+needed — and the second immediately found things the first could not.
+
+### What it caught that reasoning had not
+
+- **`.sidebar-foot` sat 105px past the viewport at 720px.** In the new horizontal nav strip,
+  `margin-left: auto` inside an `overflow-x: auto` row pushes the footer past the edge, where it
+  is reachable only by scrolling the nav. Hidden at that width — throughput is on the dashboard
+  and the version is in Settings.
+- **The danger-zone table escaped by up to 253px at 390px.** It is the one `.vartable` *not*
+  inside a `.panel`, so nothing gave it a scroll container. Its body has one now.
+
+Two of the first findings were false positives in the audit itself, worth recording because the
+rule is not obvious: an element's `getBoundingClientRect()` reports full layout width even inside
+a scrollable box, so content that is properly scrollable looks like an overflow. Excluding
+elements whose *nearest* ancestor scrolls was still not enough — a table cell is `overflow:
+hidden` for its ellipsis and sits inside the panel that does the scrolling, so the check has to
+walk the whole ancestor chain.
+
+### What the screenshots caught that no audit would
+
+- **Every status pill read IDLE while the links were streaming**, and Encoder config refused to
+  read because it believed the connection was stopped. Link state arrives as a *transition*
+  event, so a browser connecting to an already-running bridge never hears one. Telemetry carries
+  the current state, so the store now reconciles from it on every frame — which also heals the
+  same gap after an `EventSource` reconnect, when transitions were missed.
+- **The latency pair was ellipsised to "49 µs / 19…"** — four metric columns in a ~370px card,
+  and latency is the one figure that screen exists to show. Two columns now.
+- **"399 967   296.67°" read as a single number.** Now separated with units.
+
+The first of those is a functional bug that would have met anyone opening the web UI against a
+running bridge, and no amount of stylesheet analysis would have surfaced it.

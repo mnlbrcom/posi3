@@ -17,7 +17,8 @@
     "harness": "node tools/link-harness.js",
     "icon": "electron tools/make-icon.js",
     "dist:mac": "electron-builder --mac --arm64 --x64",
-    "dist:win": "electron-builder --win --x64"
+    "dist:win": "electron-builder --win --x64",
+    "uicheck": "node tools/uicheck.js"
   },
   "devDependencies": {
     "electron": "43.2.0",

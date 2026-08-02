@@ -70,7 +70,26 @@ class Store {
   }
 
   applyTelemetry(frame) {
-    for (const t of frame.links) this.telemetry.set(t.id, t);
+    let discovered = false;
+    for (const t of frame.links) {
+      this.telemetry.set(t.id, t);
+
+      // Link state arrives as a *transition* event, so a client that connects
+      // to an already-running bridge never hears one and would show every link
+      // as idle — pills reading IDLE beside a live position, and the encoder
+      // config screen refusing to read because it believed nothing was
+      // connected. Telemetry carries the current state, so adopt it for any
+      // link we have not been told about.
+      // Reconciled on every frame rather than seeded once, so the same gap
+      // after an EventSource reconnect — during which transitions were missed —
+      // heals itself within one telemetry tick.
+      const known = this.states.get(t.id);
+      if (t.state && (!known || known.state !== t.state)) {
+        this.states.set(t.id, Object.assign({ detail: '' }, known, { id: t.id, state: t.state }));
+        discovered = true;
+      }
+    }
+    if (discovered) this.emit('linkState');
   }
 
   clearTelemetry(id) { this.telemetry.delete(id); }

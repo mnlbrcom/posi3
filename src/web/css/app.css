@@ -413,7 +413,13 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .danger-zone > summary::-webkit-details-marker { display: none; }
 .danger-zone > summary::before { content: '\25B8  '; }
 .danger-zone[open] > summary::before { content: '\25BE  '; }
-.danger-zone .dz-body { padding: 0 12px 12px; }
+.danger-zone .dz-body {
+  padding: 0 12px 12px;
+  /* This holds a .vartable, which has a min-width. Without its own scroll
+     container the table pushed straight through .content — the danger zone is
+     not inside a .panel, so nothing else was going to contain it. */
+  overflow-x: auto;
+}
 
 /* --------------------------------------------------------------- d3 fields */
 
@@ -591,7 +597,11 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .spark-line { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 
 .card-metrics {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;
+  /* Two columns, not four: at a card width of ~370px four columns left the
+     latency pair ("47 µs / 424 µs") ellipsised, which is the one metric you
+     open this screen to read. */
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 12px;
   border-top: 1px solid var(--border-soft); padding-top: 9px;
 }
 .metric { min-width: 0; }
@@ -691,7 +701,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   .view-head { gap: 8px; }
   .view-head h1 { font-size: 16px; }
   .target-bar { grid-template-columns: minmax(0, 1fr); }
-  .card-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
 }
 
 /* Tablet and phone: the rail stops being a rail. */
@@ -727,14 +736,11 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   /* The dots add width without adding information once the labels are in a row. */
   .nav-dot { display: none; }
 
-  /* Aggregate and version belong in the titlebar's role here, not pinned to
-     the bottom of a rail that no longer exists. */
-  .sidebar-foot {
-    margin-top: 0; margin-left: auto; flex: 0 0 auto;
-    display: flex; align-items: center; gap: 10px;
-    padding: 0 12px; border-top: none;
-  }
-  .ver { margin-top: 0; }
+  /* The rail's footer has nowhere to go in a horizontal strip: `margin-left:
+     auto` inside an overflow-x:auto row pushes it past the viewport edge,
+     where it is reachable only by scrolling the nav. Both readings live
+     elsewhere anyway — throughput on the dashboard, version in Settings. */
+  .sidebar-foot { display: none; }
 
   .titlebar { padding-left: 14px; }  /* no traffic lights in a browser tab */
   .grid-2 { grid-template-columns: 1fr; }
@@ -746,7 +752,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   .view { padding: 12px 10px 28px; }
   .hero-value { font-size: 38px; }
   .card-pos { font-size: 24px; }
-  .card-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summary-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sidebar-foot .agg { display: none; }  /* the dashboard already shows this */
   .row-inline > * { flex: 1 1 100%; }    /* one field per line */

@@ -274,7 +274,8 @@ export function renderEncoderConfig(root) {
         setText(livePos, store.stateOf(conn.id) === 'idle' ? 'not running' : '—');
         return;
       }
-      setText(livePos, `${groupDigits(t.pos)}   ${fixed(t.angleDeg, 2)}°`);
+      // Separated: run together, the count and the angle read as one number.
+      setText(livePos, `${groupDigits(t.pos)} counts  ·  ${fixed(t.angleDeg, 2)}°`);
       const cycleCtl = controls.get('CycleTime');
       if (cycleCtl && cycleCtl.setRateHint) cycleCtl.setRateHint(current.get('CycleTime'));
     }
