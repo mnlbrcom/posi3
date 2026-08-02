@@ -1,0 +1,105 @@
+'use strict';
+/**
+ * Guards for the layout rules that actually broke.
+ *
+ * These assert the *stylesheet*, not the rendering — no substitute for looking
+ * at the page, and not pretending to be. Their job is narrower: each one
+ * corresponds to a real overflow bug found on a narrow window, so that fixing
+ * it once is the last time.
+ *
+ * Also enforces the project's browser-support rule: this has to behave the same
+ * in Blink, WebKit and Gecko, so a Chromium-only feature slipping into the CSS
+ * should fail here rather than at a venue.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const CSS = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'css', 'app.css'), 'utf8');
+const HTML = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'index.html'), 'utf8');
+
+/** Body of the first rule whose selector matches exactly. */
+function rule(selector) {
+  const re = new RegExp(`(^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm');
+  const m = re.exec(CSS);
+  assert.ok(m, `no rule found for "${selector}"`);
+  return m[2];
+}
+
+test('the stylesheet is balanced and references no undefined token', () => {
+  assert.equal(
+    (CSS.match(/\{/g) || []).length,
+    (CSS.match(/\}/g) || []).length,
+    'unbalanced braces'
+  );
+  const used = new Set([...CSS.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]));
+  const defined = new Set([...CSS.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map((m) => m[1]));
+  const missing = [...used].filter((v) => !defined.has(v));
+  assert.deepEqual(missing, [], `undefined custom properties: ${missing.join(', ')}`);
+});
+
+test('inline form rows can shrink and wrap', () => {
+  // A flex child defaults to min-width:auto and refuses to shrink below its
+  // content, which is what pushed the connection form out of its panel.
+  const body = rule('.row-inline');
+  assert.match(body, /flex-wrap:\s*wrap/, '.row-inline must wrap');
+  assert.match(rule('.row-inline > *'), /min-width:\s*0/, '.row-inline children must be allowed to shrink');
+});
+
+test('wide tables scroll inside their panel rather than the page', () => {
+  assert.match(rule('.panel'), /overflow-x:\s*auto/, '.panel must contain its own horizontal overflow');
+  // Declaring the minimum is what turns a silent overflow into a scroll.
+  assert.match(rule('table.rows'), /min-width:\s*\d+px/, 'table.rows needs an explicit minimum');
+  assert.match(rule('.vartable'), /min-width:\s*\d+px/, '.vartable needs an explicit minimum');
+});
+
+test('the page body never scrolls sideways', () => {
+  assert.match(rule('html, body'), /overflow:\s*hidden/);
+  assert.match(rule('.content'), /overflow-x:\s*hidden/);
+});
+
+test('viewport-height sizing survives a mobile URL bar', () => {
+  // 100vh is the *large* viewport on iOS Safari, so anything sized with it
+  // alone ends up under the collapsing URL bar.
+  for (const m of CSS.matchAll(/([^\n]*\b\d+vh\b[^\n]*)/g)) {
+    const line = m[1];
+    const prop = /^\s*([a-z-]+)\s*:/.exec(line);
+    if (!prop) continue;
+    const after = CSS.slice(m.index + line.length, m.index + line.length + 200);
+    assert.match(after, new RegExp(`${prop[1]}\\s*:[^;]*dvh`),
+      `"${line.trim()}" needs a dvh companion declaration immediately after it`);
+  }
+});
+
+test('the layout re-flows for narrow viewports', () => {
+  const widths = [...CSS.matchAll(/@media\s*\(max-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]));
+  assert.ok(widths.some((w) => w <= 480), 'needs a phone breakpoint');
+  assert.ok(widths.some((w) => w > 480 && w <= 760), 'needs a tablet breakpoint');
+  // The fixed rail is the thing that has to give way.
+  assert.match(CSS, /\.shell\s*\{\s*flex-direction:\s*column/,
+    'the sidebar must stop being a fixed side rail on a narrow viewport');
+});
+
+test('no engine-exclusive CSS without a fallback', () => {
+  // Project rule: Blink, WebKit and Gecko all have to work. These are the
+  // current Chromium-only tripwires.
+  for (const banned of ['anchor-name', 'position-try', 'position-anchor', '@container', 'container-type']) {
+    assert.ok(!CSS.includes(banned), `${banned} is Chromium-only — needs a JS-measured fallback`);
+  }
+  assert.ok(!/\bpopover\b/.test(HTML), 'the popover attribute is not supported everywhere yet');
+});
+
+test('no hand-written vendor prefixes for things that do not need them', () => {
+  // There is no build step, so Autoprefixer is not in play; the only prefixed
+  // properties allowed are ones with no unprefixed equivalent.
+  const allowed = new Set(['-webkit-app-region', '-webkit-font-smoothing', '-webkit-overflow-scrolling', '-webkit-details-marker']);
+  const found = new Set([...CSS.matchAll(/(-webkit-[a-z-]+|-moz-[a-z-]+|-ms-[a-z-]+)\s*:/g)].map((m) => m[1]));
+  const unexpected = [...found].filter((p) => !allowed.has(p));
+  assert.deepEqual(unexpected, [], `unexpected vendor prefixes: ${unexpected.join(', ')}`);
+});
+
+test('the page declares a mobile viewport', () => {
+  assert.match(HTML, /<meta name="viewport"[^>]*width=device-width/);
+});

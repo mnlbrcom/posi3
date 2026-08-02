@@ -436,3 +436,47 @@ just as surely as if their first ones did.
 
 **Still not verified:** no browser automation in this session, so the destination editor has not
 been looked at.
+
+## 2026-08-03 — Layout overflow and mobile
+
+Reported that a div escapes its frame on the Connections screen, that text pops out of its frame
+in Encoder config when the window is narrowed, and asked for the layout to survive a mobile
+viewport.
+
+Four distinct causes, all found by reading the stylesheet rather than the rendering — see the
+caveat at the end.
+
+1. **The flexbox `min-width: auto` trap.** `.row-inline` is a flex row whose children were
+   `flex: 1` with no `min-width`. A flex item defaults to `min-width: auto`, meaning it refuses
+   to shrink below its own content — so the form rows pushed straight out of their panel instead
+   of shrinking. Now `flex-wrap: wrap` with `min-width: 0` on the children.
+2. **`table-layout: fixed` plus a `<colgroup>` summing to ~760px.** The connections table
+   honours those widths regardless of viewport, so it silently overflowed. The table now declares
+   its real minimum and `.panel` carries `overflow-x: auto`, so wide content scrolls inside its
+   own box and the page body never scrolls sideways.
+3. **The variable table's help column had no bound**, so the longest sentence in it stretched the
+   whole table past the panel edge. Bounded.
+4. **`height: calc(100vh - 260px)` on the log box.** On iOS Safari `100vh` is the *large*
+   viewport, so the box sat under the collapsing URL bar. Now paired with a `dvh` declaration,
+   the `vh` line kept first as the fallback for engines that do not know `dvh`.
+
+Also: literal command previews scroll rather than re-wrap (they are meant to be copied exactly),
+and the disguise field values wrap rather than clip — those get typed into disguise by hand, and
+a value cut off by `overflow: hidden` would be silently wrong.
+
+**Responsive pass.** Three breakpoints, same markup re-flowed rather than a separate mobile
+design: at 860px the target bar and card metrics reflow; at 720px the fixed 208px rail stops
+being a rail and becomes a horizontally scrolling nav strip; at 480px form fields go one per
+line and the hero figure shrinks. Coarse pointers get larger hit targets. Grid and flexbox only —
+no container queries and no `:has()`, so it behaves the same in Blink, WebKit and Gecko.
+
+**`test/layout-invariants.test.js`** guards each of the four bugs plus the browser-support rule:
+no Chromium-only CSS, no `vh` without a `dvh` companion, no unexpected vendor prefixes (there is
+no build step, so Autoprefixer is not in play), breakpoints present, and the stylesheet balanced
+with no undefined custom properties. These assert the stylesheet, not the rendering — they are a
+regression guard, not a substitute for looking.
+
+**Caveat, and it is the important one.** These fixes were reasoned from the CSS. Nothing here has
+been seen rendered, because browser automation is not connected in this session. Four milestones
+of UI have now been built without once looking at it, which is why these bugs reached the user
+instead of being caught in the making.
