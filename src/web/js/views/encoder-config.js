@@ -12,7 +12,8 @@
  */
 
 import {
-  el, clear, toast, confirmModal, select, input, checkbox, banner, dismissBanner
+  el, clear, toast, confirmModal, select, input, checkbox, banner, dismissBanner,
+  setText, groupDigits, fixed
 } from '../ui.js';
 import { store } from '../store.js';
 
@@ -29,7 +30,13 @@ export function renderEncoderConfig(root) {
   const view = el('div', { class: 'view' });
 
   if (!conn) {
-    view.appendChild(el('div', { class: 'empty' }, el('h3', { text: 'Select a connection first' })));
+    view.appendChild(el('div', { class: 'empty' },
+      el('h3', { text: 'No encoder selected' }),
+      el('p', { text: 'Choose one on the Connections screen, then come back here.' }),
+      el('button', {
+        class: 'btn primary', text: 'Go to Connections',
+        onclick: () => store.setView('connections')
+      })));
     root.appendChild(view);
     return { refreshLive() {} };
   }
@@ -53,8 +60,43 @@ export function renderEncoderConfig(root) {
     el('span', { class: 'spacer' }),
     readBtn, revertBtn, applyBtn));
 
+  // -- who am I about to write to? -----------------------------------------
+  //
+  // This screen writes the encoder's flash and can change its IP address, and
+  // the target used to be implied by whatever was last clicked elsewhere. With
+  // several encoders on a network that is not good enough, so the device is
+  // named here, switchable here, and confirmable by eye: POSITAL encoders carry
+  // no serial number, firmware version or any other identifier over the wire —
+  // the address is the only handle there is. The one reliable way to know you
+  // have the right physical unit is to turn the shaft and watch the live
+  // position below move.
+
+  const livePos = el('span', { class: 'target-pos', text: '—' });
+
+  const picker = store.connections.length > 1
+    ? select(
+      store.connections.map((c) => ({ value: c.id, label: `${c.name} — ${c.encoder.host}` })),
+      conn.id,
+      (id) => store.setView('encoder', id)
+    )
+    : null;
+
+  const nic = conn.encoder.localAddress
+    ? `via ${conn.encoder.localAddress}`
+    : 'via the default route';
+
+  view.appendChild(el('div', { class: 'target-bar' },
+    el('div', { class: 'target-main' },
+      el('span', { class: 'target-label', text: 'Writing to' }),
+      picker || el('span', { class: 'target-name', text: conn.name })),
+    el('div', { class: 'target-addr' }, `${conn.encoder.host}:${conn.encoder.port} · ${nic}`),
+    el('div', { class: 'target-live' },
+      el('span', { class: 'target-live-label', text: 'Live position' }),
+      livePos,
+      el('span', { class: 'target-hint', text: 'turn the shaft to confirm this is the right encoder' }))));
+
   view.appendChild(el('div', { class: 'view-sub' },
-    `Reads and writes ${conn.name} directly over TCP ${conn.encoder.port}. ` +
+    'Reads and writes this encoder directly over its TCP command channel. ' +
     'No Java runtime and no Internet Explorer required — the connection must simply be running.'));
 
   // -- table ----------------------------------------------------------------
@@ -228,7 +270,11 @@ export function renderEncoderConfig(root) {
   return {
     refreshLive() {
       const t = store.telemetryOf(conn.id);
-      if (!t) return;
+      if (!t) {
+        setText(livePos, store.stateOf(conn.id) === 'idle' ? 'not running' : '—');
+        return;
+      }
+      setText(livePos, `${groupDigits(t.pos)}   ${fixed(t.angleDeg, 2)}°`);
       const cycleCtl = controls.get('CycleTime');
       if (cycleCtl && cycleCtl.setRateHint) cycleCtl.setRateHint(current.get('CycleTime'));
     }

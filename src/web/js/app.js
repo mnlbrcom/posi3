@@ -17,6 +17,7 @@ import './api.js';
 
 import { el, clear, hz, toast, banner } from './ui.js';
 import { store } from './store.js';
+import { renderDashboard } from './views/dashboard.js';
 import { renderConnections } from './views/connections.js';
 import { renderDetail } from './views/detail.js';
 import { renderEncoderConfig, onFlashConfirmed } from './views/encoder-config.js';
@@ -31,6 +32,7 @@ const versionNode = document.getElementById('version');
 const titlebarSub = document.getElementById('titlebar-sub');
 
 const RENDERERS = {
+  dashboard: renderDashboard,
   connections: renderConnections,
   detail: renderDetail,
   encoder: renderEncoderConfig,

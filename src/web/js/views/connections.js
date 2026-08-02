@@ -190,6 +190,13 @@ async function openRowMenu(conn) {
 
 // ---------------------------------------------------------------------------
 
+/** Interface name for an address, remembered so a moved DHCP lease is diagnosable. */
+function nicNameFor(nics, address) {
+  if (!address) return null;
+  const hit = nics.find((n) => n.value === address);
+  return hit ? String(hit.label).split(' — ')[0] : null;
+}
+
 export async function openEditor(existing) {
   const info = store.info;
   const c = existing
@@ -204,8 +211,25 @@ export async function openEditor(existing) {
       encoderMeta: { countsPerRev: info.constants.COUNTS_PER_REV, totalCounts: info.constants.TOTAL_COUNTS, cycleTimeMs: 10 }
     };
 
-  const nics = [{ value: '', label: 'Automatic' }].concat(
-    info.interfaces.filter((i) => !i.internal).map((i) => ({ value: i.address, label: `${i.name} — ${i.address}` })));
+  // Enumerated when the form opens, not taken from the startup snapshot: a
+  // USB-Ethernet adapter plugged in at the venue, or a DHCP lease that moved,
+  // used to need an app restart before it could be selected here.
+  let live = info.interfaces;
+  try {
+    live = await window.d3d.net.interfaces();
+  } catch { /* fall back to whatever startup saw */ }
+
+  const nics = [{ value: '', label: 'Any (use the routing table)' }].concat(
+    live.filter((i) => !i.internal).map((i) => ({ value: i.address, label: `${i.name} — ${i.cidr || i.address}` })));
+
+  // A saved profile can name an address that is no longer present — a different
+  // venue, a different subnet. Keep it selectable and say so, rather than
+  // silently resetting the field to "Any" and quietly changing the routing.
+  for (const addr of [c.encoder.localAddress, c.d3.localAddress]) {
+    if (addr && !nics.some((n) => n.value === addr)) {
+      nics.push({ value: addr, label: `${addr} — not present on this machine` });
+    }
+  }
 
   const body = [
     field('Name', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } })),
@@ -240,12 +264,26 @@ export async function openEditor(existing) {
       `The NavigatorDriver port in disguise must match this port (disguise defaults it to ${info.constants.D3_FACTORY_PORT}), ` +
       'and the Axis id must match the device ID.'),
 
-    field('Network interface',
-      select(nics, c.encoder.localAddress || '', (v) => {
-        c.encoder.localAddress = v || null;
-        c.d3.localAddress = v || null;
-      }),
-      'Pin the link to one NIC. Useful on show servers with several networks.'),
+    // Two pickers, not one. The bridge has always bound the encoder socket and
+    // the disguise socket independently — the form just tied them together, so
+    // there was no way to receive on the encoder's isolated network and send to
+    // disguise on the production one, which is a normal show topology.
+    el('div', { class: 'row-inline' },
+      field('Encoder interface',
+        select(nics, c.encoder.localAddress || '', (v) => {
+          c.encoder.localAddress = v || null;
+          c.encoder.localIfName = nicNameFor(nics, v);
+        }),
+        'Which NIC to reach the encoder from.'),
+      field('disguise interface',
+        select(nics, c.d3.localAddress || '', (v) => {
+          c.d3.localAddress = v || null;
+          c.d3.localIfName = nicNameFor(nics, v);
+        }),
+        'Usually the same; set it separately when the encoder is on an isolated network.')),
+    el('div', { class: 'hint', style: 'margin:-8px 0 12px' },
+      'Leave both on “Any” to use the routing table. Pinning is worth it on a show server ' +
+      'with several networks, where the default route may not be the one you want.'),
 
     field('Velocity sent to disguise',
       segmented([
