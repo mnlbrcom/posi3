@@ -61,6 +61,7 @@ still reached through the Electron IPC bridge until the desktop window switches 
 
 | Screen | File | What it does |
 |---|---|---|
+| Dashboard | `views/dashboard.js` | Every encoder at a glance: one hero figure (packets/s to disguise), summary tiles, and a card per encoder with position, derived angle and revolutions, velocity, in/out rate, latency p50/p99, uptime, faults, and a 12-second position sparkline. The screen to leave open during a show. |
 | Connections | `views/connections.js` | One row per encoder, all running from one window. Status pills, live position and rate, start/stop, duplicate device-ID warnings. **Replaces "one cmd window per encoder".** |
 | Detail | `views/detail.js` | SVG dial (angle, revolutions, mapped travel), live readouts, app-latency stats, **Zero / Preset 0**, velocity and coalescing policy. |
 | Encoder config | `views/encoder-config.js` | Read/write every encoder variable over TCP 6000, batched writes, flash-write confirmation and banner. **Replaces the JRE 7 + Internet Explorer Java applet.** |
@@ -313,3 +314,83 @@ this session. What is verified: all 11 web modules parse as ES modules, every op
 calls exists, static assets and the CSP header serve correctly, `configChanged` fires, `logTail`
 returns history, and both downloads carry the right `Content-Disposition`. Rendering, layout and
 cross-engine behaviour in Chrome, Safari and Firefox are still unchecked.
+
+## 2026-08-03 — Dashboard, neutral theme, and knowing which encoder you are about to write to
+
+Asked to fold the encoder-picker fixes into this step and leave multi-destination fan-out for
+after. Also asked, architecturally, whether one encoder can feed several disguise servers —
+answered no, see below.
+
+### Neutral theme
+
+The Pixway magenta is gone; the palette is neutral greys with a single blue accent. Every ink
+was **measured against every surface it can sit on** rather than picked by eye, and the ratios
+are recorded in the token block. Two findings that shaped it:
+
+- A colour legible as a *fill* is not necessarily legible as *text*. Critical red reaches only
+  3.6:1 on the panel surface — fine for a pill or a rule, below AA for words. So status colours
+  ship in pairs (`--err` / `--err-text`) and the comment says not to collapse them.
+- The status palette (good / warning / critical) is reserved. It means state, never "series 4",
+  and is always paired with a word, never carrying meaning by hue alone.
+
+25 stray hex literals scattered through the stylesheet were promoted into tokens, so the theme
+is now genuinely centralised — previously a retheme would have missed banners, pills, the log
+and the danger zone.
+
+### Dashboard
+
+New landing screen. One hero figure per the usual rule — total packets/s reaching disguise,
+because that is the number meaning "the show is being driven".
+
+Numbers use `font-variant-numeric: tabular-nums` **against** the usual advice for large
+standalone figures. That advice assumes a value that sits still; these repaint continuously, and
+proportional digits change width as the value changes, which is what caused the documented "UI
+shivering" bug. The local constraint wins, and the code says why.
+
+The sparkline scales to the range actually visited rather than the encoder's full 33,554,432
+counts — otherwise real movement renders as a flat line — with a floor on the span so sensor
+noise is not amplified into a mountain range.
+
+### Knowing which encoder you are configuring
+
+The config screen took its target from `store.selected`, which is whatever was last clicked
+elsewhere, defaulting to the first connection. For a screen whose buttons write flash and can
+change the device's IP, that was too quiet. It now has a target bar that names the device, lets
+you switch device without leaving the screen, and **shows its live position**.
+
+That last part is the important one, and it is a consequence of the hardware: the encoder
+exposes **no serial number, no firmware version, no MAC** — nothing identifying at all over the
+wire. Its address is the only handle. So the only reliable way to confirm you have the right
+physical unit is to turn the shaft and watch the position move, and the UI now makes that
+possible without navigating away.
+
+### Per-socket network interface
+
+The bridge has always bound the encoder socket and the disguise socket independently; the form
+tied them to one control, so there was no way to receive on an isolated encoder network and send
+to disguise on the production one — a normal show topology. Now two pickers.
+
+The list is also **re-enumerated when the form opens** rather than read from the startup
+snapshot, so an adapter plugged in at the venue appears without an app restart. A saved address
+that is no longer present stays selectable and is labelled "not present on this machine",
+instead of silently resetting to Any and quietly changing the routing.
+
+### Architecture question answered: one encoder → several disguise servers
+
+**Not currently possible.** The schema has one destination and one UDP socket per link. The
+workaround — two connections pointing at the same encoder — is the wrong one, because each opens
+its own TCP socket and the encoder accepts only a handful of clients; on site a leftover Java
+applet or an old `d3driver.exe` may already hold one.
+
+The right design is to fan out at the UDP layer: one TCP socket in, N destinations out, since
+an extra `sendto` in the same tick costs microseconds and adds no latency to the first
+destination. It needs a per-destination device ID, per-destination error counters (one dead
+server must not look like a general fault), and a schema migration from `d3` to `destinations`.
+**Deferred to its own step**, at the user's direction.
+
+### Not verified
+
+Still no browser automation in this session, so the new dashboard and target bar have **not been
+looked at**. Verified: all 12 web modules parse, 63 tests pass, two simultaneous encoders stream
+to distinct device IDs, and the telemetry the dashboard consumes is present and correct.
+Rendering, layout and cross-engine behaviour remain unchecked.

@@ -15,7 +15,7 @@ class Store {
     this.telemetry = new Map(); // id -> latest telemetry frame (hot, not observed)
     this.fieldLayouts = new Map(); // id -> {fields, inferred}
     this.selectedId = null;
-    this.view = 'connections';
+    this.view = 'dashboard';
     this._subs = new Set();
   }
 
