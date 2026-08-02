@@ -59,7 +59,7 @@ export function renderLog(root) {
       onclick: async () => {
         try {
           const r = await window.d3d.log.export();
-          if (r.written) toast('info', `Log written to ${r.filePath}`);
+          if (r.written) toast('info', r.filePath ? `Log written to ${r.filePath}` : 'Log downloaded');
         } catch (err) { toast('error', err.message); }
       }
     }),

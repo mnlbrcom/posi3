@@ -231,6 +231,31 @@ async function doPreset(conn) {
     await window.d3d.encoder.preset(conn.id, 0);
     toast('info', 'Preset accepted — waiting for the encoder to confirm the flash write…');
   } catch (err) {
-    toast('error', err.message);
+    if (err.code !== 'EPRESET_DUPLICATE') {
+      toast('error', err.message);
+      return;
+    }
+    // The firmware will not store the same Preset twice in a row, so re-zeroing
+    // an already-zeroed encoder does nothing at all unless we write a different
+    // value first. That costs a second flash cycle, so it is the operator's call.
+    const again = await confirmModal({
+      title: 'Preset is already 0',
+      body: [
+        el('p', {
+          text: 'The encoder refuses to store the same Preset value twice in a row, so writing 0 ' +
+            'again would be ignored. It can be forced by writing 1 first and then 0.'
+        }),
+        el('p', { class: 'dim', text: 'That uses two of the encoder\'s ~100,000 flash-write cycles instead of one.' })
+      ],
+      confirmLabel: 'Write it anyway (2 cycles)',
+      danger: true
+    });
+    if (!again) return;
+    try {
+      const r = await window.d3d.encoder.preset(conn.id, 0, true);
+      toast('info', `Preset written using ${r.cycles} flash cycles.`);
+    } catch (e2) {
+      toast('error', e2.message);
+    }
   }
 }
