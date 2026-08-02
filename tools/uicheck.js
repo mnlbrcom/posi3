@@ -1,0 +1,321 @@
+'use strict';
+/**
+ * Headless layout audit.
+ *
+ * Drives a local Chrome over the DevTools protocol to load the web UI at a
+ * range of viewport widths, then reports — per width — anything that overflows
+ * its container, any horizontal scroll on the page body, and any console error.
+ * Optionally writes a screenshot per width.
+ *
+ * This exists because the UI was built for several milestones without anyone
+ * looking at it, and the overflow bugs that resulted were all mechanically
+ * detectable. `test/layout-invariants.test.js` asserts the stylesheet; this
+ * asserts the rendering.
+ *
+ * No dependencies: Node's built-in WebSocket speaks CDP directly.
+ *
+ *   node tools/uicheck.js --url http://127.0.0.1:8711
+ *   node tools/uicheck.js --shots /tmp/posi3        write PNGs
+ *   node tools/uicheck.js --views dashboard,connections,encoder
+ *   node tools/uicheck.js --widths 1440,900,720,480,390
+ *
+ * Exits non-zero if anything overflows, so it can gate CI.
+ */
+
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const { parseArgs } = require('./cli-args');
+
+const opts = parseArgs(process.argv, {
+  url: 'http://127.0.0.1:8711',
+  widths: '1440,1024,860,720,480,390',
+  views: 'dashboard,connections,encoder,mapping,log,settings',
+  height: 900,
+  shots: '',
+  chrome: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  keepOpen: false,
+  settleMs: 700,
+  /** Run an arbitrary expression in the page instead of the audit. */
+  eval: ''
+});
+
+// ---------------------------------------------------------------------------
+// Minimal CDP client
+// ---------------------------------------------------------------------------
+
+class CDP {
+  constructor(ws) {
+    this.ws = ws;
+    this.id = 0;
+    this.pending = new Map();
+    this.handlers = new Map();
+    ws.addEventListener('message', (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.id && this.pending.has(msg.id)) {
+        const { resolve, reject } = this.pending.get(msg.id);
+        this.pending.delete(msg.id);
+        if (msg.error) reject(new Error(`${msg.error.message} (${JSON.stringify(msg.error.data || '')})`));
+        else resolve(msg.result);
+        return;
+      }
+      const list = this.handlers.get(msg.method);
+      if (list) for (const fn of list) fn(msg.params, msg.sessionId);
+    });
+  }
+
+  static connect(url) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
+      ws.addEventListener('open', () => resolve(new CDP(ws)));
+      ws.addEventListener('error', () => reject(new Error(`cannot connect to ${url}`)));
+    });
+  }
+
+  send(method, params = {}, sessionId) {
+    const id = ++this.id;
+    const payload = { id, method, params };
+    if (sessionId) payload.sessionId = sessionId;
+    this.ws.send(JSON.stringify(payload));
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      setTimeout(() => {
+        if (this.pending.delete(id)) reject(new Error(`${method} timed out`));
+      }, 20000);
+    });
+  }
+
+  on(method, fn) {
+    if (!this.handlers.has(method)) this.handlers.set(method, []);
+    this.handlers.get(method).push(fn);
+  }
+
+  close() { this.ws.close(); }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function waitForEndpoint(port, tries = 60) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (res.ok) return (await res.json()).webSocketDebuggerUrl;
+    } catch { /* not up yet */ }
+    await sleep(150);
+  }
+  throw new Error('Chrome did not expose a DevTools endpoint');
+}
+
+// ---------------------------------------------------------------------------
+// The audit, evaluated inside the page
+// ---------------------------------------------------------------------------
+
+/**
+ * Reports elements wider than the box that is supposed to contain them.
+ *
+ * "Contained" means the nearest ancestor that actually clips or scrolls; an
+ * ancestor with `overflow: visible` does not contain anything, so walking up to
+ * it would produce false negatives. An element inside an `overflow-x: auto`
+ * box is fine by definition — that is the intended escape hatch.
+ */
+const AUDIT = `(() => {
+  const docEl = document.documentElement;
+  const vw = docEl.clientWidth;
+
+  const label = (n) => {
+    const cls = (n.className && typeof n.className === 'string')
+      ? '.' + n.className.trim().split(/\\s+/).slice(0, 3).join('.')
+      : '';
+    const id = n.id ? '#' + n.id : '';
+    return n.tagName.toLowerCase() + id + cls;
+  };
+
+  const scrollParent = (n) => {
+    for (let p = n.parentElement; p; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      if (/(auto|scroll|hidden)/.test(s.overflowX)) return { node: p, style: s };
+    }
+    return null;
+  };
+
+  const offenders = [];
+  const seen = new Set();
+
+  for (const n of document.querySelectorAll('body *')) {
+    const r = n.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+
+    const holder = scrollParent(n);
+    if (!holder) continue;
+
+    // A scrollable ancestor is allowed to be scrolled into; a clipping one
+    // (overflow hidden) silently truncates, which is the bug.
+    const canScroll = /(auto|scroll)/.test(holder.style.overflowX);
+    const hr = holder.node.getBoundingClientRect();
+    const overshoot = Math.round(r.right - hr.right);
+
+    if (overshoot > 1 && !canScroll) {
+      const key = label(n) + '>' + label(holder.node);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      offenders.push({
+        el: label(n),
+        clippedBy: label(holder.node),
+        overshootPx: overshoot,
+        text: (n.textContent || '').trim().slice(0, 48)
+      });
+    }
+  }
+
+  // Elements sticking out past the viewport. Anything with a scrollable box
+  // *anywhere* above it is excluded: its rect reports full layout width by
+  // design, and it is reachable by scrolling that box. Checking only the
+  // nearest ancestor is not enough — a table cell is \`overflow: hidden\` for
+  // its ellipsis, and sits inside the panel that does the scrolling.
+  const inScrollable = (n) => {
+    for (let p = n.parentElement; p; p = p.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(p).overflowX)) return true;
+    }
+    return false;
+  };
+
+  const pastViewport = [];
+  for (const n of document.querySelectorAll('body *')) {
+    const r = n.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    if (inScrollable(n)) continue;
+    if (r.right > vw + 1) {
+      const key = label(n);
+      if (pastViewport.some((p) => p.el === key)) continue;
+      pastViewport.push({ el: key, right: Math.round(r.right), overshootPx: Math.round(r.right - vw) });
+    }
+  }
+
+  return {
+    viewportWidth: vw,
+    bodyScrollsSideways: docEl.scrollWidth > vw + 1,
+    bodyScrollWidth: docEl.scrollWidth,
+    offenders: offenders.sort((a, b) => b.overshootPx - a.overshootPx).slice(0, 12),
+    pastViewport: pastViewport.sort((a, b) => b.overshootPx - a.overshootPx).slice(0, 12)
+  };
+})()`;
+
+// ---------------------------------------------------------------------------
+
+async function main() {
+  const widths = String(opts.widths).split(',').map((n) => Number(n.trim())).filter(Boolean);
+  const views = String(opts.views).split(',').map((v) => v.trim()).filter(Boolean);
+  const port = 9333 + (process.pid % 200);
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'posi3-uicheck-'));
+
+  if (!fs.existsSync(opts.chrome)) {
+    throw new Error(`Chrome not found at ${opts.chrome} — pass --chrome <path>`);
+  }
+  if (opts.shots) fs.mkdirSync(opts.shots, { recursive: true });
+
+  const chrome = spawn(opts.chrome, [
+    opts.keepOpen ? '--headless=new' : '--headless=new',
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${profile}`,
+    '--no-first-run', '--no-default-browser-check', '--disable-gpu',
+    '--hide-scrollbars', // otherwise the scrollbar itself changes the layout width
+    'about:blank'
+  ], { stdio: 'ignore' });
+
+  let failures = 0;
+  let cdp = null;
+
+  try {
+    cdp = await CDP.connect(await waitForEndpoint(port));
+    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+    const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+
+    const consoleErrors = [];
+    cdp.on('Runtime.exceptionThrown', (p) => {
+      consoleErrors.push(p.exceptionDetails.exception?.description || p.exceptionDetails.text);
+    });
+    cdp.on('Runtime.consoleAPICalled', (p) => {
+      if (p.type === 'error') {
+        consoleErrors.push(p.args.map((a) => a.description || a.value).join(' '));
+      }
+    });
+
+    await cdp.send('Page.enable', {}, sessionId);
+    await cdp.send('Runtime.enable', {}, sessionId);
+
+    process.stdout.write(`posi3 ui check — ${opts.url}\n`);
+
+    for (const width of widths) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width, height: Number(opts.height), deviceScaleFactor: 1, mobile: width <= 480
+      }, sessionId);
+
+      for (const view of views) {
+        consoleErrors.length = 0;
+        await cdp.send('Page.navigate', { url: opts.url }, sessionId);
+        await sleep(Number(opts.settleMs));
+
+        // Router is in-page, so switch view rather than reloading per screen.
+        await cdp.send('Runtime.evaluate', {
+          expression: `window.__d3dNav && window.__d3dNav(${JSON.stringify(view)})`,
+          awaitPromise: false
+        }, sessionId);
+        await sleep(250);
+
+        if (opts.eval) {
+          const probe = await cdp.send('Runtime.evaluate', {
+            expression: opts.eval, returnByValue: true
+          }, sessionId);
+          process.stdout.write(`  ${String(width).padStart(4)}px ${view}: ` +
+            `${JSON.stringify(probe.result.value, null, 2)}\n`);
+          continue;
+        }
+
+        const { result } = await cdp.send('Runtime.evaluate', {
+          expression: AUDIT, returnByValue: true
+        }, sessionId);
+        const r = result.value;
+
+        const problems = r.offenders.length + r.pastViewport.length + (r.bodyScrollsSideways ? 1 : 0);
+        const tag = problems ? 'FAIL' : ' ok ';
+        process.stdout.write(`  [${tag}] ${String(width).padStart(4)}px  ${view}\n`);
+
+        if (r.bodyScrollsSideways) {
+          process.stdout.write(`         page scrolls sideways: ${r.bodyScrollWidth}px content in ${r.viewportWidth}px\n`);
+        }
+        for (const o of r.offenders) {
+          process.stdout.write(`         ${o.el} overflows ${o.clippedBy} by ${o.overshootPx}px  "${o.text}"\n`);
+        }
+        for (const p of r.pastViewport) {
+          process.stdout.write(`         ${p.el} extends ${p.overshootPx}px past the viewport\n`);
+        }
+        for (const e of consoleErrors) {
+          process.stdout.write(`         console error: ${String(e).split('\n')[0]}\n`);
+        }
+        failures += problems + consoleErrors.length;
+
+        if (opts.shots) {
+          const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+          fs.writeFileSync(path.join(opts.shots, `${view}-${width}.png`), Buffer.from(data, 'base64'));
+        }
+      }
+    }
+
+    if (opts.shots) process.stdout.write(`\nscreenshots: ${opts.shots}\n`);
+    process.stdout.write(failures ? `\n${failures} problem(s)\n` : '\nno layout problems found\n');
+  } finally {
+    if (cdp) cdp.close();
+    chrome.kill();
+    // Chrome may still be flushing its profile; the temp dir is disposable.
+    try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* leave it to the OS */ }
+  }
+
+  process.exit(failures ? 1 : 0);
+}
+
+main().catch((err) => {
+  process.stderr.write(`uicheck failed: ${err.message}\n`);
+  process.exit(2);
+});
