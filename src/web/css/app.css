@@ -185,6 +185,9 @@ html, body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: 16px;
+  /* Wide content — the connection and variable tables — scrolls here rather
+     than pushing the page sideways. */
+  overflow-x: auto;
 }
 .panel-head {
   display: flex; align-items: center; gap: 10px;
@@ -267,7 +270,10 @@ button.btn.sm { padding: 4px 9px; font-size: 11.5px; }
    change every frame, and with auto layout the browser re-measures the columns
    on each update, so the whole table visibly shivers. Fixed widths + tabular
    figures keep everything still. */
-table.rows { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* table-layout:fixed honours the colgroup widths, which sum to more than a
+   narrow viewport. Declaring that minimum is what turns a silent overflow into
+   a scroll inside .panel. */
+table.rows { width: 100%; min-width: 760px; border-collapse: collapse; table-layout: fixed; }
 table.rows td, table.rows th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.rows th {
   text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px;
@@ -314,8 +320,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 input.num-input, .mono-input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
-.row-inline { display: flex; gap: 10px; align-items: flex-end; }
-.row-inline > * { flex: 1; }
+/* A flex child defaults to min-width:auto, i.e. it refuses to shrink below its
+   own content — which is what pushed these rows out of their panel on a narrow
+   window. min-width:0 lets them shrink; wrap gives them somewhere to go. */
+.row-inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.row-inline > * { flex: 1 1 170px; min-width: 0; }
 .row-inline > .shrink { flex: 0 0 auto; }
 
 .check { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12.5px; }
@@ -374,7 +383,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
 /* --------------------------------------------------------------- var table */
 
-.vartable { width: 100%; border-collapse: collapse; }
+.vartable { width: 100%; min-width: 620px; border-collapse: collapse; }
 .vartable td { padding: 7px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
 .vartable tr:last-child td { border-bottom: none; }
 .vartable td.k { width: 210px; color: var(--text-dim); font-size: 12px; }
@@ -385,7 +394,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .vartable tr.dirty td.ctl::before {
   content: ''; position: absolute; left: -6px; top: 4px; bottom: 4px; width: 2px; background: var(--warn);
 }
-.vartable td.help { font-size: 11px; color: var(--text-faint); line-height: 1.45; }
+.vartable td.help {
+  font-size: 11px; color: var(--text-faint); line-height: 1.45;
+  /* Without a bound this column grows to fit the longest sentence and drags
+     the whole table past the panel edge. */
+  min-width: 180px;
+}
 .group-head {
   font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px;
   color: var(--text-faint); font-weight: 700;
@@ -411,7 +425,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .d3row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 6px 12px; align-items: baseline; }
 .d3row + .d3row { border-top: 1px solid var(--border-soft); }
 .d3row .kk { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); }
-.d3row .vv { font-family: var(--mono); font-size: 12.5px; user-select: all; }
+.d3row .vv {
+  font-family: var(--mono); font-size: 12.5px; user-select: all;
+  /* These get copied into disguise by hand. Wrap rather than clip: a value cut
+     off by `overflow: hidden` on the card would be silently wrong. */
+  overflow-wrap: anywhere;
+}
 .d3row .nn { grid-column: 2; font-size: 10.5px; color: var(--text-faint); }
 
 /* --------------------------------------------------------------------- log */
@@ -419,7 +438,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .log-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .log-toolbar select, .log-toolbar input { width: auto; }
 .logbox {
-  height: calc(100vh - 260px); min-height: 240px;
+  /* dvh follows the *small* viewport, so the box does not sit under a mobile
+     browser's collapsing URL bar. The vh line first, as a fallback for engines
+     that do not know dvh — they simply ignore the second declaration. */
+  height: calc(100vh - 260px);
+  height: calc(100dvh - 260px);
+  min-height: 240px;
   overflow-y: auto;
   background: var(--bg);
   border: 1px solid var(--border); border-radius: var(--radius);
@@ -441,7 +465,10 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   display: flex; align-items: center; justify-content: center; z-index: 100;
 }
 .modal {
-  width: min(560px, 92vw); max-height: 86vh; overflow-y: auto;
+  width: min(560px, 92vw);
+  max-height: 86vh;
+  max-height: 86dvh;
+  overflow-y: auto;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 18px 50px rgba(0,0,0,.55);
 }
@@ -459,6 +486,10 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .cmd-preview {
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 9px 11px; font-family: var(--mono); font-size: 12px; margin-bottom: 12px;
+  /* A literal command must not be re-wrapped — it is meant to be read and
+     copied exactly — so it scrolls instead. */
+  overflow-x: auto;
+  white-space: pre;
 }
 .cmd-preview div + div { margin-top: 3px; }
 
@@ -643,3 +674,98 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .dest-actions label { margin: 0; }
 .dest-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .dest-foot .hint { margin: 0; flex: 1 1 260px; }
+
+/* ---------------------------------------------------------------- narrow
+
+   The layout is a fixed rail beside a scrolling pane, which is right for a
+   show server and wrong for a phone or a half-width browser window. These
+   breakpoints unpick it in stages rather than switching to a separate mobile
+   design: the same markup, re-flowed.
+
+   Grid and flexbox only, no container queries and no :has() — this has to
+   behave the same in Blink, WebKit and Gecko. */
+
+/* Half-width laptop window. */
+@media (max-width: 860px) {
+  .view { padding: 14px 14px 32px; }
+  .view-head { gap: 8px; }
+  .view-head h1 { font-size: 16px; }
+  .target-bar { grid-template-columns: minmax(0, 1fr); }
+  .card-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+}
+
+/* Tablet and phone: the rail stops being a rail. */
+@media (max-width: 720px) {
+  :root { --rail: 100%; }
+
+  .shell { flex-direction: column; height: calc(100% - var(--titlebar)); }
+
+  .sidebar {
+    width: 100%; flex: 0 0 auto;
+    flex-direction: row; align-items: center;
+    border-right: none; border-bottom: 1px solid var(--border);
+    padding: 0;
+    /* The nav becomes a horizontal strip. It scrolls rather than wrapping so
+       the content pane keeps a predictable height. */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .brandmark {
+    padding: 10px 12px; border-bottom: none;
+    border-right: 1px solid var(--border-soft);
+    margin-bottom: 0; flex: 0 0 auto;
+  }
+  .brandmark-text { font-size: 14px; }
+
+  .nav-item {
+    width: auto; flex: 0 0 auto;
+    padding: 12px 13px;
+    border-left: none; border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .nav-item.active { border-left-color: transparent; border-bottom-color: var(--accent); }
+  /* The dots add width without adding information once the labels are in a row. */
+  .nav-dot { display: none; }
+
+  /* Aggregate and version belong in the titlebar's role here, not pinned to
+     the bottom of a rail that no longer exists. */
+  .sidebar-foot {
+    margin-top: 0; margin-left: auto; flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 12px; border-top: none;
+  }
+  .ver { margin-top: 0; }
+
+  .titlebar { padding-left: 14px; }  /* no traffic lights in a browser tab */
+  .grid-2 { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr; }
+  .readouts { grid-template-columns: 110px 1fr; }
+}
+
+@media (max-width: 480px) {
+  .view { padding: 12px 10px 28px; }
+  .hero-value { font-size: 38px; }
+  .card-pos { font-size: 24px; }
+  .card-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sidebar-foot .agg { display: none; }  /* the dashboard already shows this */
+  .row-inline > * { flex: 1 1 100%; }    /* one field per line */
+}
+
+/* Coarse pointers need a bigger hit target than a mouse does. */
+@media (pointer: coarse) {
+  button.btn { padding: 9px 14px; }
+  .nav-item { padding: 13px 14px; }
+}
+
+@media (max-width: 720px) {
+  /* The nav strip and titlebar take a different amount of room than the rail
+     layout, and the log box is sized off the viewport rather than its parent. */
+  .logbox { height: calc(100dvh - 320px); min-height: 200px; }
+}
+
+@media (max-width: 480px) {
+  /* The 150px label column leaves too little for the value it explains. */
+  .d3row { grid-template-columns: 1fr; gap: 2px; }
+  .d3row .nn { grid-column: 1; }
+}
