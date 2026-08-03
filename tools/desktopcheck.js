@@ -230,6 +230,47 @@ async function main() {
       swallowed.length
         ? `${swallowed.join(', ')} — needs -webkit-app-region: no-drag`
         : 'checked at both widths');
+
+    // -- a reload rescues a viewport left emulated -------------------------
+    // A debugging session that dies without detaching leaves the page pinned
+    // to its test size inside a full-size window: it reads as a layout bug,
+    // resizing does nothing, and before the fix only a restart cleared it.
+    // Reproduced properly here — a real child process, killed outright, so the
+    // session is abandoned rather than closed.
+    await clearMetrics();
+    await sleep(400);
+    const real = await evaluate('innerWidth');
+
+    const setter = spawn(process.execPath, ['-e', `
+      const { CDP, sleep, waitForEndpoint } = require(${JSON.stringify(path.join(__dirname, 'cdp.js'))});
+      (async () => {
+        const cdp = await CDP.connect(await waitForEndpoint(${Number(opts.port)}));
+        const { targetInfos } = await cdp.send('Target.getTargets');
+        const page = targetInfos.find((t) => t.type === 'page' && t.url.startsWith('http://'));
+        const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: page.targetId, flatten: true });
+        await cdp.send('Emulation.setDeviceMetricsOverride',
+          { width: 420, height: 760, deviceScaleFactor: 1, mobile: false }, sessionId);
+        await sleep(60000);
+      })().catch(() => process.exit(1));
+    `], { stdio: 'ignore' });
+    try {
+      let stuck = real;
+      for (let i = 0; i < 40 && stuck === real; i++) { await sleep(250); stuck = await evaluate('innerWidth'); }
+      setter.kill('SIGKILL');            // abandoned: never detaches, never clears
+      await sleep(1200);
+
+      const survived = await evaluate('innerWidth');
+      check('an abandoned override really does survive its client', survived === 420,
+        `${survived}px — the fix is only meaningful if this reproduces`);
+
+      await evaluate('location.reload()');
+      await sleep(3000);
+      const recovered = await evaluate('innerWidth');
+      check('a reload releases a viewport left emulated', recovered === real,
+        `${survived}px -> ${recovered}px (window is ${real}px)`);
+    } finally {
+      setter.kill('SIGKILL');
+    }
   } finally {
     if (clearMetrics) await clearMetrics();
     if (cdp) cdp.close();
