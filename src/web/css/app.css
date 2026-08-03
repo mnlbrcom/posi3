@@ -78,16 +78,20 @@
      the literal values read back from the device, and disguise field keys
      meant to be copied. Plus the wordmark, which is a logo. Nothing else.
 
-       --fs-title   one per screen: the view headline
+       --fs-title   one per screen: the view headline, and the dashboard totals
        --fs-head    panel heads, card names, and the figures they exist for
        --fs-body    default — prose, buttons, inputs, table cells
        --fs-label   uppercase labels, captions, hints, status meta
-       --fs-figure  the dashboard totals only                             */
+
+     There was a fifth, --fs-figure at 28px, for the four dashboard totals. It
+     made a live value 11px larger than the title above it, which is a lot of
+     hierarchy to spend on the claim "read this from across the room" — and it
+     was the scale's only exception, which is exactly the kind of thing a scale
+     is for avoiding. The totals sit at --fs-title now and lead on weight.    */
   --fs-title: 17px;
   --fs-head: 14px;
   --fs-body: 12.5px;
   --fs-label: 11px;
-  --fs-figure: 28px;
 }
 
 * { box-sizing: border-box; }
@@ -696,7 +700,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .stat-value {
-  font-size: var(--fs-figure); line-height: 1.1; font-weight: 600; margin: 4px 0 2px;
+  font-size: var(--fs-title); line-height: 1.15; font-weight: 600; margin: 3px 0 2px;
   /* Tabular on purpose: these repaint continuously, and proportional digits
      make a figure change width as its value changes. */
   font-variant-numeric: tabular-nums; color: var(--text);

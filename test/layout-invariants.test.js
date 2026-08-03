@@ -120,8 +120,8 @@ test('type comes from the scale, not from a number typed at the point of use', (
   // may only be named in the token block, and there may only be a few tokens.
   const tokens = [...CSS.matchAll(/^\s*(--fs-[a-z]+)\s*:\s*([0-9.]+)px/gm)];
   const names = new Set(tokens.map((m) => m[1]));
-  assert.ok(names.size >= 3 && names.size <= 5,
-    `the scale should be 3-5 sizes, found ${names.size}: ${[...names].join(', ')}`);
+  assert.ok(names.size >= 3 && names.size <= 4,
+    `the scale should be 3-4 sizes, found ${names.size}: ${[...names].join(', ')}`);
 
   // Every other font-size must reference one of them. A responsive step-down
   // redefines a token, so those are matched by the rule above, not here.

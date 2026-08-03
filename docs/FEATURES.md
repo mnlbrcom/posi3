@@ -1683,3 +1683,29 @@ present and labels those runs `+ menu`. Clean at 720, 480 and 390 across all sev
 
 **Verified:** 147 tests, 18 desktop checks, layout and font audit clean across seven views at six
 widths with the menu open.
+
+## 2026-08-03 — Four sizes, no exception
+
+> "whats the font size of the Dashbaord Headline and whats the font size of the Packets out
+> number?" / "yes lets drop it."
+
+Measured on the live page rather than read off the stylesheet: the headline was **17px** and the
+totals **28px**, so a live value was 11px larger than the title above it.
+
+`--fs-figure` existed for one claim — that the four totals should be readable from across a room —
+and it was the scale's only exception. It is gone. **The totals sit at `--fs-title` with weight
+600**, which leaves the scale at four sizes and nothing outside it:
+
+| token | size |
+|---|---|
+| `--fs-title` | 17px — the view headline, and the dashboard totals |
+| `--fs-head` | 14px — panel heads, card names, and the figures they exist for |
+| `--fs-body` | 12.5px — prose, buttons, inputs, table cells |
+| `--fs-label` | 11px — labels, captions, hints, status meta |
+
+The header reads as one object now instead of a title with four louder numbers under it. The guard
+in `npm test` was tightened from "3 to 5 sizes" to **3 to 4**, so the fifth cannot come back
+without the test saying so.
+
+**Verified:** 147 tests, 18 desktop checks, layout and font audit clean across seven views at six
+widths with the menu open.
