@@ -139,7 +139,18 @@ class EncoderLink extends EventEmitter {
     if (this.running) return;
     this._stopping = false;
     this._attempt = 0;
-    this.counters.startedAtMs = Date.now();
+
+    // Counters describe this run, not the process lifetime. Uptime already
+    // reset here while the rest did not, so a link restarted after a
+    // configuration change carried failures from a destination that no longer
+    // existed — 3 000 send errors against a setup with none is the sort of
+    // thing that gets chased at a venue instead of the real fault.
+    Object.assign(this.counters, {
+      rx: 0, tx: 0, errors: 0, unknownLines: 0, wraps: 0,
+      reconnects: 0, txErrors: 0, startedAtMs: Date.now()
+    });
+    this._latencyCount = 0; this._latencyIdx = 0;
+    this._gapCount = 0; this._gapIdx = 0;
     this._openUdp();
     this._connect();
   }

@@ -786,3 +786,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   .d3row { grid-template-columns: 1fr; gap: 2px; }
   .d3row .nn { grid-column: 1; }
 }
+
+/* A value the encoder reported that this build does not recognise. Flagged
+   rather than silently shown as something plausible. */
+select.unknown-value { border-color: var(--warn); }

@@ -870,3 +870,65 @@ now flags the figure and its source without ruling on it.
 
 **Flash writes remain off the table** at the user's direction — these chips have a finite write
 budget and it is not ours to spend.
+
+## 2026-08-03 — The variable table, against the manual and against the device
+
+The user pointed at manual pages 4, 12, 13 and 19 and asked that the interface offer values the
+encoder can actually take. Reading them carefully found four things, one of which was a live bug.
+
+### The applet screenshot on page 13 is the most useful page in the manual
+
+Rendered and read at last. POSITAL's own *Main Controller Site*, with a "Set" button per
+parameter and the current value beside it — the same shape as our config screen. Two things it
+settles outright:
+
+- **`Preset/Offset` is a single row.** You write a Preset; the field beside it reads back the
+  **Offset**. That is exactly what the hardware told us when `read Preset` answered "Preset is an
+  unknown variable", and it confirms the `writeOnly` marking is right rather than a firmware
+  quirk.
+- **`CycleTime` is shown set to 1**, with the log beneath it reading *"Setting Cycle Time to
+  1 ms" → "CycleTime=1" → "Parameters successfully written!"*. POSITAL's own documentation shows
+  1 ms in use, which retires the last of my "~2 ms floor" claim.
+
+The applet also labels the modes `COS` and `A_SHORT` — a third spelling, differing from both the
+manual and the wire.
+
+### The bug: TimeMode showed the wrong mode
+
+The device answers `CYCLIC`; the dropdown offered `Cyclic`. Assigning an unmatched value to a
+`<select>` silently leaves it blank, so the operator saw either nothing or the first option —
+**wrong rather than absent**, on the screen that writes flash. `OutputType` and `CountingDir`
+happened to match exactly, and the `OutputMode` checkboxes already lowercased both sides, so this
+was the only one that bit.
+
+Enum controls now resolve what they are given — case-insensitively, ignoring spaces and
+underscores, with an alias table for `COS`. A value that resolves to nothing is flagged amber
+with a tooltip naming what the encoder said, rather than being quietly rendered as something
+plausible. The dirty-check compares normalised values, so `CYCLIC` against `Cyclic` is not an
+edit.
+
+### Ranges were 32-bit integer limits, not hardware limits
+
+Manual §1.1 p.4: *"a maximum resolution of 65,536 steps per revolution (16 Bit) […] up to 16,384
+revolutions (14 Bit). Therefore the largest resulting resolution is 30 Bit = 1,073,741,824
+steps."*
+
+The scaling variables were bounded at 4,294,967,295 — four times what any encoder in the family
+can do. Now `MAX_RESOLUTION = 2^30`, with `Preset` and `Offset` one less as positions.
+`CycleTime` was already correct at 1–999,999 ms (p.19).
+
+### Counters outlived the configuration they described
+
+Spotted while cleaning up: after removing a dead destination the link still reported 3,188 send
+failures against a setup that had none, because `start()` reset uptime but nothing else. Three
+thousand errors on a healthy link is exactly the sort of thing that gets chased at a venue
+instead of the real fault. Counters now describe the current run.
+
+### Verified on the encoder
+
+`Read all` against 10.10.10.10 now shows OutputType `ASCII_SHORT`, OutputMode with Position and
+Velocity ticked and Timestamp clear, **TimeMode resolving `CYCLIC` to Cyclic**, CycleTime 18 with
+an "≈ 56 Hz" hint, scaling 300000/300000, CountingDir CW, Preset blank and skipped
+("read 13 of 14 variables"), Offset 43156.
+
+Eight new tests pin the table to the exact strings the device returned.
