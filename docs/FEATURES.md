@@ -1519,3 +1519,30 @@ sat against the pill instead of the card's right edge.
 
 **Verified:** layout audit clean across 6 widths × 7 views against the live rig; 144 tests and 18
 desktop checks pass.
+
+## 2026-08-03 — Breaking earlier, and the trace where it belongs
+
+> "there is a breakpoint for the adaptive jump, right before text overflows into the wrong areas,
+> the point needs to be earlier and the min width of live values and stream needs to be wider. Also
+> move the position graph last 12s into the steam card." / "and size all cards to content"
+
+**Breakpoints moved earlier: 1080px → 1280px for three columns to two, 720px → 900px for two to
+one.** The previous values were derived from where the layout *breaks*, which is the wrong test: a
+layout that changes shape at the exact moment its text starts crowding reads as a fault rather than
+as adapting. Both now change while there is still slack.
+
+**The figure columns carry a real minimum**, `minmax(300px, 1fr)` rather than `minmax(0, 1fr)` —
+below roughly 300px the right-aligned values start closing on their labels. The minimum is a
+guard, not the mechanism: the breakpoints are set so it is never actually reached.
+
+**The position trace moved into the Stream pane.** It answers the same question as the figures
+above it — is data still arriving — drawn instead of counted, so a separate full-width strip for it
+was a third answer to a question already asked. Separated by a rule inside the pane rather than by
+a pane of its own.
+
+**Panes size to their content** (`align-items: start`, not `stretch`). Stretching gave every pane
+the dial's height, so the figure lists carried a block of dead space under them.
+
+**Verified:** layout audit clean at 1440, 1360, 1300, 1280, 1024, 940, 900, 860, 720, 480 and 390
+against the live rig, and across all seven views at the standard widths. 144 tests and 18 desktop
+checks pass.
