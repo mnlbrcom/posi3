@@ -21,9 +21,6 @@ export function renderSettings(root) {
 
   view.appendChild(el('div', { class: 'view-head' }, el('h1', { text: 'Settings' })));
 
-  const nics = [{ value: '', label: 'Automatic' }].concat(
-    info.interfaces.filter((i) => !i.internal).map((i) => ({ value: i.address, label: `${i.name} — ${i.cidr || i.address}` })));
-
   view.appendChild(panel('Behaviour', [
     el('div', { class: 'field' },
       el('label', { text: 'Interface refresh rate' }),
@@ -33,13 +30,9 @@ export function renderSettings(root) {
 
     checkbox('Start connections marked “auto start” when the app launches', s.autoStartOnLaunch,
       (v) => save({ autoStartOnLaunch: v })),
-    checkbox('Launch d3driver when this computer starts', s.launchAtLogin,
+    checkbox('Launch posi3 when this computer starts', s.launchAtLogin,
       (v) => save({ launchAtLogin: v })),
-    checkbox('Start minimised', s.startMinimized, (v) => save({ startMinimized: v })),
-
-    el('div', { class: 'field', style: 'margin-top:12px' },
-      el('label', { text: 'Default network interface for new connections' }),
-      select(nics, s.defaultLocalAddress || '', (v) => save({ defaultLocalAddress: v || null })))
+    checkbox('Start minimised to the tray', s.startMinimized, (v) => save({ startMinimized: v }))
   ], null,
   'Auto start plus launch at login means a show server can reboot and come back streaming ' +
   'without anyone touching a keyboard.'));
@@ -70,7 +63,7 @@ export function renderSettings(root) {
         }
       }))
   ], null,
-  `Profiles live in ${info.userDataPath}. Export one to carry your encoder setup from the ` +
+  `Profiles live in ${info.dataDir}. Export one to carry your encoder setup from the ` +
   'prep room to the show server.'));
 
   view.appendChild(panel('If something is not working', [
@@ -93,7 +86,7 @@ export function renderSettings(root) {
           'denied, every connection fails instantly — re-enable it under System Settings › ' +
           'Privacy & Security › Local Network.')
         : el('p', {}, el('b', { text: 'Windows Firewall: ' }),
-          'allow d3driver on both Private and Public networks. Show LANs are usually classified ' +
+          'allow posi3 on both Private and Public networks. Show LANs are usually classified ' +
           'as Public, and that box is easy to miss.')
     )
   ]));
@@ -101,9 +94,13 @@ export function renderSettings(root) {
   view.appendChild(panel('About', [
     el('div', { class: 'statline' },
       el('span', {}, 'Version ', el('b', { text: info.version })),
-      el('span', {}, 'Electron ', el('b', { text: info.electron })),
+      // Absent when the bridge runs headless, which is a supported mode.
+      info.electron ? el('span', {}, 'Electron ', el('b', { text: info.electron })) : null,
       el('span', {}, 'Node ', el('b', { text: info.node })),
-      el('span', {}, 'Platform ', el('b', { text: info.platform })))
+      el('span', {}, 'Platform ', el('b', { text: info.platform }))),
+    el('div', { class: 'statline' },
+      el('span', {}, 'Web UI ', el('b', { text: info.webUrl || '—' })),
+      el('span', {}, 'Access ', el('b', { text: info.tokenRequired ? 'token required' : 'this machine only' })))
   ], null,
   'Replaces d3driver.exe (2016). The packet format sent to disguise is unchanged, so existing ' +
   'projects keep working exactly as before.'));

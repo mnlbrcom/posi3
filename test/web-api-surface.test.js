@@ -4,9 +4,10 @@
  * a typo is invisible until someone clicks the button in a browser. These tests
  * read the shim's source and check every name it calls actually exists.
  *
- * They also check it against the Electron preload: while both transports exist,
- * a method added to one and not the other produces a screen that works in the
- * desktop window and throws in a browser, or the reverse.
+ * There used to be a second test here comparing the shim against the Electron
+ * preload, to stop the two transports drifting. The preload is gone — the
+ * desktop window now loads the same web UI over HTTP — so there is only one
+ * transport left to be wrong.
  */
 
 const test = require('node:test');
@@ -17,7 +18,6 @@ const path = require('node:path');
 const { createApi } = require('../src/server/api');
 
 const SHIM = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'api.js'), 'utf8');
-const PRELOAD = fs.readFileSync(path.join(__dirname, '..', 'src', 'desktop', 'preload.js'), 'utf8');
 
 /** A stub context — we only need the shape of what createApi returns. */
 function apiNames() {
@@ -43,31 +43,6 @@ test('every operation the browser shim calls exists on the server', () => {
   assert.deepEqual(missing, [], `shim calls operations the server does not expose: ${missing.join(', ')}`);
 });
 
-test('the shim exposes the same namespaced surface as the Electron preload', () => {
-  // Both files describe the same object literal, so comparing `name:` keys
-  // inside each namespace block is enough to catch one drifting from the other.
-  const surfaceOf = (src) => {
-    const out = {};
-    for (const ns of ['config', 'link', 'encoder', 'mapping', 'log', 'events']) {
-      const block = new RegExp(`\\b${ns}:\\s*\\{([\\s\\S]*?)\\n\\s*\\}`).exec(src);
-      if (!block) continue;
-      out[ns] = new Set([...block[1].matchAll(/^\s{4,}([A-Za-z0-9_]+):/gm)].map((m) => m[1]));
-    }
-    return out;
-  };
-
-  const shim = surfaceOf(SHIM);
-  const preload = surfaceOf(PRELOAD);
-
-  for (const ns of Object.keys(preload)) {
-    const onlyInPreload = [...preload[ns]].filter((k) => !shim[ns] || !shim[ns].has(k));
-    assert.deepEqual(
-      onlyInPreload, [],
-      `window.d3d.${ns} has ${onlyInPreload.join(', ')} in the preload but not in the browser shim`
-    );
-  }
-});
-
 test('the shim never sends the token in a URL it leaves behind', () => {
   // A token in the address bar gets pasted into tickets and chat messages, so
   // the shim moves it to sessionStorage and rewrites the URL. Guard the intent.
@@ -88,4 +63,16 @@ test('the CSP served over HTTP also forbids framing', () => {
   const { SECURITY_HEADERS } = require('../src/server/security');
   assert.match(SECURITY_HEADERS['Content-Security-Policy'], /frame-ancestors 'none'/);
   assert.match(SECURITY_HEADERS['Content-Security-Policy'], /connect-src 'self'/);
+});
+
+test('the desktop window has no second transport to drift from', () => {
+  // The preload and IPC layer were removed when the window moved onto HTTP.
+  // If either comes back, the single-codebase guarantee is gone and the
+  // surface-comparison test that used to live here has to come back with it.
+  for (const gone of ['preload.js', 'ipc.js']) {
+    assert.ok(
+      !fs.existsSync(path.join(__dirname, '..', 'src', 'desktop', gone)),
+      `src/desktop/${gone} is back — restore the preload/shim surface comparison`
+    );
+  }
 });
