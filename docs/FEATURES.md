@@ -1709,3 +1709,56 @@ without the test saying so.
 
 **Verified:** 147 tests, 18 desktop checks, layout and font audit clean across seven views at six
 widths with the menu open.
+
+## 2026-08-03 — The dial key, and a travel bar that was being lied to
+
+> "under the 360° dial, there is text … whats that size? and can we make this more clear, hard to
+> understand what it explains." / "the bar doesn't work, right?" / "all the reflective values need
+> to know that input and range has varible dependencies from user input how the encode is set"
+
+### The key
+
+11px, `--fs-label`. Size was not the problem: it read
+`outer: angle · inner: revolutions used · bar: mapped range` — three things named, none of them
+pointed at, so the reader had to work out which ring was which.
+
+Each row now carries a chip shaped and coloured like the thing it describes: concentric rings for
+the two arcs, accent for the outer and muted for the inner exactly as they are drawn, a short bar
+for the bar. Wording in plain terms — "Angle within this turn", "Revolutions used of the total",
+"Position in the range sent to disguise".
+
+### The bar was not broken; it was given the wrong range
+
+Measured before touching anything: the fill was **2px of a 314px track, 0.62%**, at a position
+that is about 70% of the encoder's travel.
+
+`inputSpan()` in `src/shared/mapping.js` **ignores** the stored `minInput`/`maxInput` when the mode
+is `full` and derives `0 … totalCounts-1` from the device's own scaling, so the mapping helper had
+been right all along. The dashboard read `conn.mapping.maxInput` directly instead, and that field
+still held **33 554 431** — the nameplate default written when the connection was created, before
+the encoder had ever been read. The device is commissioned to **300 000**.
+
+Rather than write the rule a second time, `src/web/js/mapping-span.js` now carries `inputSpan` for
+the browser — which cannot import the shared module, since it is CommonJS and is not served — and
+**`test/mapping-span.test.js` runs identical cases through both copies** and fails if they ever
+disagree. Two copies of one rule is exactly what caused this; the test is what makes the second
+copy safe.
+
+### The readings say what they are derived from
+
+Angle, revolution and speed are not properties of the encoder. They are computed from its scaling,
+which the user sets through `UsedScopeOfPhysRes` and `TotalScaledRes`; the travel bar depends on a
+second, independent choice, the mapping mode. The machinery for following those already worked —
+a broadcast recomputes `countsPerRev`/`totalCounts` and every frame derives from them — but nothing
+on screen said so, which invites reading the numbers as absolute.
+
+Two lines under the key now state the basis and repaint with everything else:
+
+    Encoder scaling: 8 192/turn · 300 000 total · 36.62 turns
+    Range to disguise: full travel · 0 – 299 999
+
+with hover text naming the variables each comes from. Change the scaling on the device and both
+follow within a frame.
+
+**Verified:** on the rig, the bar tracks at ~70% for position 208 843 of 299 999. 149 tests, 18
+desktop checks, layout and font audit clean across seven views at six widths.

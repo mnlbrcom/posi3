@@ -20,6 +20,7 @@
 import { el, clear, pill, groupDigits, fixed, hz, micros, duration, setText, svgEl } from '../ui.js';
 import { store } from '../store.js';
 import { Dial, TravelBar } from '../components/dial.js';
+import { inputSpan } from '../mapping-span.js';
 
 /** Seconds of position history kept per encoder for the sparkline. */
 const TRACE_SECONDS = 12;
@@ -171,6 +172,7 @@ function buildCard(conn) {
   const dial = new Dial();
   const travel = new TravelBar();
   const spark = sparkline();
+  const basis = readingBasis();
 
   // Two columns of figures, deliberately split by the question they answer.
   // "Live values" is what the encoder is doing; "Stream" is whether the bridge
@@ -215,7 +217,8 @@ function buildCard(conn) {
       el('div', { class: 'encoder-pane encoder-dial' },
         dial.node,
         travel.node,
-        el('div', { class: 'dial-legend', text: 'outer: angle · inner: revolutions used · bar: mapped range' })),
+        dialLegend(),
+        basis.node),
       el('div', { class: 'encoder-pane encoder-col' },
         el('div', { class: 'col-label', text: 'Live values' }), live.node),
       el('div', { class: 'encoder-pane encoder-col' },
@@ -228,7 +231,7 @@ function buildCard(conn) {
           spark.node))),
     faultRow);
 
-  const mapping = conn.mapping || { minInput: 0, maxInput: (store.info.constants.TOTAL_COUNTS || 1) - 1 };
+  const mapping = conn.mapping || { mode: 'full' };
 
   let lastState = null;
   let lastDetailText = null;
@@ -267,7 +270,20 @@ function buildCard(conn) {
         for (const k of Object.keys(stream.cells)) setText(stream.cells[k], null);
         return null;
       }
-      travel.update(t.pos, mapping.minInput, mapping.maxInput);
+      // Computed from the *device's* scaling each frame, not from the stored
+      // maxInput: for mode 'full' that field is a creation-time default and on
+      // a re-scaled encoder it is wrong by two orders of magnitude.
+      const span = inputSpan({
+        mode: mapping.mode,
+        minInput: mapping.minInput,
+        maxInput: mapping.maxInput,
+        revolutions: mapping.revolutions,
+        gearRatio: mapping.gearRatio,
+        countsPerRev: t.countsPerRev,
+        totalCounts: t.totalCounts
+      });
+      travel.update(t.pos, span.minInput, span.maxInput);
+      basis.update(t, span, mapping);
 
       const revDigits = revsAvailable < 100 ? 2 : 0;
       setText(live.cells.pos, groupDigits(t.pos));
@@ -303,6 +319,75 @@ function buildCard(conn) {
       return t;
     }
   };
+}
+
+/**
+ * What the readings above are derived from.
+ *
+ * Angle, revolutions and rpm are not properties of the encoder — they are
+ * computed from its scaling, which is set by `UsedScopeOfPhysRes` and
+ * `TotalScaledRes` and can be changed by anyone with the Encoder config screen
+ * or a telnet session. The travel bar depends on a second, separate choice:
+ * the mapping mode. A reading with no stated basis invites the assumption that
+ * it is absolute, and the reference encoder is the argument against that — its
+ * nameplate says 33 554 432 counts over 4 096 turns and it is commissioned to
+ * 300 000 over 36.62.
+ *
+ * So the basis is stated, and it repaints with everything else: change the
+ * scaling on the device and this line follows within a frame.
+ */
+function readingBasis() {
+  const scaling = el('div', { class: 'basis-line', text: '' });
+  const range = el('div', { class: 'basis-line', text: '' });
+  const node = el('div', { class: 'dial-basis' }, scaling, range);
+
+  return {
+    node,
+    update(t, span, mapping) {
+      const turns = t.countsPerRev > 0 ? t.totalCounts / t.countsPerRev : 0;
+      setText(scaling,
+        `Encoder scaling: ${groupDigits(t.countsPerRev)}/turn · ` +
+        `${groupDigits(t.totalCounts)} total · ${fixed(turns, turns < 100 ? 2 : 0)} turns`);
+      scaling.title = 'Angle, revolution and speed are derived from this. It comes from the ' +
+        'encoder\'s UsedScopeOfPhysRes and TotalScaledRes, and changes here as soon as they ' +
+        'change on the device — it is not the nameplate figure.';
+
+      setText(range,
+        `Range to disguise: ${rangeMode(mapping)} · ` +
+        `${groupDigits(span.minInput)} – ${groupDigits(span.maxInput)}`);
+      range.title = 'The span the travel bar is measured against, set by the mapping mode on the ' +
+        'disguise mapping screen.';
+    }
+  };
+}
+
+function rangeMode(mapping) {
+  if (!mapping || !mapping.mode || mapping.mode === 'full') return 'full travel';
+  if (mapping.mode === 'revolutions') {
+    const r = Number(mapping.revolutions) || 1;
+    return `${r} turn${r === 1 ? '' : 's'}`;
+  }
+  return 'captured span';
+}
+
+/**
+ * A key for the dial.
+ *
+ * It used to be one line — "outer: angle · inner: revolutions used · bar:
+ * mapped range" — which named three things without pointing at any of them,
+ * so the reader had to work out which ring was which. Each row now carries a
+ * chip shaped and coloured like the thing it describes: concentric rings for
+ * the two arcs, accent for the outer and muted for the inner exactly as they
+ * are drawn, and a short bar for the bar.
+ */
+function dialLegend() {
+  const row = (kind, text) => el('div', { class: 'legend-row' },
+    el('span', { class: `legend-key legend-${kind}`, 'aria-hidden': 'true' }),
+    el('span', { text }));
+  return el('div', { class: 'dial-legend' },
+    row('outer', 'Angle within this turn'),
+    row('inner', 'Revolutions used of the total'),
+    row('bar', 'Position in the range sent to disguise'));
 }
 
 /** A definition list of live figures. Returns the cells so they can be repainted. */
