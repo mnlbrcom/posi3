@@ -91,6 +91,7 @@ async function main() {
   process.once('SIGINT', () => { reap(); process.exit(130); });
 
   let cdp = null;
+  let clearMetrics = null;
   try {
     cdp = await CDP.connect(await waitForEndpoint(opts.port));
 
@@ -134,6 +135,14 @@ async function main() {
         width, height: Number(opts.height), deviceScaleFactor: 1, mobile: false
       }, sessionId);
       await sleep(500);
+    };
+
+    // An override outlives the client that set it, and a later session cannot
+    // clear one it does not own — the window is then stuck rendering at a test
+    // width inside its real frame, which looks like a layout bug and is not.
+    // Only the session that set it can release it, so release it here.
+    clearMetrics = async () => {
+      try { await cdp.send('Emulation.clearDeviceMetricsOverride', {}, sessionId); } catch { /* window already gone */ }
     };
 
     await evaluate('window.__d3dNav && window.__d3dNav("dashboard")');
@@ -222,6 +231,7 @@ async function main() {
         ? `${swallowed.join(', ')} — needs -webkit-app-region: no-drag`
         : 'checked at both widths');
   } finally {
+    if (clearMetrics) await clearMetrics();
     if (cdp) cdp.close();
     if (!opts.keep) {
       child.kill();

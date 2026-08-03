@@ -1352,3 +1352,26 @@ app's process group remains.
 
 The confusing part is that the two windows are indistinguishable on screen. Worth considering
 later: show the profile path or port somewhere in the window when it is not the default.
+
+## 2026-08-03 — A window stuck at a test width
+
+> "the desktop window is see now is still half shrinked where the outline is big but the content
+> is squeezed."
+
+Same cause as the stray window, different mechanism. Reproducing the narrow-window menu bug meant
+attaching to the *running* desktop app over its debug port and calling
+`Emulation.setDeviceMetricsOverride` to force a 420px viewport. That was never released.
+
+**The override outlives the client that set it, and only that session can clear it.** Measured on
+the live window: viewport `420x760` inside a real frame of `1180x780` — the frame is genuine, the
+page inside it is pinned. Connecting fresh and calling `clearDeviceMetricsOverride` does nothing,
+because the new session never owned an override. What works is re-asserting one in the new session
+at the window's real size and then clearing it, which is what was done: back to `1180x780`, rail
+`static`, toggle hidden. No restart, so the live connection was never dropped.
+
+`tools/desktopcheck.js` now clears its own override in the `finally` block rather than relying on
+disconnection to do it.
+
+**Worth remembering when debugging the running app**: a viewport override, a CPU or network
+throttle, and a forced colour scheme all survive the debugging session that set them. Anything set
+on the app the user is actually using has to be unset explicitly.
