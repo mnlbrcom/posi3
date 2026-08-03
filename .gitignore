@@ -5,8 +5,8 @@ input/**/jre-*.exe
 
 node_modules/
 release/
-build/icon.icns
-build/icon.png
-build/icon.iconset/
+# build/ holds the generated app icons. They ARE committed: the previous build
+# referenced generated images that were never tracked, so a clean checkout
+# could not package. Regenerate with `npm run icon`.
 *.log
 .DS_Store

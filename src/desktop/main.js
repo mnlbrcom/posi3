@@ -107,11 +107,36 @@ function readSetting(key, fallback) {
   }
 }
 
+/**
+ * Launch at login, and say so when it does not take.
+ *
+ * macOS refuses this for an app that is unsigned or running from outside
+ * /Applications — a development build always fails with "Operation not
+ * permitted". Swallowing that meant the checkbox appeared to work and quietly
+ * did nothing, which on a show server is the difference between coming back
+ * after a reboot and not. Read it back and report the discrepancy.
+ */
 function applyLoginItem(enabled) {
   if (process.platform === 'linux') return; // no supported mechanism
+  const want = !!enabled;
   try {
-    app.setLoginItemSettings({ openAtLogin: !!enabled });
-  } catch { /* not fatal; the checkbox simply will not stick */ }
+    app.setLoginItemSettings({ openAtLogin: want });
+    const got = app.getLoginItemSettings().openAtLogin;
+    if (got !== want && svc) {
+      svc.logger.push({
+        level: 'warn', dir: 'rx', ts: Date.now(),
+        text: `Could not ${want ? 'enable' : 'disable'} launch at login. ` +
+          'macOS refuses this for unsigned builds and apps outside /Applications.'
+      });
+    }
+  } catch (err) {
+    if (svc) {
+      svc.logger.push({
+        level: 'warn', dir: 'rx', ts: Date.now(),
+        text: `Launch at login could not be changed: ${err.message}`
+      });
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

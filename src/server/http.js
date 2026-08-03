@@ -57,6 +57,23 @@ function readBody(req) {
 }
 
 /**
+ * The address to actually tell someone to open.
+ *
+ * Binding 0.0.0.0 means "every interface", which is not an address anyone can
+ * type. Reporting 127.0.0.1 for it was worse than useless: the whole reason to
+ * bind wide is to reach the UI from another machine.
+ */
+function reachableHost(bindHost) {
+  if (bindHost !== '0.0.0.0' && bindHost !== '::') return bindHost;
+  for (const addrs of Object.values(require('node:os').networkInterfaces())) {
+    for (const a of addrs || []) {
+      if (a.family === 'IPv4' && !a.internal) return a.address;
+    }
+  }
+  return '127.0.0.1'; // nothing routable; loopback is all there is
+}
+
+/**
  * POST /api/<name> for every operation on the api object.
  *
  * One verb for everything is unusual for a REST API, and intentional: these are
@@ -185,7 +202,7 @@ function createServer(opts) {
       hub.close();
       server.close(() => resolve());
     }),
-    url: () => `http://${bindHost === '0.0.0.0' ? '127.0.0.1' : bindHost}:${port}`
+    url: () => `http://${reachableHost(bindHost)}:${port}`
   };
 }
 

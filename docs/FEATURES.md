@@ -78,14 +78,22 @@ still reached through the Electron IPC bridge until the desktop window switches 
 | `latency-bench.js` | Single-process end-to-end latency measurement. |
 | `link-harness.js` | Drives the bridge headless, no Electron. |
 | `uicheck.js` | Headless layout audit. Drives Chrome over the DevTools protocol at a range of viewport widths, reports anything overflowing its container and any console error, optionally writes screenshots. Zero dependencies — Node's built-in WebSocket speaks CDP. `npm run uicheck`. |
-| `make-assets.js`, `make-icon.js` | Brand asset and app icon generation. |
+| `make-app-icon.js` | Generates `build/icon.png` and, on macOS, `build/icon.icns` via Apple's `iconutil` — each size rendered at its true size, the two smallest without the needle. |
+| `make-tray-icon.js` | Generates the tray icon into `src/desktop/tray-icon.js` as base64. |
 
-### Installers
+### Installers — `electron-builder.yml`
 
-macOS dmg (arm64, x64) and Windows portable exe + NSIS installer. Both platforms build from an
-Apple Silicon Mac; the Windows target does **not** require wine. Not yet re-established after
-the rename — `electron-builder.yml`, the icon and the brand assets are still to be carried
-across, and the generated assets were never committed, so a clean checkout cannot package yet.
+macOS dmg + zip (arm64 and x64) and Windows portable exe + NSIS installer, all built from macOS;
+the Windows target does **not** require wine. **Verified: all four artifacts build from a clean
+tree, and the packaged macOS app runs.** ~114 MB dmg, ~85 MB Windows exe. The icons are
+committed, so a clean checkout can package without running a generator first.
+
+### CI — `.github/workflows/`
+
+`ci.yml`: tests on Linux, macOS and Windows; the end-to-end latency bench (non-zero exit on a
+single lost or malformed packet); and a headless layout audit that renders every screen at six
+widths and uploads screenshots. `release.yml`: builds and attaches all four artifacts plus
+`SHA256SUMS.txt` on a `v*` tag.
 
 ---
 
@@ -576,3 +584,81 @@ single-codebase guarantee is gone and the comparison has to come back with it.
 **The Electron app itself has not been run.** npm is configured to block postinstall scripts, so
 Electron's binary was never downloaded. Everything the window depends on — the service, the API,
 the web UI — is verified; the window, tray and close-to-tray behaviour are not.
+
+## 2026-08-03 — Packaging, CI, and the tests the big files never had
+
+Worked through unattended, at the user's direction, with Electron's install script approved.
+
+### The desktop app, actually run
+
+Electron's binary had never been downloaded (npm blocks postinstall scripts here), so the window
+had only ever been reasoned about. With it approved: **the app runs**, the window opens titled
+`posi3` at 1180×780 loaded from `http://127.0.0.1:8710/`, all six nav items render, no error
+banner. Verified by attaching to Electron over its own DevTools protocol, since AppleScript has
+no accessibility permission on this machine.
+
+One real finding: **launch at login silently failed.** macOS refuses it for an unsigned build
+running outside `/Applications`, and the `catch` swallowed it — so the checkbox appeared to work
+and did nothing, which on a show server is the difference between coming back after a reboot and
+not. It now reads the setting back and reports the discrepancy in the log.
+
+### Security, exercised rather than asserted
+
+The token path had never been used. Bound to `0.0.0.0`, all eight checks behave: no token, wrong
+token, correct token by header, correct token by query, the static page, the SSE stream, the
+downloads, and loopback (which is *also* gated once a token exists). Fixed alongside: bound wide,
+the server reported `127.0.0.1` as its address — useless, since the whole point of binding wide
+is to reach it from another machine. It now reports a routable address.
+
+### Tests for the three biggest untested files
+
+`config-store.js` (10 tests) — defaults, round-trip, **schema-1 upgrade from disk**, corrupt-file
+quarantine, **recovery from the rotated backup**, read-only for a newer schema, device-id
+allocation across all destinations, clone hygiene, no stray temp file.
+
+`encoder-link.js` (8 tests) — the largest file in the project, previously covered only at the
+wire-format level. Now driven against the **real simulator over a real socket**, spawned as its
+own process so the tests exercise the same program `npm run mock` runs: streaming, coalesced and
+split records with `rx === tx`, reconnect after a drop, **a socket that goes quiet without
+closing** (the nastiest venue failure — the session looks healthy while disguise sees a frozen
+position), retry-with-reason on a refused connection, field layout read rather than inferred,
+velocity passthrough, and clean teardown.
+
+**100 tests pass** on the full suite.
+
+### Packaging and CI
+
+`electron-builder.yml` carried across and updated: neutral icon, `portable` added to the Windows
+targets (its options were configured but it was never listed, so it silently never built), macOS
+`NSLocalNetworkUsageDescription`, and a whitelist that keeps `tools/` and `test/` out of the
+bundle — verified, zero dev files in the asar.
+
+`tools/make-app-icon.js` generates the icon with no dependencies and assembles the `.icns` with
+Apple's `iconutil`, each size rendered at its true size rather than downsampled, and the 16/32 px
+entries drawn without the needle. This is the same defect the previous build hit: given only a
+PNG, electron-builder generates an `.icns` whose 16 and 32 px entries come out corrupt — exactly
+the sizes Finder, Spotlight and the Dock show.
+
+The Pixway branding tools (`make-assets.js`, `make-icon.js`) are deleted; the branding they
+served is gone and `make-assets.js` read from a path outside the repository.
+
+A README exists for the first time.
+
+### Corrections to the record
+
+- **This Mac is Intel x64, not Apple Silicon.** The inherited README claimed builds came from an
+  Apple Silicon Mac; that was written elsewhere. The arm64 dmg builds here but cannot be run
+  here — only the x64 one was launched and verified.
+- **`FileDescription` is not being stamped** into the Windows exe. Neither `package.json`
+  `description` nor `extraMetadata` took, so Windows falls back to the product name in Task
+  Manager. Cosmetic, unresolved, noted in `electron-builder.yml`.
+
+### Still open
+
+- **No hardware.** Everything is verified against the simulator. The A/B byte-diff against the
+  real `d3driver.exe`, the 8192-counts-per-revolution check, and the line terminator the manuals
+  never document all still need an encoder on a bench.
+- The tray icon and close-to-tray were not visually confirmed — screenshotting the macOS menu bar
+  needs a screen-recording permission this session does not have. Tray *construction* is proven,
+  since a failure would have hit the fatal-error path and exited.
+- The Windows artifacts have not been run; they were built on macOS.
