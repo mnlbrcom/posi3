@@ -842,6 +842,11 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* One series, so no legend — the card's own name identifies it. */
 .spark-line { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 
+/* What the encoder will actually accept, under the box that takes it. The
+   number input's own min/max only nudges the spinner — it does not say what
+   the limits are, and a rejected write costs a round trip to the device. */
+.field-range { font-size: var(--fs-label); color: var(--text-faint); margin-top: 3px; }
+
 /* Encoder config cards: one per encoder, its groups retractable. */
 .cfg-card { padding: 12px 14px 6px; }
 .cfg-card .card-head .pill-holder { margin-left: 0; }

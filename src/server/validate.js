@@ -75,6 +75,72 @@ function checkValue(value) {
   return s;
 }
 
+/** Case- and separator-insensitive, because the device answers `CYCLIC`. */
+function foldKey(v) {
+  return String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
+}
+
+/**
+ * A value checked against the variable it is being written to.
+ *
+ * `checkValue` alone only stops a line break turning into a second command,
+ * which is the dangerous case but not the only one: without this, `set
+ * CycleTime=abc`, a negative resolution or a malformed address all travelled to
+ * the encoder to be rejected there — a round trip, an ERROR line in front of
+ * the operator, and for the ranged variables a value the firmware may accept
+ * and then behave oddly on. Everything the table knows about a variable is
+ * enforced here, on the server, where a hand-made HTTP request meets it too.
+ *
+ * @returns {{variable: string, value: string}} canonical spellings for both
+ */
+function checkVarWrite(name, value) {
+  const variable = checkVariable(name);
+  const raw = checkValue(value).trim();
+  const spec = ENCODER_VAR_BY_NAME.get(variable.toLowerCase());
+
+  if (spec.type === 'int') {
+    if (!/^-?\d+$/.test(raw)) fail('EINVAL', `${variable} takes a whole number, not "${raw}"`);
+    const n = Number(raw);
+    const min = spec.min === undefined ? -Infinity : spec.min;
+    const max = spec.max === undefined ? Infinity : spec.max;
+    if (n < min || n > max) {
+      fail('EINVAL', `${variable} must be between ${min} and ${max}${spec.unit ? ` ${spec.unit}` : ''}`);
+    }
+    return { variable, value: String(n) };
+  }
+
+  if (spec.type === 'enum') {
+    const key = foldKey(raw);
+    const match = spec.values.find((v) => foldKey(v) === key) ||
+      (spec.aliases && spec.aliases[key]);
+    if (!match) fail('EINVAL', `${variable} must be one of: ${spec.values.join(', ')}`);
+    return { variable, value: match };
+  }
+
+  if (spec.type === 'flags') {
+    // A concatenation of the declared tokens, e.g. Position_Velocity_. Empty is
+    // legitimate: it is how you tell the encoder to send nothing.
+    let rest = raw;
+    const picked = [];
+    while (rest.length) {
+      const flag = spec.flags.find((f) => foldKey(rest).startsWith(foldKey(f)));
+      if (!flag) fail('EINVAL', `${variable} must be made of: ${spec.flags.join(', ')}`);
+      picked.push(flag);
+      rest = rest.slice(flag.length);
+    }
+    return { variable, value: picked.join('') };
+  }
+
+  if (spec.type === 'ip') {
+    const parts = raw.split('.');
+    const ok = parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255);
+    if (!ok) fail('EINVAL', `${variable} must be an address a.b.c.d with each part 0 to 255`);
+    return { variable, value: parts.map((p) => String(Number(p))).join('.') };
+  }
+
+  return { variable, value: raw };
+}
+
 /** Normalise an incoming connection object down to fields we recognise. */
 function sanitiseConnection(raw) {
   if (!raw || typeof raw !== 'object') fail('EINVAL', 'Expected a connection object');
@@ -188,6 +254,6 @@ function listInterfaces() {
 }
 
 module.exports = {
-  fail, checkHost, checkPort, checkDevid, checkId, checkVariable, checkValue,
+  fail, checkHost, checkPort, checkDevid, checkId, checkVariable, checkValue, checkVarWrite,
   sanitiseConnection, listInterfaces
 };

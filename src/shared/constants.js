@@ -140,13 +140,16 @@ const ENCODER_VARS = [
     name: 'OutputType', group: 'output', type: 'enum',
     values: ['ASCII', 'ASCII_SHORT', 'BINARY'],
     label: 'Output type',
-    help: 'ASCII_SHORT sends bare space-separated numbers and is what this app expects. BINARY is not supported for streaming.'
+    help: 'ASCII_SHORT sends "<position> <velocity> <time>" separated by spaces. ' +
+      'ASCII sends "POSITION=… VELOCITY=… TIMESTAMP=…". BINARY sends 32-bit values with no ' +
+      'separator, and this app streams ASCII only.'
   },
   {
     name: 'OutputMode', group: 'output', type: 'flags',
     flags: ['Position_', 'Velocity_', 'Timestamp_'],
     label: 'Output fields',
-    help: 'Which values the encoder sends, concatenated, e.g. Position_Velocity_Timestamp_.'
+    help: 'Position sends a scaled position value. Velocity sends steps/s. Timestamp sends ' +
+      'microseconds since the encoder started, wrapping after about 1.2 hours.'
   },
   {
     name: 'TimeMode', group: 'output', type: 'enum',
@@ -157,32 +160,35 @@ const ENCODER_VARS = [
     // literally — otherwise it shows the operator the wrong current mode.
     aliases: { cos: 'Change of state', changeofstate: 'Change of state' },
     label: 'Time mode',
-    help: 'Cyclic is required for a continuous stream. Polled only answers Run!. Change of state checks every 5 ms.'
+    help: 'Polled sends only when asked with Run!. Cyclic sends every CycleTime. Change of state ' +
+      'sends only when the position or velocity changed, checked every 5 ms.'
   },
   {
     name: 'CycleTime', group: 'output', type: 'int', min: 1, max: 999999, unit: 'ms',
     label: 'Cycle time',
-    help: 'Interval in Cyclic mode, 1 to 999,999 ms. This dominates end-to-end latency — ' +
-      'everything else in the chain is measured in microseconds. POSITAL\'s own manual shows ' +
-      'CycleTime=1 in use (§4.2 screenshot), and §1.2 advertises cycle times under 2 ms; ' +
-      'FAQ 4 gives ~2 ms for the internal sensor update, so below that values may repeat.'
+    range: '1 – 999,999 ms',
+    help: 'Time in ms for the cyclic time mode. The internal sensor update takes about 2 ms, so ' +
+      'shorter intervals may repeat a value.'
   },
 
   // -- scaling --------------------------------------------------------------
   {
     name: 'UsedScopeOfPhysRes', group: 'scaling', type: 'int', min: 1, max: MAX_RESOLUTION,
     label: 'Used scope of physical resolution', default: TOTAL_COUNTS,
-    help: 'Portion of the physical resolution used, in physical steps. Must divide the total resolution evenly or the count jumps at the physical zero point.'
+    range: '1 – 1,073,741,824 steps',
+    help: 'The part of the physical resolution used, in physical steps. If it does not divide the ' +
+      'total physical resolution evenly, the value jumps to zero at the physical zero point.'
   },
   {
     name: 'TotalScaledRes', group: 'scaling', type: 'int', min: 1, max: MAX_RESOLUTION,
     label: 'Total scaled resolution', default: TOTAL_COUNTS,
-    help: 'Scaled steps counted across the span defined by UsedScopeOfPhysRes.'
+    range: '1 – 1,073,741,824 steps',
+    help: 'The scaled resolution counted across the physical steps defined by UsedScopeOfPhysRes.'
   },
   {
     name: 'CountingDir', group: 'scaling', type: 'enum', values: ['CW', 'CCW'],
     label: 'Counting direction',
-    help: 'Which rotation direction increases the position value.'
+    help: 'CW means clockwise turning increases the position value; CCW means counterclockwise does.'
   },
   {
     name: 'Preset', group: 'scaling', type: 'int', min: 0, max: MAX_RESOLUTION - 1,
@@ -192,35 +198,42 @@ const ENCODER_VARS = [
     // Offset instead, which is readable. Reading it anyway would put a spurious
     // error in front of the operator on every "Read all".
     writeOnly: true,
-    help: 'Sets the position value the encoder should read at its current physical position. ' +
-      'Writes to flash. Cannot be read back — the resulting Offset can.'
+    range: '0 – 1,073,741,823',
+    help: 'The position value the encoder will show at the point where the preset is set. An ' +
+      'internal offset is calculated and added to all later positions. Cannot be read back — ' +
+      'the resulting Offset can.'
   },
   {
     name: 'Offset', group: 'scaling', type: 'int', min: 0, max: MAX_RESOLUTION - 1,
     label: 'Offset',
-    help: 'Directly edits the internal offset that Preset calculates.'
+    range: '0 – 1,073,741,823',
+    help: 'Directly changes the offset that the preset function calculated and set.'
   },
 
   // -- network --------------------------------------------------------------
   {
     name: 'IP', group: 'network', type: 'ip', danger: true, label: 'IP address',
-    help: 'Only takes effect after a power cycle. If hardware switch 2 is ON the encoder stays at 10.10.10.10 whatever this says.'
+    range: 'a.b.c.d, each part 0 – 255',
+    help: 'Only activated after a power cycle. If hardware switch 2 is ON the encoder stays at ' +
+      '10.10.10.10 whatever this says.'
   },
   { name: 'NetMask', group: 'network', type: 'ip', danger: true, label: 'Net mask',
-    help: 'Encoder and server must share a subnet, or a working gateway must be set.' },
+    range: 'a.b.c.d, each part 0 – 255',
+    help: 'Encoder and PC must be in the same subnet, or a working gateway must be set.' },
   { name: 'Gateway', group: 'network', type: 'ip', danger: true, label: 'Gateway',
-    help: 'Used when the encoder and the destination are not in the same subnet.' },
+    range: 'a.b.c.d, each part 0 – 255',
+    help: 'Used when the encoder\'s own address and the destination are not in the same subnet.' },
   {
     name: 'AutoArpCacheUpdate', group: 'network', type: 'enum', values: ['0', '1'],
     label: 'Auto ARP cache update', default: '0',
-    help: 'Enable for hot-plug-swap applications. Default off.'
+    help: 'For hot-plug-swap applications. 1 = on, 0 = off (default). Increases the response time.'
   },
 
   // -- diagnostics ----------------------------------------------------------
   {
     name: 'Verbose', group: 'diagnostics', type: 'enum', values: ['0', '1', '2'],
     label: 'Verbosity',
-    help: '0 = errors only, 1 = errors and warnings, 2 = errors, warnings and clues.'
+    help: 'Tracer output level. 0 = errors only, 1 = errors and warnings, 2 = errors, warnings and clues.'
   }
 ];
 
