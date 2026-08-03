@@ -183,7 +183,7 @@ test('a failed connection retries and reports why', async (t) => {
 test('the field layout is read from the encoder, not guessed', async (t) => {
   // A two-number ASCII_SHORT line is genuinely ambiguous between "pos vel" and
   // "pos timestamp". Guessing wrong feeds a timestamp to disguise as velocity.
-  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant', outputmode: 'Position_Timestamp_' });
+  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant', outputMode: 'Position_Timestamp_' });
   const out = await sink(t);
   const l = link(t, mock.port, out.port);
   const layouts = [];

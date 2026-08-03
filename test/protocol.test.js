@@ -30,13 +30,23 @@ test('ASCII_SHORT: three fields', () => {
   assert.equal(r.ts, 998877);
 });
 
-test('ASCII_SHORT: two fields infer position + velocity', () => {
+test('ASCII_SHORT: two fields claim only the position', () => {
+  // This test used to assert the opposite — that the second number was a
+  // velocity. That is a guess, and on a `Position_Timestamp_` encoder it is
+  // wrong: measured on the simulator, it put three packets carrying ~800,000
+  // steps/s into disguise on every connect, until the OutputMode read came
+  // back and corrected the layout. Two numbers are genuinely ambiguous, so
+  // nothing is claimed for the second until the device says what it is.
   const p = new Parser();
   const r = p.classify('500 12');
   assert.equal(r.kind, KIND.SAMPLE);
   assert.equal(r.pos, 500);
-  assert.equal(r.vel, 12);
+  assert.equal(r.vel, null, 'the second number is unclaimed until the layout is known');
   assert.equal(r.ts, null);
+
+  // Once told, the same line reads as a velocity.
+  p.setFieldMap([FIELD.POSITION, FIELD.VELOCITY]);
+  assert.equal(p.classify('500 12').vel, 12);
 });
 
 test('ASCII_SHORT: one field is position only', () => {

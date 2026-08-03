@@ -184,8 +184,7 @@ const ENCODER_VARS = [
     name: 'CycleTime', group: 'output', type: 'int', min: 1, max: 999999, unit: 'ms',
     label: 'Cycle time',
     range: '1 – 999,999 ms',
-    help: 'Time in ms for the cyclic time mode. The internal sensor update takes about 2 ms, so ' +
-      'shorter intervals may repeat a value.'
+    help: 'States the time in ms for the cyclic time mode.'
   },
 
   // -- scaling --------------------------------------------------------------

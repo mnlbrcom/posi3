@@ -64,7 +64,15 @@ const opts = parseArgs(process.argv, {
   garbage: false,
   latencyJitter: 0,
   crlf: true,
-  wrapSoon: false
+  wrapSoon: false,
+  /**
+   * Which fields the simulated encoder emits, e.g. `Position_Timestamp_`.
+   *
+   * There was no way to set this, and a test that tried to — the one covering
+   * the two-number ambiguity between "pos vel" and "pos timestamp" — was
+   * silently ignored and passed against the default three-field mode instead.
+   */
+  outputMode: 'Position_Velocity_Timestamp_'
 });
 
 const random = makeRandom(opts.seed);
@@ -82,7 +90,7 @@ const vars = {
   Preset: '0',
   Offset: '0',
   TimeMode: 'Cyclic',
-  OutputMode: 'Position_Velocity_Timestamp_',
+  OutputMode: opts.outputMode,
   OutputType: 'ASCII_SHORT',
   CycleTime: String(opts.cycle),
   IP: '10.10.10.10',

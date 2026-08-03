@@ -38,10 +38,26 @@ const FIELD_BY_TOKEN = {
 };
 
 /** Default when OutputMode could not be read: infer from how many fields arrive. */
+/**
+ * Layouts to assume when the encoder has not yet said which it is using.
+ *
+ * Three numbers can only be position, velocity, timestamp. **Two cannot be
+ * resolved**: `Position_Velocity_` and `Position_Timestamp_` look identical on
+ * the wire, and guessing velocity turns a microsecond counter into a shaft
+ * speed. Measured on the simulator, that guess put three packets carrying
+ * ~800,000 steps/s into disguise on every connect before the OutputMode read
+ * came back.
+ *
+ * So the second number is left unclaimed until the device is asked. Position
+ * still flows immediately; velocity arrives a few milliseconds later, which
+ * for a `Position_Velocity_` encoder means the first packets carry 0 — the
+ * value the original driver sent for every packet, and the one that cannot be
+ * wrong.
+ */
 const INFERRED_MAPS = [
   [],
   [FIELD.POSITION],
-  [FIELD.POSITION, FIELD.VELOCITY],
+  [FIELD.POSITION],
   [FIELD.POSITION, FIELD.VELOCITY, FIELD.TIMESTAMP]
 ];
 
