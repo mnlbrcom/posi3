@@ -2240,3 +2240,48 @@ all. The encoder was verified unchanged afterwards: `OutputMode=POSITION_VELOCIT
 a flash cycle to test.
 
 **171 tests pass.**
+
+## 2026-08-04 — Faults that were not faults, and a caption that did not scale
+
+> "dashboard says Faults 5 errors from Revolve, how is it seperating the errors from the encoders
+> here if we have 10 encoders?" / "yes want both"
+
+### A refused command is not a fault in the stream
+
+The encoder answers `ERROR:` for both a refused `set` and a genuine device complaint, and the link
+counted them in one place. So a rejected configuration write sat on the show dashboard as a
+permanent fault, beside figures that mean the position feed is in trouble — which is how five
+errors from probing appeared as a Revolve fault while its data path was clean.
+
+The discriminator was already there: the command queue reports whether it **consumed** a line, so
+an error matching an in-flight request is an answer, not a fault. Those now increment
+`commandErrors`; an error nobody asked for still increments `errors`.
+
+`commandErrors` is excluded from every Faults figure but listed on the card's own fault row as
+`1 rejected command`, so it is visible without being alarming.
+
+One honest limit, and it is inherent: the encoder broadcasts errors to *every* client, so an
+unrelated error arriving while a command is outstanding is attributed to that command. That is the
+same assumption the queue already makes to resolve replies. Two of the new tests failed at first
+for exactly this reason — they left the link's own connect-time reads unanswered and were measuring
+the assumption rather than the counters.
+
+### The caption
+
+`errors from ${[...faulted].join(', ')}` reads fine with two encoders and becomes
+`errors from A, B, C…` with ten — in a single ellipsised line, long enough to be useless and short
+enough to look complete. It names up to two, then counts: **`cannot reach 4 destinations`**. The
+per-connection breakdown moved to the tile's hover, where there is room:
+
+    Enc 1: 567 send failures
+    Enc 2: 567 send failures
+    Enc 3: 566 send failures
+    Enc 4: 568 send failures
+
+    2268 send failures · 0 encoder errors · 0 unparsed lines
+
+**Verified on the rig:** `read Preset` — write-only on this firmware, so a guaranteed rejection —
+gives `errors 0, commandErrors 1`, a Faults tile reading **0**, and `1 rejected command` on the
+card. Four faulting connections on a simulated rig produce the counted caption above.
+
+**174 tests pass.**

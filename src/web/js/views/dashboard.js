@@ -118,6 +118,7 @@ export function renderDashboard(root) {
       let unparsed = 0;
       const unreachable = [];
       const faulted = new Set();
+      const perConnection = [];
 
       for (const card of cards) {
         const t = card.refresh();
@@ -134,6 +135,12 @@ export function renderDashboard(root) {
           if (d.txErrors) unreachable.push(`${card.name} → ${d.name || `${d.host}:${d.port}`}`);
         }
         if ((t.errors || 0) + (t.unknownLines || 0) > 0) faulted.add(card.name);
+
+        const parts = [];
+        if (t.errors) parts.push(`${t.errors} error${t.errors > 1 ? 's' : ''}`);
+        if (t.txErrors) parts.push(`${t.txErrors} send failure${t.txErrors > 1 ? 's' : ''}`);
+        if (t.unknownLines) parts.push(`${t.unknownLines} unparsed`);
+        if (parts.length) perConnection.push({ name: card.name, parts });
       }
       const faults = sendFails + encoderErrors + unparsed;
 
@@ -147,14 +154,31 @@ export function renderDashboard(root) {
       // unreachable destination is the one an operator can usually fix.
       setText(summaryStats.faults.caption,
         !faults ? 'none'
-          : sendFails ? `cannot reach ${[...new Set(unreachable)].join(', ') || 'a destination'}`
-            : encoderErrors ? `errors from ${[...faulted].join(', ') || 'the encoder'}`
-              : `unparsed lines from ${[...faulted].join(', ') || 'the encoder'}`);
+          : sendFails ? `cannot reach ${nameList([...new Set(unreachable)], 'destination')}`
+            : encoderErrors ? `errors from ${nameList([...faulted], 'connection')}`
+              : `unparsed lines from ${nameList([...faulted], 'connection')}`);
+      // The caption has one line and cannot hold ten names, so the breakdown
+      // lives here: per connection, then the totals by kind.
       summaryStats.faults.node.title = faults
-        ? `${sendFails} send failures · ${encoderErrors} encoder errors · ${unparsed} unparsed lines`
+        ? perConnection.map((f) => `${f.name}: ${f.parts.join(', ')}`).join('\n') +
+          `\n\n${sendFails} send failures · ${encoderErrors} encoder errors · ${unparsed} unparsed lines`
         : '';
     }
   };
+}
+
+/**
+ * Name a couple, then count the rest.
+ *
+ * The caption is a single ellipsised line. Joining every name read fine with
+ * two encoders and became "errors from A, B, C…" with ten — a list long enough
+ * to be useless and short enough to look complete. Two names and a count says
+ * more in less room, and the full breakdown is on the tile's hover.
+ */
+function nameList(names, noun) {
+  if (!names.length) return `a ${noun}`;
+  if (names.length <= 2) return names.join(' and ');
+  return `${names.length} ${noun}s`;
 }
 
 /** Label + big value + caption. Some captions carry the explanation. */
@@ -318,6 +342,11 @@ function buildCard(conn) {
       if (t.unknownLines) faults.push(`${t.unknownLines} unparsed`);
       if (t.reconnects) faults.push(`${t.reconnects} reconnect${t.reconnects > 1 ? 's' : ''}`);
       if (t.wraps) faults.push(`${t.wraps} wrap${t.wraps > 1 ? 's' : ''}`);
+      // Listed, but never counted in Faults: a refused `set` says something
+      // about a command, not about the data reaching disguise.
+      if (t.commandErrors) {
+        faults.push(`${t.commandErrors} rejected command${t.commandErrors > 1 ? 's' : ''}`);
+      }
       setText(faultRow, faults.join(' · '));
       faultRow.classList.toggle('has-faults', faults.length > 0);
 

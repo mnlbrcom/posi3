@@ -82,7 +82,7 @@ class EncoderLink extends EventEmitter {
     };
     this.counters = {
       rx: 0, tx: 0, errors: 0, unknownLines: 0, wraps: 0,
-      reconnects: 0, txErrors: 0, startedAtMs: 0
+      reconnects: 0, txErrors: 0, commandErrors: 0, startedAtMs: 0
     };
 
     this._prevPos = null;
@@ -147,7 +147,7 @@ class EncoderLink extends EventEmitter {
     // thing that gets chased at a venue instead of the real fault.
     Object.assign(this.counters, {
       rx: 0, tx: 0, errors: 0, unknownLines: 0, wraps: 0,
-      reconnects: 0, txErrors: 0, startedAtMs: Date.now()
+      reconnects: 0, txErrors: 0, commandErrors: 0, startedAtMs: Date.now()
     });
     this._latencyCount = 0; this._latencyIdx = 0;
     this._gapCount = 0; this._gapIdx = 0;
@@ -418,7 +418,16 @@ class EncoderLink extends EventEmitter {
         this._log('info', 'rx', 'Parameters successfully written!');
         break;
       case KIND.STATUS:
-        this.counters.errors += r.severity === 'error' ? 1 : 0;
+        // A rejection of something we asked for is not a fault in the stream.
+        // `consumed` means the command queue matched this to an in-flight
+        // request — a refused `set`, a read of a write-only variable. Counting
+        // those as stream errors left a bad config write sitting on the show
+        // dashboard as a permanent fault, next to figures that mean the data
+        // path is in trouble. An error nobody asked for still counts.
+        if (r.severity === 'error') {
+          if (consumed) this.counters.commandErrors++;
+          else this.counters.errors++;
+        }
         if (!consumed) {
           this.emit('encoderEvent', { id: this.id, kind: r.severity, text: r.text });
           this._log(r.severity === 'error' ? 'error' : 'warn', 'rx', `${r.severity.toUpperCase()}: ${r.text}`);
@@ -1057,6 +1066,7 @@ class EncoderLink extends EventEmitter {
       rxTotal: this.counters.rx,
       txTotal: this.counters.tx,
       errors: this.counters.errors,
+      commandErrors: this.counters.commandErrors,
       txErrors: this.counters.txErrors,
       wraps: this.counters.wraps,
       reconnects: this.counters.reconnects,
