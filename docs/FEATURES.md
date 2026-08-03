@@ -932,3 +932,63 @@ an "≈ 56 Hz" hint, scaling 300000/300000, CountingDir CW, Preset blank and ski
 ("read 13 of 14 variables"), Offset 43156.
 
 Eight new tests pin the table to the exact strings the device returned.
+
+## 2026-08-03 — Following the encoder when somebody else changes it
+
+While checking whether velocity was still hardcoded, the reference encoder began reporting
+`rawVel: null` where it had reported `0`. The user had changed `OutputMode` from
+`POSITION_VELOCITY` to `POSITION` and `CycleTime` from 18 to 8 **mid-session, from the applet** —
+an unplanned test worth more than a designed one.
+
+### What we got right, and what we did not
+
+The encoder broadcasts to *every* connected TCP client, and not merely the reply: our log
+contained the literal `set OutputMode=Position_` and `set CycleTime=8` the applet sent, and the
+variable cache updated correctly. **And then nothing happened.** The parser kept the field map it
+had read at connect time.
+
+That time it was benign — the field that vanished was the last one, so position stayed in slot 0
+and velocity became honestly "not sent". The general case is not. Lose `Position` from the front
+of `OutputMode` and the next field is promoted into its place, so disguise is driven by a
+timestamp while every screen still reads plausibly.
+
+### Acted on now
+
+| Variable | Effect when it changes |
+|---|---|
+| `OutputMode` | re-derives the parser's field map and announces it |
+| `OutputType` | raises the BINARY warning if switched |
+| `CycleTime` | moves the stall watchdog with it — at 8 ms a gap unremarkable at 18 looks like a stall, and at 18 a real stall goes unnoticed too long |
+| `TotalScaledRes` / `UsedScopeOfPhysRes` | re-derives counts per revolution and the travel range |
+
+Unchanged values are not announced; unparseable ones are ignored rather than applied. Seven tests
+cover it, including the dangerous direction (`POSITION_VELOCITY` → `VELOCITY_TIMESTAMP`) where a
+stale map silently reinterprets which number is the position.
+
+**Verified on the encoder:** field map `[0]` against `OutputMode=POSITION`, arrival gap 8.12 ms
+against `CycleTime=8`, `rawVel` reported as *not sent* rather than as a number, zero unparsed.
+
+### Two faults in the test suite, found by the same change
+
+The full suite hung. Both faults were mine, not the app's:
+
+1. **Cleanup only ran on the happy path.** `encoder-link.test.js` tore down its spawned simulator
+   at the end of each test, so a failing assertion orphaned the child process and the runner
+   waited on it forever. Cleanup is now registered with `t.after()` the moment a resource exists.
+2. **A race in the "nothing is sent after stop" assertion.** It sampled immediately after
+   `stop()`, so a datagram already in flight counted as a leak. It now lets the queue drain first.
+
+Node runs test files in parallel by default. These bind real sockets and spawn processes, so the
+suite now runs with `--test-concurrency=1` — contention between files was what turned a latent
+race into a failure.
+
+### The answer to the question that started this
+
+**Velocity is not hardcoded.** It is a per-connection policy: `zero` (the default, byte-identical
+to `d3driver.c`), `passthrough` (the encoder's own signed steps/s), or `derived` (computed here
+from position deltas, wrap-aware, smoothed over ~200 ms). The raw value is parsed and displayed
+whatever the policy; only what is transmitted changes. The reference connection is on `zero`.
+
+`passthrough` currently has nothing to pass through: with `OutputMode=POSITION` the encoder no
+longer sends a velocity field. Comparing the encoder's own velocity against our derived one needs
+Velocity switched back on.

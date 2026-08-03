@@ -43,7 +43,7 @@ function freePort() {
  * `npm run mock`, over a real socket, rather than an in-process stub that
  * could quietly diverge from it.
  */
-async function startMockEncoder(flags = {}) {
+async function startMockEncoder(t, flags = {}) {
   const port = await freePort();
   const args = [path.join(__dirname, '..', 'tools', 'mock-encoder.js'), '--port', String(port), '--quiet'];
   for (const [k, v] of Object.entries(flags)) {
@@ -66,19 +66,23 @@ async function startMockEncoder(flags = {}) {
     await new Promise((r) => setTimeout(r, 60));
   }
 
-  return {
-    port,
-    close: () => new Promise((r) => { child.once('exit', r); child.kill('SIGKILL'); })
-  };
+  const close = () => new Promise((r) => { child.once('exit', r); child.kill('SIGKILL'); });
+  // Registered here, so a failing assertion cannot orphan the child. It did:
+  // cleanup written at the end of each test only ran when the test passed, and
+  // one leaked simulator hung the whole runner.
+  if (t) t.after(close);
+  return { port, close };
 }
 
 /** A UDP listener that records what disguise would have received. */
-async function sink() {
+async function sink(t) {
   const sock = dgram.createSocket('udp4');
   const seen = [];
   sock.on('message', (b) => seen.push(b.toString('latin1')));
   const port = await new Promise((r) => sock.bind(0, '127.0.0.1', () => r(sock.address().port)));
-  return { port, seen, close: () => sock.close() };
+  const close = () => { try { sock.close(); } catch { /* already closed */ } };
+  if (t) t.after(close);
+  return { port, seen, close };
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -94,34 +98,35 @@ async function until(fn, ms = 4000, label = 'condition') {
   throw new Error(`timed out waiting for ${label}`);
 }
 
-function link(encPort, d3Port, extra = {}) {
-  return new EncoderLink(Object.assign({
+function link(t, encPort, d3Port, extra = {}) {
+  const l = new EncoderLink(Object.assign({
     id: 't', name: 'test',
     encoder: { host: '127.0.0.1', port: encPort },
     destinations: [{ host: '127.0.0.1', port: d3Port, devid: 1 }],
     reconnect: { enabled: true, minDelayMs: 60, maxDelayMs: 200 }
   }, extra));
+  if (t) t.after(() => l.stop());
+  return l;
 }
 
-test('streams position through to disguise', async () => {
-  const mock = await startMockEncoder({ cycle: 5, motion: 'constant' });
-  const out = await sink();
-  const l = link(mock.port, out.port);
+test('streams position through to disguise', async (t) => {
+  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant' });
+  const out = await sink(t);
+  const l = link(t, mock.port, out.port);
   l.start();
 
   await until(() => l.state === STATE.STREAMING, 4000, 'streaming');
   await until(() => out.seen.length >= 10, 4000, 'datagrams');
 
   for (const d of out.seen) assert.match(d, /^1:\d+,0;\n$/);
-  l.stop(); out.close(); await mock.close();
 });
 
-test('coalesced and split records survive intact', async () => {
+test('coalesced and split records survive intact', async (t) => {
   // The 2016 driver treated one recv() as exactly one sample and lost roughly
   // three quarters of the data at a short cycle time.
-  const mock = await startMockEncoder({ cycle: 3, motion: 'constant', coalesce: 4, split: true });
-  const out = await sink();
-  const l = link(mock.port, out.port);
+  const mock = await startMockEncoder(t, { cycle: 3, motion: 'constant', coalesce: 4, split: true });
+  const out = await sink(t);
+  const l = link(t, mock.port, out.port);
   l.start();
 
   await until(() => out.seen.length >= 60, 6000, 'datagrams');
@@ -130,28 +135,26 @@ test('coalesced and split records survive intact', async () => {
   assert.equal(l.counters.unknownLines, 0, 'no line should have failed to parse');
   assert.equal(l.counters.rx, l.counters.tx, 'every sample read must be forwarded');
 
-  l.stop(); out.close(); await mock.close();
 });
 
-test('reconnects after the encoder drops the connection', async () => {
-  const mock = await startMockEncoder({ cycle: 5, motion: 'constant', dropAfter: 20 });
-  const out = await sink();
-  const l = link(mock.port, out.port);
+test('reconnects after the encoder drops the connection', async (t) => {
+  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant', dropAfter: 20 });
+  const out = await sink(t);
+  const l = link(t, mock.port, out.port);
   l.start();
 
   await until(() => l.state === STATE.STREAMING, 4000, 'first connect');
   await until(() => l.counters.reconnects >= 1, 6000, 'a reconnect');
   await until(() => l.state === STATE.STREAMING, 6000, 'recovery');
 
-  l.stop(); out.close(); await mock.close();
 });
 
-test('a socket that goes quiet without closing is detected and reconnected', async () => {
+test('a socket that goes quiet without closing is detected and reconnected', async (t) => {
   // The nastiest failure on site: the TCP session stays open, so nothing looks
   // wrong, but disguise sees a frozen position. Only a watchdog catches it.
-  const mock = await startMockEncoder({ cycle: 5, motion: 'constant', stallAfter: 15 });
-  const out = await sink();
-  const l = link(mock.port, out.port);
+  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant', stallAfter: 15 });
+  const out = await sink(t);
+  const l = link(t, mock.port, out.port);
   l.start();
 
   await until(() => l.state === STATE.STREAMING, 4000, 'streaming');
@@ -161,13 +164,12 @@ test('a socket that goes quiet without closing is detected and reconnected', asy
   );
   assert.ok(stalled);
 
-  l.stop(); out.close(); await mock.close();
 });
 
-test('a failed connection retries and reports why', async () => {
-  const out = await sink();
+test('a failed connection retries and reports why', async (t) => {
+  const out = await sink(t);
   // Port 1 is reserved and nothing will be listening on it.
-  const l = link(1, out.port);
+  const l = link(t, 1, out.port);
   const states = [];
   l.on('state', (s) => states.push(s.state));
   l.start();
@@ -176,15 +178,14 @@ test('a failed connection retries and reports why', async () => {
   assert.ok(states.includes(STATE.CONNECTING));
   assert.ok(l._lastError, 'the failure reason must be kept for the UI');
 
-  l.stop(); out.close();
 });
 
-test('the field layout is read from the encoder, not guessed', async () => {
+test('the field layout is read from the encoder, not guessed', async (t) => {
   // A two-number ASCII_SHORT line is genuinely ambiguous between "pos vel" and
   // "pos timestamp". Guessing wrong feeds a timestamp to disguise as velocity.
-  const mock = await startMockEncoder({ cycle: 5, motion: 'constant', outputmode: 'Position_Timestamp_' });
-  const out = await sink();
-  const l = link(mock.port, out.port);
+  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant', outputmode: 'Position_Timestamp_' });
+  const out = await sink(t);
+  const l = link(t, mock.port, out.port);
   const layouts = [];
   l.on('fieldLayout', (p) => layouts.push(p));
   l.start();
@@ -192,26 +193,24 @@ test('the field layout is read from the encoder, not guessed', async () => {
   await until(() => layouts.length > 0, 5000, 'a field layout');
   assert.equal(layouts[0].inferred, false, 'it must be read, not inferred');
 
-  l.stop(); out.close(); await mock.close();
 });
 
-test('velocity passthrough forwards the encoder value instead of zero', async () => {
-  const mock = await startMockEncoder({ cycle: 5, motion: 'constant', rpm: 60 });
-  const out = await sink();
-  const l = link(mock.port, out.port, { velocityPolicy: 'passthrough' });
+test('velocity passthrough forwards the encoder value instead of zero', async (t) => {
+  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant', rpm: 60 });
+  const out = await sink(t);
+  const l = link(t, mock.port, out.port, { velocityPolicy: 'passthrough' });
   l.start();
 
   await until(() => out.seen.length >= 12, 5000, 'datagrams');
   const nonZero = out.seen.filter((d) => !/,0;/.test(d));
   assert.ok(nonZero.length > 0, 'a moving shaft must report a non-zero velocity');
 
-  l.stop(); out.close(); await mock.close();
 });
 
-test('stopping leaves no socket and no timer behind', async () => {
-  const mock = await startMockEncoder({ cycle: 5, motion: 'constant' });
-  const out = await sink();
-  const l = link(mock.port, out.port);
+test('stopping leaves no socket and no timer behind', async (t) => {
+  const mock = await startMockEncoder(t, { cycle: 5, motion: 'constant' });
+  const out = await sink(t);
+  const l = link(t, mock.port, out.port);
   l.start();
   await until(() => l.state === STATE.STREAMING, 4000, 'streaming');
 
@@ -220,9 +219,10 @@ test('stopping leaves no socket and no timer behind', async () => {
   assert.equal(l._sinks.length, 0);
   assert.equal(l.state, STATE.IDLE);
 
+  // Let anything already in flight land before sampling, otherwise this races
+  // a datagram that was queued before stop() and is not a leak at all.
+  await sleep(120);
   const before = out.seen.length;
-  await sleep(150);
+  await sleep(250);
   assert.equal(out.seen.length, before, 'nothing may be sent after stop');
-
-  out.close(); await mock.close();
 });
