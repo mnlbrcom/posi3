@@ -835,3 +835,38 @@ what makes the reading trustworthy rather than merely plausible.
 
 This also exercised, on real hardware, the wrap-aware displacement maths and live position
 tracking at 30 Hz.
+
+## 2026-08-03 — Correction: the ~2 ms figure was overstated
+
+The user challenged the claim that the encoder's internal cycle is 2 ms and that a lower
+`CycleTime` buys nothing. They were right to. POSITAL give **three mutually inconsistent timing
+figures** for this device:
+
+| Source | Claim |
+|---|---|
+| manual §1.2, p.5 | *"If you directly connect the absolute encoder to a computer via a 100 Mbit network card, you will get a cycle time of **less than 2 ms**."* |
+| manual FAQ 4, p.21 | *"Minimum sensor update time — The **internal sensor update time amounts ~2 ms**."* |
+| datasheet | `Schnittstellen Zykluszeit: **>= 10 ms**` |
+
+The ~2 ms came from FAQ 4, which is the **sensor sampling rate** — not a floor on `CycleTime`,
+which is what it had been turned into. The two manual figures are reconcilable (you may transmit
+faster than the sensor samples and simply resend a value), but *"a CycleTime below 2 ms buys
+nothing"* was an inference presented as fact, and §1.2 advertises sub-2 ms operation outright.
+The datasheet's >= 10 ms agrees with neither.
+
+**Measured instead**, read-only, on the reference encoder: a `Run!` command round-trips in
+**0.42 ms at best** (p50 2.88 ms, p90 3.09, max 3.62 over 200 samples). So the transport is
+nowhere near the constraint, and the rig's `CycleTime=18` is entirely a configured choice.
+
+The spread from 0.42 to 3.6 ms is *consistent with* a request waiting for the next internal
+sample, which would put the internal period in the low single-digit milliseconds — but that is
+an interpretation of 200 samples taken while a cyclic stream was also running, not a
+measurement of the sensor. Establishing what a low `CycleTime` really delivers requires setting
+one, which costs a flash cycle. Not done.
+
+Corrected in three places, one of which mattered: the encoder-config screen showed the operator
+*"the sensor itself only updates every ~2 ms — lower values add no new data"* as a warning. It
+now flags the figure and its source without ruling on it.
+
+**Flash writes remain off the table** at the user's direction — these chips have a finite write
+budget and it is not ours to spend.
