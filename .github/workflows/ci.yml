@@ -77,3 +77,20 @@ jobs:
           name: layout-screenshots
           path: ${{ runner.temp }}/shots
           if-no-files-found: ignore
+
+  # Drives the real Electron window: clicks at coordinates rather than through
+  # `element.click()`, and computes every control's effective drag region from
+  # the live window. A titlebar control that inherits `-webkit-app-region: drag`
+  # is unclickable in the desktop app and works fine in a browser, so this is
+  # the only job that can see it.
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Not --ignore-scripts here: electron's postinstall fetches the binary.
+      - run: npm ci
+      - name: Desktop interaction check
+        run: xvfb-run -a npm run desktopcheck

@@ -80,6 +80,8 @@ still reached through the Electron IPC bridge until the desktop window switches 
 | `latency-bench.js` | Single-process end-to-end latency measurement. |
 | `link-harness.js` | Drives the bridge headless, no Electron. |
 | `shaft-check.js` | Confirms an encoder's scaling by turning it. Waits for motion, accumulates wrap-aware displacement, reports measured counts/rev against what the device claims. Hand accuracy is enough — the failure modes worth catching are off by whole multiples, not percent. `npm run shaft`. |
+| `desktopcheck.js` | Drives the real Electron window. Clicks at element coordinates rather than through `element.click()`, so the page's own hit-testing is exercised, and computes every interactive control's effective `-webkit-app-region` from the live window — a control that inherits `drag` is unclickable in the desktop app and fine in a browser. 12 checks, non-zero exit on the first failure. `npm run desktopcheck`. |
+| `cdp.js` | Shared DevTools-protocol client for `uicheck` and `desktopcheck` — connect, send, wait for the endpoint. Node's built-in WebSocket, no dependencies. |
 | `uicheck.js` | Headless layout audit. Drives Chrome over the DevTools protocol at a range of viewport widths, reports anything overflowing its container and any console error, optionally writes screenshots. Zero dependencies — Node's built-in WebSocket speaks CDP. `npm run uicheck`. |
 | `make-app-icon.js` | Generates `build/icon.png` and, on macOS, `build/icon.icns` via Apple's `iconutil` — each size rendered at its true size, the two smallest without the needle. |
 | `make-tray-icon.js` | Generates the tray icon into `src/desktop/tray-icon.js` as base64. |
@@ -1263,9 +1265,63 @@ needs `-webkit-app-region: no-drag`.
 
 What made this slip through is worth recording: every test of the menu so far used
 `element.click()`, which dispatches straight at the node and never goes through hit-testing — so
-it passes whether or not the region is swallowing input. Confirming the fix meant sending a
-**real mouse event** at the toggle's coordinates in the actual Electron window over CDP. It now
-opens; `aria-expanded` flips; the browser is unaffected.
+it passes whether or not the region is swallowing input.
 
-A layout invariant now asserts that a titlebar control opts out of the drag region, since the
-failure is invisible to the kind of test that would normally cover it.
+The fix was confirmed by hand in the app: the menu opens, `aria-expanded` flips, the browser is
+unaffected. A layout invariant also asserts that a titlebar control opts out of the drag region.
+
+*(A synthetic mouse event over CDP was used at the time as corroboration. It was later shown not
+to prove anything here — see the next entry.)*
+
+## 2026-08-03 — A test that actually catches the dead-button bug
+
+> "make sure testing adds this, so we dont run into it again"
+
+The drag-region fix was already in, guarded by a stylesheet assertion. The ask was for the
+failure itself to be caught, not just the one line that happened to fix it — so this adds
+**`tools/desktopcheck.js`** (`npm run desktopcheck`), which launches the real Electron app under
+its own temporary profile and drives the real window. The DevTools client both tools were growing
+independently moved to **`tools/cdp.js`**.
+
+### The first attempt did not work, and finding that out is the point
+
+It sent real mouse events at element coordinates — the same technique used to corroborate the
+original fix — and passed 11 checks. Then the fix was deleted from the stylesheet to confirm the
+new check would fail without it.
+
+**It still passed.** All 11.
+
+A drag region is enforced in the browser process, above the renderer, as part of deciding what
+counts as window caption. CDP's `Input.dispatchMouseEvent` is delivered **into the renderer**, so
+it arrives below where the region is applied and lands whether or not a real click would. A
+synthetic click is structurally incapable of seeing this bug. That also retires the corroboration
+claimed in the previous entry: that click would have succeeded either way.
+
+### What does work
+
+`-webkit-app-region` is readable through `getComputedStyle` in Electron and **is not inherited**,
+so a control's effective region is the nearest ancestor-or-self that sets one. The check walks
+every interactive element on the page at both a narrow and a wide viewport — with the menu open,
+so its items are in the tree — resolves each one's effective region, and fails on any that
+resolves to `drag`, naming the element.
+
+Read from the running window, not matched against a stylesheet, so it catches a control that
+inherits a drag region from somewhere the regex in `test/layout-invariants.test.js` never looks.
+The two are a deliberate pair: the stylesheet test is fast, needs no Electron and runs in
+`npm test`; this one is thorough and runs in its own CI job.
+
+**Verified both ways.** With the fix: 12 of 12 pass. With `.nav-toggle { -webkit-app-region:
+no-drag; }` deleted: `no interactive control sits inside a drag region — nav-toggle @420px`.
+
+### Also in this change
+
+- The coordinate-clicking half is kept and still earns its place — it catches overlays, stacking
+  and zero-size targets that `element.click()` cannot. Its documentation no longer claims it
+  catches drag regions.
+- One check asserted header buttons on the Log view, which has none. It navigates to the
+  dashboard first.
+- A `desktop` CI job runs it under `xvfb-run`, with a full `npm ci` because electron's
+  postinstall fetches the binary. `--no-sandbox` is passed only when `CI` is set — the runners
+  have no user namespaces for it, a developer's machine does.
+
+**144 tests pass; 12 desktop checks pass.**

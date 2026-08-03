@@ -96,8 +96,15 @@ test('every control in the titlebar escapes the drag region', () => {
   // The desktop window makes the titlebar draggable, and a drag region
   // swallows mouse events on everything inside it. A browser ignores the
   // property, so a control placed there works in the browser and is dead in
-  // Electron — and `element.click()` in a test cannot tell the difference,
-  // because it does not go through hit-testing. Assert the CSS instead.
+  // Electron.
+  //
+  // This is the cheap half of the guard: it reads the stylesheet, needs no
+  // Electron, and runs in `npm test`. `npm run desktopcheck` is the other
+  // half — it computes each control's effective region in the running window,
+  // so it also catches a control that inherits a drag region from somewhere
+  // this regex never looks. Neither a synthetic click nor `element.click()`
+  // can catch it at all: the region is enforced above the renderer, so the
+  // click lands in a test whether or not a real one would.
   if (!/-webkit-app-region:\s*drag/.test(rule('.titlebar'))) return;
   const interactive = [...HTML.matchAll(/<(button|a|select|input)\b[^>]*class="([^"]*)"/g)]
     .map((m) => m[2])
