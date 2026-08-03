@@ -1022,6 +1022,9 @@ class EncoderLink extends EventEmitter {
     return {
       id: this.id,
       state: this._state,
+      // Carried on every frame so a client that joined late, or reconnected its
+      // event stream, shows the same thing as one that watched the transition.
+      detail: this._stateDetail,
       pos,
       rawVel: this.latest.rawVel,
       outVel: this.latest.outVel,

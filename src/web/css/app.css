@@ -854,7 +854,10 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .addr-row > .btn { flex: 0 0 auto; }
 
 /* Encoder config cards: one per encoder, its groups retractable. */
+.cfg-list { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .cfg-card { padding: 12px 14px 6px; }
+/* Folded, the last group's rule would sit hard against the card's edge. */
+.cfg-card .cfg-group:last-child { border-bottom: 1px solid var(--border-soft); }
 .cfg-card .card-head .pill-holder { margin-left: 0; }
 .cfg-card .card-actions .meta { margin-right: 4px; }
 

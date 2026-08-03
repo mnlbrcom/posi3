@@ -84,9 +84,15 @@ class Store {
       // after an EventSource reconnect — during which transitions were missed —
       // heals itself within one telemetry tick.
       const known = this.states.get(t.id);
-      if (t.state && (!known || known.state !== t.state)) {
-        this.states.set(t.id, Object.assign({ detail: '' }, known, { id: t.id, state: t.state }));
-        discovered = true;
+      if (!t.state) continue;
+      const detail = t.detail || '';
+      if (!known || known.state !== t.state || known.detail !== detail) {
+        this.states.set(t.id, Object.assign({}, known, { id: t.id, state: t.state, detail }));
+        // Only a change of state *name* rebuilds anything. Detail text alone —
+        // a retry countdown, say — is painted from this map by the animation
+        // loop, so re-rendering for it would undo the two-clock model and make
+        // the cards flicker once a second.
+        if (!known || known.state !== t.state) discovered = true;
       }
     }
     if (discovered) this.emit('linkState');
