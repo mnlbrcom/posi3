@@ -19,7 +19,8 @@
     "dist:mac": "npm run icon && electron-builder --mac --arm64 --x64",
     "dist:win": "npm run icon && electron-builder --win --x64",
     "uicheck": "node tools/uicheck.js",
-    "tray-icon": "node tools/make-tray-icon.js"
+    "tray-icon": "node tools/make-tray-icon.js",
+    "shaft": "node tools/shaft-check.js"
   },
   "devDependencies": {
     "electron": "43.2.0",
