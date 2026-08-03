@@ -23,7 +23,7 @@ const { TIMEOUTS } = require('../src/shared/constants');
  * `replies` maps a command line to the line the encoder would send back. The
  * responder answers asynchronously, as the real device does.
  */
-function fakeLink(vars = {}) {
+function fakeLink(vars = {}, dialect = 'both') {
   const link = new EncoderLink({
     id: 'test',
     name: 'test',
@@ -38,11 +38,24 @@ function fakeLink(vars = {}) {
   const socket = new EventEmitter();
   socket.destroyed = false;
   socket.write = (line) => {
-    sent.push(line.trim());
-    const m = /^read (\w+)$/.exec(line.trim());
-    const w = /^set (\w+)=(.*)$/.exec(line.trim());
+    const cmd = line.trim();
+    sent.push(cmd);
+    const m = /^read (\w+)$/.exec(cmd);
+    // POSITAL document two syntaxes; `dialect` picks which one this fake
+    // firmware understands. 'both' accepts either.
+    const isSet = /^set (\w+)=(.*)$/.exec(cmd);
+    const isBare = /^(\w+)=(.*)$/.exec(cmd);
     setImmediate(() => {
       if (m) return link._onLine(`${m[1]}=${state[m[1]] ?? ''}`);
+
+      const accepted =
+        (isSet && (dialect === 'both' || dialect === 'set')) ||
+        (isBare && !isSet && (dialect === 'both' || dialect === 'bare'));
+
+      if (!accepted && (isSet || isBare)) {
+        return link._onLine('ERROR: unknown command');
+      }
+      const w = isSet || isBare;
       if (w) {
         state[w[1]] = w[2];
         link._onLine(`${w[1]}=${w[2]}`);
@@ -158,4 +171,45 @@ test('losing the link closes the flash window rather than leaving it hanging', a
   assert.equal(link.flashPending, true);
   link._clearTimers();
   assert.equal(link.flashPending, false);
+});
+
+// -- command dialect ---------------------------------------------------------
+//
+// POSITAL document the same operation two ways: the manual (UME-OCD-EM §5.6.1)
+// gives `set <Variable>=<Value>`, their later command-line note gives the bare
+// `Variable=Value`. Which one a firmware accepts cannot be known from here, and
+// guessing wrong means every write silently fails on site.
+
+test('the documented `set` form is tried first', async () => {
+  const { link, sent } = fakeLink({}, 'set');
+  await link.write('CycleTime', '20');
+  assert.deepEqual(sent.filter((s) => /CycleTime/.test(s)), ['set CycleTime=20']);
+});
+
+test('a firmware that refuses `set` is retried with the bare form', async () => {
+  const { link, sent, state } = fakeLink({}, 'bare');
+  await link.write('CountingDir', 'CCW');
+  assert.deepEqual(
+    sent.filter((s) => /CountingDir/.test(s)),
+    ['set CountingDir=CCW', 'CountingDir=CCW'],
+    'the refusal must be followed by the other dialect'
+  );
+  assert.equal(state.CountingDir, 'CCW', 'the value must actually land');
+});
+
+test('the working dialect is remembered, so the refusal is paid once', async () => {
+  const { link, sent } = fakeLink({}, 'bare');
+  await link.write('CountingDir', 'CCW');
+  sent.length = 0;
+  await link.write('Verbose', '1');
+  assert.deepEqual(sent, ['Verbose=1'], 'the second write should not re-try the dead form');
+});
+
+test('a timeout is never retried — the write may already have reached flash', async () => {
+  // Only an explicit refusal proves nothing was written. Anything else and a
+  // retry risks spending a second of the encoder's ~100,000 cycles.
+  const { link, sent } = fakeLink();
+  link._socket.write = (line) => { sent.push(line.trim()); return true; }; // never answers
+  await assert.rejects(link.write('CycleTime', '20'));
+  assert.equal(sent.length, 1, 'exactly one attempt');
 });

@@ -679,3 +679,67 @@ rather than stopping the bridge.
 `git clone` → `npm ci` → `npm test`: **100 tests pass**, with `build/icon.png`, `build/icon.icns`
 and `src/desktop/tray-icon.js` all present without running any generator. That was the specific
 failure of the previous build and it is now verified rather than assumed.
+
+## 2026-08-03 — POSITAL's own Java client, read
+
+The user added `input/4 - Posital Web Controller Guide/tools-ixarc-ocd-em-java_client` — the
+vendor's reference client, referenced in the manual but never available until now. It settles
+several things that were assumptions, and turns up one real risk.
+
+### Confirmed
+
+- **The command terminator we send is right.** `tcpcl.java:201` is `to_server.println(line)`, and
+  `PrintWriter.println` emits the *platform* separator. The client shipped with Windows batch
+  files, so the encoder has always been fed **CRLF** — which is what we send. Previously
+  inferred; now evidenced.
+- **Being permissive about what the encoder sends is the reference behaviour, not a guess.** The
+  vendor reads with `BufferedReader.readLine()` (`tcpcl.java:87`), which accepts CR, LF or CRLF
+  indifferently. They did not depend on a specific terminator either, and neither do we. *(This
+  still does not tell us what the encoder actually emits — only that nobody has needed to know.)*
+- **Refusing BINARY mode is correct.** Their own comment at `tcpcl.java:84-86` admits the client
+  "will lead to a wrong value, if encoder sends in binary mode and binary contains \n or \a" —
+  binary framed through `readLine()` is broken by construction. We detect it and say so instead.
+- **No handshake.** Connect and read; no greeting, no login. Matches our implementation.
+- Over **UDP** (`udpcl.java`) commands are sent with **no terminator at all** — the datagram is
+  the frame. Not a path we use, but it explains why the encoder's parser is lenient.
+- `TIME`, `NOTIME`, `BINARY`, `ASCII`, `NEW`, `EXIT` are **client-side words**, intercepted
+  locally and never sent to the encoder. Worth knowing before someone types one into our raw
+  command box and wonders why nothing happens.
+
+### The real find: two command dialects
+
+POSITAL document the same operation two different ways.
+
+| Source | Syntax |
+|---|---|
+| Manual UME-OCD-EM §5.6.1 | `set <Variable>=<Value>` |
+| *Modbus Encoder Parametrization via Command Lines*, p.7 | `Variable=Value` — e.g. `CountingDir=CCW` |
+
+Which one a given firmware accepts is not knowable from here, and picking wrong means **every
+write silently fails on site**. `EncoderLink.write()` now tries the documented `set` form, and on
+an explicit refusal retries once with the bare form, then remembers which dialect answered.
+
+The retry is safe *specifically* because a refusal proves nothing reached flash — the encoder
+answers `ERROR` instead of writing. It keys off the queue's `EENCODER` code rather than the
+message text, and a **timeout is never retried**: there we do not know whether the write landed,
+and repeating it could spend a second of the ~100,000 cycles. Four tests cover it.
+
+### Out-of-band IP recovery: TCP port 4000
+
+`Modification_IP-Address/` contains `hymon.exe` — `strings` identifies it as **"HyNetOS monitor,
+version 2.2.1"**, the system monitor of the embedded OS the encoder runs on (Smart Network
+Devices, whose copyright is on the Java client). It is invoked as
+`hymon.exe 10.10.10.10 4000 log.txt`, and the IP is changed with **`set ip 198.100.100.54`** —
+a *different* syntax on a *different* port from the application protocol on 6000.
+
+So there are two command surfaces: the encoder application on **6000**, and the OS monitor on
+**4000**. The latter is a plausible way to recover an encoder whose address has been lost without
+the applet. **Unverified** — the document is dated 10/06 against a 2016 manual, so the monitor
+may not be present on current firmware. Recorded as something to try, not something to build on.
+
+### Also worth noting
+
+POSITAL themselves present the command line as the remedy for the applet: *"This is particularly
+useful in case of Java related issues, e.g. when the message 'Exception while opening stream with
+IP…' is displayed."* That is the same failure the screenshots in this folder show, and the reason
+this project exists.
