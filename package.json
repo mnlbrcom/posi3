@@ -15,13 +15,17 @@
     "sink": "node tools/udp-sink.js",
     "bench": "node tools/latency-bench.js",
     "harness": "node tools/link-harness.js",
-    "icon": "electron tools/make-icon.js",
-    "dist:mac": "electron-builder --mac --arm64 --x64",
-    "dist:win": "electron-builder --win --x64",
-    "uicheck": "node tools/uicheck.js"
+    "icon": "node tools/make-app-icon.js",
+    "dist:mac": "npm run icon && electron-builder --mac --arm64 --x64",
+    "dist:win": "npm run icon && electron-builder --win --x64",
+    "uicheck": "node tools/uicheck.js",
+    "tray-icon": "node tools/make-tray-icon.js"
   },
   "devDependencies": {
     "electron": "43.2.0",
     "electron-builder": "26.15.3"
+  },
+  "allowScripts": {
+    "electron@43.2.0": true
   }
 }

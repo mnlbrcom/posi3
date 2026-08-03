@@ -1,0 +1,74 @@
+appId: com.pixway.posi3
+productName: posi3
+copyright: © Pixway GmbH
+
+directories:
+  output: release
+  buildResources: build
+
+# Whitelist, so nothing incidental ends up in the bundle. tools/ and test/ are
+# development-only; every dependency is a devDependency, so node_modules never
+# enters the package at all.
+files:
+  - src/**
+  - bin/**
+  - package.json
+  - "!**/*.map"
+
+asar: true
+
+# Note: FileDescription (what Windows shows in Task Manager and in Properties)
+# is not being stamped — neither package.json "description" nor extraMetadata
+# took. Windows falls back to the product name, "posi3". Cosmetic, unresolved.
+
+mac:
+  category: public.app-category.utilities
+  # A prebuilt .icns, not a PNG. Given only a PNG, electron-builder generates
+  # the .icns itself and its 16px and 32px entries come out corrupt — exactly
+  # the sizes Finder, Spotlight and the Dock display. See tools/make-app-icon.js.
+  icon: build/icon.icns
+  minimumSystemVersion: "11.0"
+  darkModeSupport: true
+  extendInfo:
+    # macOS 15 prompts for this on the first connection attempt. Without a
+    # reason string the prompt is unexplained, and if it is declined every
+    # connection fails instantly with no obvious cause.
+    NSLocalNetworkUsageDescription: >-
+      posi3 connects to POSITAL rotary encoders and disguise media servers on
+      your local network.
+    # The bridge must keep streaming with the window hidden.
+    LSUIElement: false
+
+dmg:
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+win:
+  icon: build/icon.png
+  # No elevation: nothing this app does needs administrator rights.
+  requestedExecutionLevel: asInvoker
+  # Shown in Task Manager and in the file's Properties. Without it Windows
+  # falls back to the bare product name, which tells an operator nothing about
+  # what the process sitting on their show server actually does.
+
+  target:
+    - target: portable
+      arch: [x64]
+    - target: nsis
+      arch: [x64]
+
+# The one to take to a venue: no installer, no elevation, and fewer SmartScreen
+# prompts than the NSIS package. It is a self-extracting exe, so the first
+# launch costs a second or two of decompression.
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  artifactName: ${productName}-${version}-setup.${ext}
+
+linux:
+  target: [AppImage]
+  category: Utility
+  icon: build/icon.png

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # The bridge is pure Node with no dependencies, so the suite runs everywhere
+  # the app does. Windows is in the matrix because that is the show-server
+  # platform and because path and socket behaviour differ there.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Unit and integration tests
+        run: npm test
+
+  # Proves the bridge end to end without hardware: simulator in, UDP sink out,
+  # non-zero exit on a single lost or malformed packet.
+  bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: End-to-end latency and loss
+        run: npm run bench -- --samples 4000 --cycle 2 --coalesce 2
+
+  # Renders the UI in headless Chrome at six viewport widths and fails on any
+  # element escaping its container or any console error. The stylesheet tests
+  # in `npm test` cannot catch a layout bug; this can.
+  layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Start a simulated rig
+        run: |
+          node tools/mock-encoder.js --port 6000 --cycle 10 --motion sine --quiet &
+          node tools/udp-sink.js --port 6001 --quiet &
+          node bin/posi3.js --port 8710 --data-dir "$RUNNER_TEMP/posi3" &
+          for i in $(seq 1 40); do
+            curl -sf -o /dev/null http://127.0.0.1:8710/ && break
+            sleep 0.25
+          done
+      - name: Seed a connection
+        run: |
+          curl -sf -X POST -H 'Content-Type: application/json' \
+            http://127.0.0.1:8710/api/configSaveConnection \
+            -d '{"name":"CI","autoStart":true,
+                 "encoder":{"host":"127.0.0.1","port":6000},
+                 "destinations":[{"host":"127.0.0.1","port":6001,"devid":1}]}'
+          curl -sf -X POST -H 'Content-Type: application/json' \
+            http://127.0.0.1:8710/api/linkStartAll -d 'null'
+      - name: Layout audit
+        run: |
+          npm run uicheck -- \
+            --chrome "$(which google-chrome || which chromium-browser || which chromium)" \
+            --shots "$RUNNER_TEMP/shots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: layout-screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore

@@ -68,7 +68,7 @@ async function startService(opts = {}) {
       platform: process.platform,
       node: process.versions.node,
       dataDir,
-      webUrl: `http://${isLoopback(bindHost) ? '127.0.0.1' : bindHost}:${port}`,
+      webUrl: http.url(),
       bindHost,
       port,
       tokenRequired: !!token
