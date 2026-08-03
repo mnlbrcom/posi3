@@ -58,9 +58,20 @@ async function main() {
   // Its own profile, so the instance lock and any real configuration are left
   // alone and the check cannot disturb a running bridge.
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'posi3-desktopcheck-'));
-  const electron = path.join(__dirname, '..', 'node_modules', '.bin', 'electron');
-  if (!fs.existsSync(electron)) {
+
+  // The real binary, not `node_modules/.bin/electron`. That shim is a Node
+  // script that spawns Electron as a *child*, so killing it leaves the window
+  // running — a stray app with an empty throwaway profile, indistinguishable
+  // on screen from the real one except that it cannot see any connection.
+  // Requiring the package gives the executable directly, so kill() reaches it.
+  let electron;
+  try {
+    electron = require('electron');
+  } catch {
     throw new Error('electron is not installed — run npm install');
+  }
+  if (typeof electron !== 'string' || !fs.existsSync(electron)) {
+    throw new Error('electron did not resolve to a binary — run npm install');
   }
 
   const child = spawn(electron, [
@@ -72,6 +83,12 @@ async function main() {
     // there — but it stays on for a developer running the check locally.
     ...(process.env.CI ? ['--no-sandbox'] : [])
   ], { stdio: 'ignore' });
+
+  // Ctrl-C and any crash path have to take the window with them, or the stray
+  // outlives the check.
+  const reap = () => { try { child.kill('SIGKILL'); } catch { /* already gone */ } };
+  process.once('exit', reap);
+  process.once('SIGINT', () => { reap(); process.exit(130); });
 
   let cdp = null;
   try {
@@ -206,7 +223,12 @@ async function main() {
         : 'checked at both widths');
   } finally {
     if (cdp) cdp.close();
-    if (!opts.keep) child.kill();
+    if (!opts.keep) {
+      child.kill();
+      // Give it a moment to go quietly, then insist.
+      for (let i = 0; i < 20 && child.exitCode === null && child.signalCode === null; i++) await sleep(100);
+      reap();
+    }
     fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3 });
   }
 }
