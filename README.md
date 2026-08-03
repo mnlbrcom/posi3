@@ -94,6 +94,16 @@ Four things account for most of the trouble on site:
 - The encoder accepts only **a handful of simultaneous TCP clients**. A leftover Java tool, a
   browser applet, or an old `d3driver.exe` still running somewhere can be holding the slot.
 
+**Two command dialects exist.** The manual documents `set <Variable>=<Value>`; POSITAL's later
+command-line note documents the bare `Variable=Value`. posi3 tries the first and falls back to
+the second on an explicit refusal, so it works either way without you having to know which
+firmware you have.
+
+**If you lose an encoder's IP address**, its embedded OS exposes a monitor on **TCP port 4000**
+(`hymon.exe <ip> 4000`), where `set ip <address>` changes it. That is separate from the
+application protocol on 6000 and is documented for 2006-era firmware — worth trying before
+resorting to hardware switch 2, but not guaranteed to be present.
+
 **Every parameter write goes to flash**, rated ~100,000 cycles, and the encoder must not lose
 power mid-write. posi3 rate-limits writes, confirms them, and holds a banner until the device
 reports `Parameters successfully written!`. It also knows that the firmware **refuses to store

@@ -123,6 +123,9 @@ class EncoderLink extends EventEmitter {
     // device, so it lives with the device.
     this._lastWriteBatchMs = -Infinity;
     this._flashPending = null; // { sinceMs, timer }
+
+    /** Which `set` syntax this encoder answered to. See write(). */
+    this._setDialect = null;
   }
 
   // -------------------------------------------------------------------------
@@ -625,13 +628,51 @@ class EncoderLink extends EventEmitter {
     });
   }
 
-  write(variable, value) {
+  /**
+   * Set a variable, tolerating both command dialects.
+   *
+   * POSITAL document two different syntaxes for the same operation. The manual
+   * (UME-OCD-EM §5.6.1) gives `set <Variable>=<Value>`; their later note
+   * "Modbus Encoder Parametrization via Command Lines" gives the bare
+   * `Variable=Value`, e.g. `CountingDir=CCW`. Which one a given firmware
+   * accepts is not something we can know from here, and picking wrong means
+   * every write silently fails on site.
+   *
+   * So: try the documented form, and if the encoder rejects it outright, try
+   * the bare form once. A rejected `set` does not reach flash — the encoder
+   * answers ERROR instead of writing — so the retry cannot cost a second
+   * cycle. Once one dialect answers, remember it for the connection.
+   */
+  async write(variable, value) {
     assertSafeValue(value);
-    return this._commands.submit(`set ${variable}=${value}`, {
-      match: matchVariable(variable),
-      timeoutMs: TIMEOUTS.WRITE_MS,
-      label: `set ${variable}=${value}`
-    });
+
+    const forms = this._setDialect === 'bare'
+      ? [`${variable}=${value}`]
+      : [`set ${variable}=${value}`, `${variable}=${value}`];
+
+    let lastErr = null;
+    for (let i = 0; i < forms.length; i++) {
+      try {
+        const r = await this._commands.submit(forms[i], {
+          match: matchVariable(variable),
+          timeoutMs: TIMEOUTS.WRITE_MS,
+          label: forms[i]
+        });
+        this._setDialect = i === 0 && forms.length > 1 ? 'set' : 'bare';
+        return r;
+      } catch (err) {
+        lastErr = err;
+        // Only an explicit refusal is worth retrying: the encoder answered
+        // ERROR, so nothing reached flash. A timeout or a dropped link leaves
+        // us not knowing whether the write landed, and repeating it could
+        // spend a second of the device's ~100,000 cycles.
+        if (err.code !== 'EENCODER') throw err;
+        if (i === 0 && forms.length > 1) {
+          this._log('info', 'tx', `"${forms[0]}" refused; retrying as "${forms[1]}"`);
+        }
+      }
+    }
+    throw lastErr;
   }
 
   // -------------------------------------------------------------------------
