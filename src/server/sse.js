@@ -102,6 +102,7 @@ function bridgeEvents(manager, hub) {
       : 'Field layout read from encoder',
     fields: p.fields
   }));
+  manager.on('encoderMeta', (p) => hub.broadcast('encoderEvent', Object.assign({ kind: 'encoderMeta' }, p)));
   manager.on('log', (p) => hub.broadcast('log', p));
 }
 

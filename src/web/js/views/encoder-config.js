@@ -171,7 +171,9 @@ export function renderEncoderConfig(root) {
     readBtn.disabled = true;
     statusText.textContent = 'reading…';
     try {
-      const names = vars.map((v) => v.name);
+      // Write-only variables answer with an ERROR; asking for them would put a
+      // spurious failure in front of the operator on every Read all.
+      const names = vars.filter((v) => !v.writeOnly).map((v) => v.name);
       const res = await window.d3d.encoder.readMany(conn.id, names);
       let ok = 0;
       for (const [name, r] of Object.entries(res)) {
