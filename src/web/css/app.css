@@ -173,7 +173,7 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
 
 /* ------------------------------------------------------------------- shell */
 
-.shell { display: flex; flex: 1 1 auto; min-height: 0; }
+.shell { display: flex; flex: 1 1 auto; min-height: 0; position: relative; }
 
 .sidebar {
   width: var(--rail);
@@ -213,8 +213,58 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
 
 .content { flex: 1; overflow-y: auto; overflow-x: hidden; }
 
-/* The rail's narrow-width counterpart. Hidden while the rail is a rail. */
-.nav-picker { display: none; }
+/* -- menu toggle ------------------------------------------------------------
+   Only exists below the rail breakpoint, where the rail becomes the panel it
+   opens. Three bars because that is the one nav affordance nobody has to be
+   taught. */
+
+.nav-toggle {
+  display: none;
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+.nav-toggle:hover { background: var(--surface-3); }
+.nav-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* One element, three bars: the middle is the box, the other two are its
+   pseudo-elements. */
+.nav-toggle-bars,
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+  display: block;
+  width: 15px;
+  height: 1.5px;
+  background: var(--text);
+  border-radius: 1px;
+}
+.nav-toggle-bars { position: relative; }
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+.nav-toggle-bars::before { top: -5px; }
+.nav-toggle-bars::after { top: 5px; }
+
+/* Open: the bars become a cross, so the control says how to undo itself. */
+.nav-toggle[aria-expanded="true"] .nav-toggle-bars { background: transparent; }
+.nav-toggle[aria-expanded="true"] .nav-toggle-bars::before { top: 0; transform: rotate(45deg); }
+.nav-toggle[aria-expanded="true"] .nav-toggle-bars::after { top: 0; transform: rotate(-45deg); }
+@media (prefers-reduced-motion: no-preference) {
+  .nav-toggle-bars, .nav-toggle-bars::before, .nav-toggle-bars::after {
+    transition: transform 120ms ease, top 120ms ease, background-color 120ms ease;
+  }
+}
 
 /* ------------------------------------------------------------------ layout */
 
@@ -767,41 +817,30 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
   .shell { flex-direction: column; }
 
-  /* The rail becomes a single picker rather than a strip of buttons.
-     A horizontally scrolling nav hides its own contents behind a gesture and
-     gives no indication that anything is off-screen — it is a workaround, not
-     an adaptation. */
-  .sidebar {
-    width: 100%; flex: 0 0 auto;
-    flex-direction: row; align-items: center;
-    border-right: none; border-bottom: 1px solid var(--border);
-    padding: 8px 12px;
-    overflow: visible;
-  }
-  .nav-item { display: none; }
+  /* No second bar. The rail becomes a panel hanging from the toggle, keeping
+     exactly the layout it has when there is room for it — same rows, same
+     dots, same active mark. One nav, two placements. */
+  .nav-toggle { display: inline-flex; }
 
-  .nav-picker {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    min-width: 0;
-  }
-  .nav-picker-label {
+  .sidebar {
+    position: absolute;
+    top: 8px;
+    /* Flush with the toggle it hangs from, which sits inside the titlebar's
+       own 14px padding. */
+    right: 14px;
+    z-index: 60;
+    width: min(232px, calc(100vw - 28px));
     flex: 0 0 auto;
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--text-faint);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .5);
+    padding: 6px 0;
+    display: none;
   }
-  .nav-picker select {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-size: 14px;
-    font-weight: 500;
-    padding: 9px 11px;
-  }
+  .sidebar.open { display: flex; }
+
+  /* Out of flow, so the content pane has the full width to itself. */
+  .content { width: 100%; }
   /* The rail's footer has nowhere to go in a horizontal strip: `margin-left:
      auto` inside an overflow-x:auto row pushes it past the viewport edge,
      where it is reachable only by scrolling the nav. Both readings live
@@ -827,7 +866,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 @media (pointer: coarse) {
   button.btn { padding: 9px 14px; }
   .nav-item { padding: 13px 14px; }
-  .nav-picker select { padding: 12px 11px; }
+  .nav-toggle { width: 40px; height: 30px; }
 }
 
 @media (max-width: 720px) {
