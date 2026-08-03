@@ -403,8 +403,11 @@ process.stdout.write('posi3 desktop check — real mouse events in the Electron 
 main()
   .then(() => {
     const failed = results.filter((r) => !r.ok);
+    // Name them here as well as inline: the inline [FAIL] line is easy to lose
+    // to a `tail`, and a summary that only counts sends you back to re-run.
     process.stdout.write(failed.length
-      ? `\n${failed.length} of ${results.length} checks failed\n`
+      ? `\n${failed.length} of ${results.length} checks failed:\n` +
+        failed.map((f) => `  - ${f.name}${f.detail ? `  (${f.detail})` : ''}\n`).join('')
       : `\nall ${results.length} checks passed\n`);
     process.exit(failed.length ? 1 : 0);
   })

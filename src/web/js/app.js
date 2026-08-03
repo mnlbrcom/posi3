@@ -192,7 +192,7 @@ function wireEvents() {
       case 'binaryMode':
         banner('warn',
           `${who} is set to OutputType=BINARY, which this app cannot stream. ` +
-          'Open Encoder configuration and switch it to ASCII_SHORT.',
+          'Open Encoder Config and switch it to ASCII_SHORT.',
           { key: `binary-${e.id}` });
         break;
 
@@ -200,7 +200,7 @@ function wireEvents() {
         store.fieldLayouts.set(e.id, { fields: e.fields, inferred: true });
         banner('warn',
           `${who}: could not read OutputMode, so the field layout was inferred. ` +
-          'If velocity or position look wrong, set OutputMode explicitly in Encoder configuration.',
+          'If velocity or position look wrong, set OutputMode explicitly in Encoder Config.',
           { key: `fields-${e.id}` });
         break;
 

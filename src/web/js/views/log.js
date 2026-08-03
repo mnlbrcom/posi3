@@ -65,9 +65,10 @@ export function renderLog(root) {
     }),
     droppedNote);
 
-  view.appendChild(el('div', { class: 'view-head' },
-    el('h1', { text: 'Log' }),
-    el('span', { class: 'spacer' })));
+  view.appendChild(el('div', { class: 'panel page-head' },
+    el('div', { class: 'view-head' },
+      el('h1', { text: 'Log' }),
+      el('span', { class: 'spacer' }))));
 
   view.appendChild(toolbar);
   view.appendChild(box);

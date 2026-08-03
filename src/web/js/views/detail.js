@@ -70,7 +70,7 @@ export function openControls(conn) {
   const goTo = (view) => { close(); store.setView(view, conn.id); };
 
   const close = openModal({
-    title: `${conn.name} · controls`,
+    title: `${conn.name} · Controls`,
     closeLabel: 'Done',
     wide: true,
     body: [
@@ -106,8 +106,8 @@ export function openControls(conn) {
       el('div', { class: 'field' },
         el('label', { text: 'Go to' }),
         el('div', { class: 'row-inline' },
-          el('button', { class: 'btn', text: 'Encoder configuration', onclick: () => goTo('encoder') }),
-          el('button', { class: 'btn', text: 'disguise mapping helper', onclick: () => goTo('mapping') }),
+          el('button', { class: 'btn', text: 'Encoder Config', onclick: () => goTo('encoder') }),
+          el('button', { class: 'btn', text: 'Disguise Mapping', onclick: () => goTo('mapping') }),
           el('button', { class: 'btn', text: 'Log', onclick: () => goTo('log') }))),
 
       // Deleting used to live in the connections row menu, which is gone. It
@@ -128,7 +128,7 @@ export function openControls(conn) {
 
 async function confirmDelete(conn) {
   const sure = await confirmModal({
-    title: 'Delete this connection?',
+    title: 'Delete Connection?',
     body: el('p', { text: `“${conn.name}” will be removed from the profile. This cannot be undone.` }),
     confirmLabel: 'Delete',
     danger: true
@@ -159,7 +159,7 @@ async function saveField(conn, patch) {
 
 async function doPreset(conn) {
   const ok = await confirmModal({
-    title: 'Zero the encoder at its current position?',
+    title: 'Zero Encoder?',
     body: [
       el('div', { class: 'flash-warn' },
         el('strong', { text: 'This writes to the encoder’s flash memory. ' }),
@@ -189,7 +189,7 @@ async function doPreset(conn) {
     // an already-zeroed encoder does nothing at all unless we write a different
     // value first. That costs a second flash cycle, so it is the operator's call.
     const again = await confirmModal({
-      title: 'Preset is already 0',
+      title: 'Preset Already Zero',
       body: [
         el('p', {
           text: 'The encoder refuses to store the same Preset value twice in a row, so writing 0 ' +

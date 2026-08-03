@@ -1875,3 +1875,38 @@ The `+N` and the device-id list count **enabled** destinations only, while the h
 one and marks the disabled. The dashboard card does the same through `targetLine`/`targetTitle`:
 `127.0.0.1:17000 → 10.10.10.5:6000 · id 1  +1 more`. The rate is the proof it is real routing and
 not just a summary string.
+
+## 2026-08-03 — Card buttons stay right; every screen gets the same header
+
+> "keep all buttons to the right even if they jump into a second row" / "i mean the buttons start,
+> stop, controls, edit in the encoder card" / "similar to the Dashboard, bring the conecctions
+> headline and the Start All, Stop All and Add Connection in its own card. Also +Add is double just
+> just Add use Cap on the all first letters of these buttons." / "use in Headlines and menu items
+> always first letter Cap, like Encoder Config also stay with Config and not Configuration" / "On
+> the Encoder Config page, remove the ‹Dashbard button. Same style header with as the other sides."
+
+**A spacer only aligns the row it sits on.** With `flex-wrap`, the filler element pushed the
+buttons right on the first line and then wrapped ones started again from the left. They are now a
+`.card-actions` group with `margin-left: auto` — which positions it on whatever line it lands on —
+and `justify-content: flex-end` inside, so the group stays right-aligned even when it wraps
+internally. Measured at 300px: the group splits `Start+Stop+Controls` / `Edit` and **both rows are
+flush right, 0px gap each**.
+
+**Every screen's header is now a panel**, the same object on all six: Dashboard, Connections,
+Encoder Config, Disguise Mapping, Log and Settings. `.dash-summary` became the shared `.page-head`.
+
+**The back buttons are gone** with it. The nav is always reachable, so a per-screen "‹ Dashboard"
+was a second and weaker way to navigate — one that had to guess where you came from, and guessed
+wrong as soon as the controls dialog could open those screens from anywhere.
+
+**Labels.** `+ Add connection` said "add" twice, so it is `Add Connection`. Title case on headlines
+and menu items, with the menu and the headline matching word for word — `Encoder Config` in both,
+`Disguise Mapping` in both. Two dialog titles were rewritten rather than title-cased, because
+articles read badly that way: `Zero Encoder?` and `Preset Already Zero`.
+
+`Add Destination` got the same treatment as `Add Connection`, since it had the same doubling.
+
+### The desktop check now names what failed
+
+A failing run printed `1 of 18 checks failed` and nothing more in a `tail`, which cost a re-run to
+find out what. The summary lists the failures by name and detail now.

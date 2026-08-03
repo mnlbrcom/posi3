@@ -30,10 +30,10 @@ export function renderMapping(root) {
     property: 'offset.x', object: ''
   }, conn.mapping || {});
 
-  view.appendChild(el('div', { class: 'view-head' },
-    el('button', { class: 'btn sm ghost', text: '‹ Dashboard', onclick: () => store.setView('dashboard') }),
-    el('h1', { text: 'disguise mapping' }),
-    el('span', { class: 'spacer' }),
+  view.appendChild(el('div', { class: 'panel page-head' },
+    el('div', { class: 'view-head' },
+      el('h1', { text: 'Disguise Mapping' }),
+      el('span', { class: 'spacer' }),
     el('button', {
       class: 'btn primary', text: 'Save mapping',
       onclick: async () => {
@@ -43,7 +43,7 @@ export function renderMapping(root) {
           toast('info', 'Mapping saved');
         } catch (err) { toast('error', err.message); }
       }
-    })));
+    }))));
 
   view.appendChild(el('div', { class: 'view-sub' },
     'Work out min_input / max_input for the disguise Axes window. Drive the axis to each end of ' +

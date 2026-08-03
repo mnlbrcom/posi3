@@ -53,12 +53,12 @@ export function renderEncoderConfig(root) {
   const readBtn = el('button', { class: 'btn', text: 'Read all from encoder' });
   const statusText = el('span', { class: 'faint meta' });
 
-  view.appendChild(el('div', { class: 'view-head' },
-    el('button', { class: 'btn sm ghost', text: '‹ Dashboard', onclick: () => store.setView('dashboard') }),
-    el('h1', { text: 'Encoder configuration' }),
-    statusText,
-    el('span', { class: 'spacer' }),
-    readBtn, revertBtn, applyBtn));
+  view.appendChild(el('div', { class: 'panel page-head' },
+    el('div', { class: 'view-head' },
+      el('h1', { text: 'Encoder Config' }),
+      statusText,
+      el('span', { class: 'spacer' }),
+      readBtn, revertBtn, applyBtn)));
 
   // -- who am I about to write to? -----------------------------------------
   //
