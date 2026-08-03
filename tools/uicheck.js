@@ -265,9 +265,17 @@ async function main() {
         await sleep(250);
 
         if (opts.eval) {
+          // awaitPromise, so an async expression resolves rather than
+          // serialising as the empty object a pending Promise becomes.
           const probe = await cdp.send('Runtime.evaluate', {
-            expression: opts.eval, returnByValue: true
+            expression: opts.eval, returnByValue: true, awaitPromise: true
           }, sessionId);
+          if (probe.exceptionDetails) {
+            process.stdout.write(`  ${String(width).padStart(4)}px ${view}: THREW ` +
+              `${probe.exceptionDetails.exception?.description || probe.exceptionDetails.text}\n`);
+            failures++;
+            continue;
+          }
           process.stdout.write(`  ${String(width).padStart(4)}px ${view}: ` +
             `${JSON.stringify(probe.result.value, null, 2)}\n`);
           continue;
