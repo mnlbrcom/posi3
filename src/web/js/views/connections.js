@@ -15,22 +15,23 @@ export function renderConnections(root) {
   const view = el('div', { class: 'view' });
 
   const startAll = el('button', {
-    class: 'btn primary', text: 'Start all',
+    class: 'btn primary', text: 'Start All',
     onclick: async () => { await window.d3d.link.startAll(); }
   });
   const stopAll = el('button', {
-    class: 'btn', text: 'Stop all',
+    class: 'btn', text: 'Stop All',
     onclick: async () => { await window.d3d.link.stopAll(); }
   });
 
-  view.appendChild(el('div', { class: 'view-head' },
-    el('h1', { text: 'Connections' }),
-    el('span', { class: 'spacer' }),
-    startAll, stopAll,
-    el('button', {
-      class: 'btn', text: '+ Add connection',
-      onclick: () => openEditor(null)
-    })));
+  view.appendChild(el('div', { class: 'panel page-head' },
+    el('div', { class: 'view-head' },
+      el('h1', { text: 'Connections' }),
+      el('span', { class: 'spacer' }),
+      startAll, stopAll,
+      el('button', {
+        class: 'btn', text: 'Add Connection',
+        onclick: () => openEditor(null)
+      }))));
 
   if (!store.connections.length) {
     view.appendChild(el('div', { class: 'empty' },
@@ -78,10 +79,13 @@ export function renderConnections(root) {
           onclick: () => openControls(conn)
         }),
         pillHolder,
-        el('span', { class: 'spacer' }),
-        startBtn, stopBtn,
-        el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
-        el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) })),
+        // Grouped, not spaced apart with a filler element: a spacer only
+        // right-aligns the row it happens to sit on, so once the buttons
+        // wrapped they started again from the left.
+        el('div', { class: 'card-actions' },
+          startBtn, stopBtn,
+          el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
+          el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) }))),
 
       warnings.get(conn.id)
         ? el('div', { class: 'tag warn', text: warnings.get(conn.id) })
@@ -203,7 +207,7 @@ function destinationsEditor(c, nics, info) {
     c.destinations.forEach((d, i) => list.appendChild(destinationRow(c, d, i, nics, draw)));
     list.appendChild(el('div', { class: 'dest-foot' },
       el('button', {
-        class: 'btn sm', type: 'button', text: '+ Add destination',
+        class: 'btn sm', type: 'button', text: 'Add Destination',
         onclick: () => {
           const prev = c.destinations[c.destinations.length - 1] || {};
           c.destinations.push({
@@ -369,7 +373,7 @@ export async function openEditor(existing) {
   ];
 
   const ok = await confirmModal({
-    title: existing ? 'Edit connection' : 'Add connection',
+    title: existing ? 'Edit Connection' : 'Add Connection',
     body,
     confirmLabel: existing ? 'Save' : 'Add'
   });

@@ -19,7 +19,8 @@ export function renderSettings(root) {
     } catch (err) { toast('error', err.message); }
   };
 
-  view.appendChild(el('div', { class: 'view-head' }, el('h1', { text: 'Settings' })));
+  view.appendChild(el('div', { class: 'panel page-head' },
+    el('div', { class: 'view-head' }, el('h1', { text: 'Settings' }))));
 
   view.appendChild(panel('Behaviour', [
     el('div', { class: 'field' },

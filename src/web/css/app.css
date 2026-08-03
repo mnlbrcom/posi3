@@ -692,8 +692,15 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
    three bands, where the hero's 46px figure made "packets out" look like a
    different class of fact from the other three. They are the same class of
    fact, so they are now the same size. */
-.dash-summary { margin-bottom: 16px; padding: 14px 16px 16px; }
-.dash-head { margin-bottom: 14px; }
+/* The title and a screen's global actions belong to the screen, not to the
+   page margin — so they sit in a panel like everything else, and the first
+   thing below them starts at the same edge. Shared by Dashboard and
+   Connections. */
+.page-head { margin-bottom: 16px; padding: 14px 16px 16px; }
+.page-head .view-head { margin-bottom: 0; }
+/* The dashboard has tiles under its head, so that one keeps a gap. Declared
+   after the rule above, or source order would cancel it. */
+.page-head .dash-head { margin-bottom: 14px; }
 
 /* Four equal columns, not auto-fit: these are one set of totals and unequal
    tiles would imply a ranking that is not there. */
@@ -733,8 +740,15 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 12px 14px 10px;
 }
-.card-head { display: flex; align-items: center; gap: 10px; }
-.card-head .spacer { flex: 1; }
+.card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* `margin-left: auto` puts the group at the right of whatever line it lands on,
+   and `justify-content: flex-end` keeps its own buttons right-aligned if the
+   group itself has to wrap. A spacer element cannot do this: it only pushes on
+   the line it sits on, so wrapped buttons restarted from the left. */
+.card-actions {
+  margin-left: auto; display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; justify-content: flex-end;
+}
 .card-name {
   font: inherit; font-weight: 600; font-size: var(--fs-head);
   background: none; border: none; padding: 0; cursor: pointer;

@@ -70,16 +70,16 @@ export function renderDashboard(root) {
     faults: statTile('Faults', 'none')
   };
 
-  view.appendChild(el('div', { class: 'panel dash-summary' },
+  view.appendChild(el('div', { class: 'panel page-head' },
     el('div', { class: 'view-head dash-head' },
       el('h1', { text: 'Dashboard' }),
       el('span', { class: 'spacer' }),
       el('button', {
-        class: 'btn', text: 'Start all',
+        class: 'btn', text: 'Start All',
         onclick: () => window.d3d.link.startAll().catch(() => {})
       }),
       el('button', {
-        class: 'btn', text: 'Stop all',
+        class: 'btn', text: 'Stop All',
         onclick: () => window.d3d.link.stopAll().catch(() => {})
       })),
     el('div', { class: 'summary-stats' },
@@ -208,11 +208,11 @@ function buildCard(conn) {
         onclick: () => openControls(conn)
       }),
       pillHolder,
-      el('span', { class: 'spacer' }),
-      // Same class as Start all / Stop all: these are the same kind of thing,
+      // Same class as Start All / Stop All: these are the same kind of thing,
       // and a smaller ghost button read as a link rather than an action.
-      el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
-      el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) })),
+      el('div', { class: 'card-actions' },
+        el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
+        el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) }))),
     el('div', { class: 'card-target', title: targetTitle(conn) }, targetLine(conn)),
     detail,
     el('div', { class: 'encoder-cols' },
