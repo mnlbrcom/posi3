@@ -2142,3 +2142,52 @@ So the scan had no false negative; the device arrived afterwards. Re-run with bo
       10.10.10.20  100000 counts  (answered read TotalScaledRes)
 
 **166 tests pass; Dashboard and Encoder Config audits clean.**
+
+## 2026-08-04 — Timestamp mode: not tested to disguise, and a real leak when it was
+
+> "if we add the timestap to the string, did we ever tested if everything still works?" / "towards
+> disguise also"
+
+**Partly, and one of the tests was passing for the wrong reason.**
+
+`protocol.test.js` covered the parse, and `encoder-link.test.js` had a test named *"the field
+layout is read from the encoder, not guessed"* — which passed `outputmode: 'Position_Timestamp_'`
+to the simulator. **The simulator has no such option.** `parseArgs` ignored it, the mock ran in its
+default three-field mode, and the assertion (`inferred === false`) holds in every mode. The
+ambiguous two-field layout it existed to cover had never been exercised. `--output-mode` is now a
+real flag, and the test uses it.
+
+Nothing asserted the datagram either. So a suite written to prevent "a timestamp reaching disguise
+as a velocity" never looked at the velocity in a packet.
+
+### With the simulator actually in Position_Timestamp_, it leaked
+
+    packets: 600
+    carrying a timestamp as velocity: 3
+    first velocities: 803311, 808311, 813311, 0, 0, 0 …
+
+`INFERRED_MAPS` claimed a two-number line was position + velocity. On a `Position_Timestamp_`
+encoder that is a microsecond counter, so **every connect put three packets carrying ~800,000
+steps/s into disguise** before the `OutputMode` read came back and corrected the layout. Only
+`passthrough` and `derived` were exposed; the default `zero` policy sends 0 regardless.
+
+**Two numbers are now left unclaimed.** Three can only be position, velocity, timestamp, so that
+inference stays. For two, the position still flows immediately and the second number waits until
+the device is asked — which means a `Position_Velocity_` encoder sends **one** packet with velocity
+0 before its real value arrives. That is the value the original driver sent for every packet, so it
+is the one direction this can be wrong in safely.
+
+Verified both ways on the simulator: `Position_Timestamp_` now leaks nothing; `Position_Velocity_`
+reads `0, 8192, 8192, 8192 …`.
+
+`test/timestamp-to-disguise.test.js` adds four tests that look at the packet: the extra field is
+dropped rather than shifted, the velocity slot never counts like a clock, position still advances
+with three fields, and the timestamp still reaches the operator's readout.
+
+**Neither encoder on the rig is in a timestamp mode** — both report `POSITION_VELOCITY` — and
+changing that writes flash, so this is simulator work by necessity. After restarting on the new
+parser: Revolve streaming, `errors 0`, `unknown 0`. Bench: `rx 3000 tx 3000 unparsed 0`.
+
+Also: the CycleTime description is now just *"States the time in ms for the cyclic time mode."*
+
+**170 tests pass.**
