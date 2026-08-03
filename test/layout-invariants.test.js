@@ -73,6 +73,20 @@ test('viewport-height sizing survives a mobile URL bar', () => {
   }
 });
 
+test('the narrow-width nav is a picker, not a scrolling strip', () => {
+  // A horizontally scrolling nav hides its own contents behind a gesture and
+  // gives no sign that anything is off-screen. Below the rail breakpoint the
+  // buttons give way to a native select, which lets the platform supply the
+  // right affordance for the device.
+  assert.match(CSS, /\.nav-item \{ display: none; \}/,
+    'the rail buttons must be hidden at narrow widths');
+  assert.match(rule('.nav-picker'), /display:\s*none/,
+    '.nav-picker must be hidden while the rail is a rail');
+  assert.ok(!/\.sidebar \{[^}]*overflow-x:\s*auto/s.test(CSS),
+    'the sidebar must not scroll sideways at any width');
+  assert.match(HTML, /<select id="nav-select"/, 'the picker must exist in the markup');
+});
+
 test('the layout re-flows for narrow viewports', () => {
   const widths = [...CSS.matchAll(/@media\s*\(max-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]));
   assert.ok(widths.some((w) => w <= 480), 'needs a phone breakpoint');

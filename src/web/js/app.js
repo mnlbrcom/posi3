@@ -27,6 +27,7 @@ import { renderSettings } from './views/settings.js';
 
 const content = document.getElementById('content');
 const sidebar = document.getElementById('sidebar');
+const navSelect = document.getElementById('nav-select');
 const aggregate = document.getElementById('aggregate');
 const versionNode = document.getElementById('version');
 
@@ -128,6 +129,9 @@ function wireNav() {
   for (const btn of sidebar.querySelectorAll('.nav-item')) {
     btn.addEventListener('click', () => store.setView(btn.dataset.view));
   }
+  // The picker is the same six routes at narrow widths. Only one of the two is
+  // ever visible, and renderView keeps both showing the same thing.
+  navSelect.addEventListener('change', () => store.setView(navSelect.value));
 }
 
 function wireEvents() {
@@ -202,11 +206,13 @@ function onStoreChange(reason) {
 
 function renderView() {
   const view = store.view;
+  // 'detail' is reached from the connections list rather than the nav, so it
+  // shows as Connections in both.
+  const navView = view === 'detail' ? 'connections' : view;
   for (const btn of sidebar.querySelectorAll('.nav-item')) {
-    // 'detail' is reached from the connections list, so keep that item lit.
-    const match = btn.dataset.view === view || (view === 'detail' && btn.dataset.view === 'connections');
-    btn.classList.toggle('active', match);
+    btn.classList.toggle('active', btn.dataset.view === navView);
   }
+  if (navSelect.value !== navView) navSelect.value = navView;
 
   const renderer = RENDERERS[view] || renderConnections;
   try {

@@ -213,6 +213,9 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
 
 .content { flex: 1; overflow-y: auto; overflow-x: hidden; }
 
+/* The rail's narrow-width counterpart. Hidden while the rail is a rail. */
+.nav-picker { display: none; }
+
 /* ------------------------------------------------------------------ layout */
 
 .view { padding: 18px 22px 40px; }
@@ -764,26 +767,41 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
   .shell { flex-direction: column; }
 
+  /* The rail becomes a single picker rather than a strip of buttons.
+     A horizontally scrolling nav hides its own contents behind a gesture and
+     gives no indication that anything is off-screen — it is a workaround, not
+     an adaptation. */
   .sidebar {
     width: 100%; flex: 0 0 auto;
     flex-direction: row; align-items: center;
     border-right: none; border-bottom: 1px solid var(--border);
-    padding: 0;
-    /* The nav becomes a horizontal strip. It scrolls rather than wrapping so
-       the content pane keeps a predictable height. */
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    padding: 8px 12px;
+    overflow: visible;
   }
-  .nav-item {
-    width: auto; flex: 0 0 auto;
-    padding: 12px 13px;
-    border-left: none; border-bottom: 2px solid transparent;
-    white-space: nowrap;
-  }
-  .nav-item.active { border-left-color: transparent; border-bottom-color: var(--accent); }
-  /* The dots add width without adding information once the labels are in a row. */
-  .nav-dot { display: none; }
+  .nav-item { display: none; }
 
+  .nav-picker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+  }
+  .nav-picker-label {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .nav-picker select {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 9px 11px;
+  }
   /* The rail's footer has nowhere to go in a horizontal strip: `margin-left:
      auto` inside an overflow-x:auto row pushes it past the viewport edge,
      where it is reachable only by scrolling the nav. Both readings live
@@ -809,6 +827,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 @media (pointer: coarse) {
   button.btn { padding: 9px 14px; }
   .nav-item { padding: 13px 14px; }
+  .nav-picker select { padding: 12px 11px; }
 }
 
 @media (max-width: 720px) {

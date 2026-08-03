@@ -1193,3 +1193,33 @@ fallback calls `startService` twice.
 
 Eight tests, plus five on the port binding. **142 pass.** Verified on the rig: the desktop app
 holds the lock and streams to disguise at 120 pkt/s with zero faults.
+
+## 2026-08-03 — The narrow-width nav is a picker, not a scrolling strip
+
+The user reported a scrollbar on the navigation once the window narrows, and asked for a
+dropdown — *"as it should be for proper framework adaptation / adaptive design"*. Correct on both
+counts: a horizontally scrolling nav hides its own contents behind a gesture and gives no sign
+that anything is off-screen. It is a workaround, not an adaptation.
+
+Below the rail breakpoint the six buttons now give way to a **native `<select>`**, labelled
+`SCREEN`, spanning the bar. Native rather than a bespoke menu, deliberately: the platform then
+supplies the right affordance for the device — a proper picker on a phone rather than a tap
+target the size of a line of text — and it is keyboard- and screen-reader-correct without any of
+that being re-implemented. It also needs no positioning logic, which matters given the project
+rule against CSS anchor positioning and the `popover` attribute.
+
+The rail and the picker are the same six routes; only one is ever visible, and `renderView` keeps
+both showing the same thing. `detail` is reached from the connections list rather than the nav,
+so it displays as Connections in both — previously that was special-cased for the rail only.
+
+Verified with real device-metrics emulation rather than by resizing an element (media queries
+answer to the viewport, so the latter proves nothing): at 1440 px the rail is `flex` and the
+picker `none`; at 720 and 390 px the reverse; **the sidebar scrolls sideways at no width**.
+Choosing Settings in the picker navigates there, and routing to Log from elsewhere moves the
+picker — the sync runs both ways.
+
+Also fixed in `tools/uicheck.js`: `--eval` did not set `awaitPromise`, so an async expression
+serialised as the empty object a pending Promise becomes, and an exception was reported as no
+output at all. Both now surface.
+
+`test/layout-invariants.test.js` gained a guard so the scrolling strip cannot come back.
