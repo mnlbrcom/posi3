@@ -788,7 +788,30 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* The centre readout counts continuously; proportional digits would make it
    shift on every change, which is what mono used to prevent here. */
 .dial svg text { font-variant-numeric: tabular-nums; }
-.dial-legend { font-size: var(--fs-label); color: var(--text-faint); text-align: center; line-height: 1.4; }
+/* Left-aligned, one item per line: a key is read down, not across. */
+.dial-legend {
+  display: grid; gap: 5px; width: 100%; margin-top: 2px;
+  font-size: var(--fs-label); color: var(--text-faint); line-height: 1.35;
+}
+.legend-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Every chip occupies the same 12px slot so the labels line up, whatever
+   shape sits inside it. */
+.legend-key { flex: 0 0 12px; height: 12px; box-sizing: border-box; }
+.legend-outer { border: 2px solid var(--accent); border-radius: 50%; }
+/* Scaled rather than sized, so it keeps the slot and stays concentric with the
+   chip above it — which is how the two arcs sit on the dial. */
+.legend-inner { border: 2px solid var(--text-faint); border-radius: 50%; transform: scale(.7); }
+.legend-bar { height: 4px; background: var(--accent); border-radius: 2px; align-self: center; }
+
+/* Set off from the key by a rule: the key says what the shapes mean, this says
+   what the numbers are computed from. */
+.dial-basis {
+  margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border-soft);
+  display: grid; gap: 3px; width: 100%;
+  font-size: var(--fs-label); color: var(--text-faint); line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.basis-line { overflow: hidden; text-overflow: ellipsis; }
 
 /* Sits under the stream figures, separated but inside the same pane. */
 .encoder-trace { margin-top: 14px; border-top: 1px solid var(--border-soft); padding-top: 10px; }
