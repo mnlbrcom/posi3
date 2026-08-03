@@ -790,9 +790,15 @@ class EncoderLink extends EventEmitter {
   async write(variable, value) {
     assertSafeValue(value);
 
-    const forms = this._setDialect === 'bare'
-      ? [`${variable}=${value}`]
-      : [`set ${variable}=${value}`, `${variable}=${value}`];
+    // The remembered dialect goes first, but the other one stays as a fallback
+    // rather than being dropped. Remembering it as the *only* form meant a
+    // single wrong guess disabled writing for the rest of the connection: every
+    // later `set` went out in a dialect the device ignores, with nothing to
+    // fall back to and nothing in the log to say why. That is exactly how a
+    // CycleTime change that had worked earlier in a session stopped working.
+    const withSet = `set ${variable}=${value}`;
+    const bare = `${variable}=${value}`;
+    const forms = this._setDialect === 'bare' ? [bare, withSet] : [withSet, bare];
 
     let lastErr = null;
     for (let i = 0; i < forms.length; i++) {
@@ -802,7 +808,11 @@ class EncoderLink extends EventEmitter {
           timeoutMs: TIMEOUTS.WRITE_MS,
           label: forms[i]
         });
-        this._setDialect = i === 0 && forms.length > 1 ? 'set' : 'bare';
+        const dialect = forms[i] === withSet ? 'set' : 'bare';
+        if (dialect !== this._setDialect) {
+          this._log('info', 'tx', `write dialect for this encoder: "${dialect === 'set' ? 'set Var=Value' : 'Var=Value'}"`);
+          this._setDialect = dialect;
+        }
         return r;
       } catch (err) {
         lastErr = err;
@@ -811,8 +821,14 @@ class EncoderLink extends EventEmitter {
         // us not knowing whether the write landed, and repeating it could
         // spend a second of the device's ~100,000 cycles.
         if (err.code !== 'EENCODER') throw err;
-        if (i === 0 && forms.length > 1) {
-          this._log('info', 'tx', `"${forms[0]}" refused; retrying as "${forms[1]}"`);
+        if (i + 1 < forms.length) {
+          this._log('info', 'tx', `"${forms[i]}" refused; retrying as "${forms[i + 1]}"`);
+        } else if (this._setDialect) {
+          // Both forms refused, so what was remembered is no longer trusted —
+          // the next write starts from the documented form again instead of
+          // inheriting a guess that has just been disproved.
+          this._log('warn', 'tx', 'both write forms were refused; forgetting the remembered dialect');
+          this._setDialect = null;
         }
       }
     }
