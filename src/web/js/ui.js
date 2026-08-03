@@ -82,14 +82,24 @@ export function svgEl(tag, attrs = {}) {
 
 // ---------------------------------------------------------------- formatting
 
-/** Thin spaces every three digits; keeps long counts readable without commas. */
+/**
+ * Grouped every three digits; keeps long counts readable without commas.
+ *
+ * The separator is U+2007 FIGURE SPACE, which is the width of a digit in a
+ * tabular face — which is what every figure here is now set in. It was a thin
+ * space, and a thin space is exactly what its name says: in a monospaced font
+ * that hardly mattered because the glyph still occupied a full cell, but once
+ * the readouts moved to the proportional face the grouping all but vanished
+ * and "94 952" read as one blob. U+2007 is also non-breaking, so a grouped
+ * figure never wraps mid-number.
+ */
 export function groupDigits(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
   const neg = n < 0;
   const s = String(Math.abs(Math.trunc(n)));
   let out = '';
   for (let i = 0; i < s.length; i++) {
-    if (i > 0 && (s.length - i) % 3 === 0) out += ' ';
+    if (i > 0 && (s.length - i) % 3 === 0) out += ' ';
     out += s[i];
   }
   return (neg ? '-' : '') + out;

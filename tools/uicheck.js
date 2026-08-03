@@ -128,8 +128,27 @@ const AUDIT = `(() => {
     }
   }
 
+  // Every visible element must resolve to one of the two families. A static
+  // test of the stylesheet cannot see this: an element that sets no family at
+  // all does not inherit the page's, it falls back to the user agent's — which
+  // is how the titlebar's menu button ended up in Arial while every rule in
+  // the file looked correct.
+  const offFamily = [];
+  const seenFamily = new Set();
+  for (const n of document.querySelectorAll('body *')) {
+    const r = n.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const first = getComputedStyle(n).fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '');
+    if (first === 'ui-monospace' || first === 'system-ui') continue;
+    const key = label(n) + '|' + first;
+    if (seenFamily.has(key)) continue;
+    seenFamily.add(key);
+    offFamily.push({ el: label(n), family: first, text: (n.textContent || '').trim().slice(0, 32) });
+  }
+
   return {
     viewportWidth: vw,
+    offFamily,
     bodyScrollsSideways: docEl.scrollWidth > vw + 1,
     bodyScrollWidth: docEl.scrollWidth,
     offenders: offenders.sort((a, b) => b.overshootPx - a.overshootPx).slice(0, 12),
@@ -216,17 +235,37 @@ async function main() {
           continue;
         }
 
+        // Below the rail breakpoint the nav is a panel that is display:none
+        // until opened, and an element with no box is invisible to the audit —
+        // so the menu had never actually been measured at any width. Open it
+        // when it exists, and say so in the label.
+        const menuOpened = (await cdp.send('Runtime.evaluate', {
+          expression: `(() => {
+            const t = document.getElementById('nav-toggle');
+            if (!t || getComputedStyle(t).display === 'none') return false;
+            t.click();
+            return document.getElementById('sidebar').classList.contains('open');
+          })()`,
+          returnByValue: true
+        }, sessionId)).result.value;
+        if (menuOpened) await sleep(250);
+
         const { result } = await cdp.send('Runtime.evaluate', {
           expression: AUDIT, returnByValue: true
         }, sessionId);
         const r = result.value;
 
-        const problems = r.offenders.length + r.pastViewport.length + (r.bodyScrollsSideways ? 1 : 0);
+        const problems = r.offenders.length + r.offFamily.length + r.pastViewport.length +
+          (r.bodyScrollsSideways ? 1 : 0);
         const tag = problems ? 'FAIL' : ' ok ';
-        process.stdout.write(`  [${tag}] ${String(width).padStart(4)}px  ${view}\n`);
+        process.stdout.write(`  [${tag}] ${String(width).padStart(4)}px  ${view}` +
+          `${menuOpened ? '  + menu' : ''}\n`);
 
         if (r.bodyScrollsSideways) {
           process.stdout.write(`         page scrolls sideways: ${r.bodyScrollWidth}px content in ${r.viewportWidth}px\n`);
+        }
+        for (const o of r.offFamily) {
+          process.stdout.write(`         ${o.el} is set in ${o.family}, not --sans or --mono  "${o.text}"\n`);
         }
         for (const o of r.offenders) {
           process.stdout.write(`         ${o.el} overflows ${o.clippedBy} by ${o.overshootPx}px  "${o.text}"\n`);

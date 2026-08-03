@@ -17,6 +17,10 @@ import { svgEl, el } from '../ui.js';
  * Font sizes below are viewBox units, not CSS pixels: they scale with the dial
  * as it is sized by its column, so they sit outside the app's type scale by
  * design. Everything drawn in HTML uses the --fs-* tokens.
+ *
+ * The family is --sans, like every other figure. Fixed-width digits come from
+ * `font-variant-numeric: tabular-nums` in the stylesheet, which is all mono was
+ * providing here — and without it the centre readout would shift as it counts.
  */
 
 const SIZE = 320;
@@ -81,7 +85,7 @@ export class Dial {
         y: (C + Math.sin(a) * R_LABEL).toFixed(1),
         fill: 'var(--text-faint)',
         'font-size': '9.5',
-        'font-family': 'var(--mono)',
+        'font-family': 'var(--sans)',
         'text-anchor': 'middle',
         'dominant-baseline': 'central'
       });
@@ -142,12 +146,12 @@ export class Dial {
     const halo = { stroke: 'var(--surface)', 'stroke-width': '5', 'paint-order': 'stroke fill' };
 
     this._value = svgEl('text', Object.assign({
-      x: C, y: C + 42, fill: 'var(--text)', 'font-size': '20', 'font-family': 'var(--mono)',
+      x: C, y: C + 42, fill: 'var(--text)', 'font-size': '20', 'font-family': 'var(--sans)',
       'text-anchor': 'middle', 'font-weight': '600'
     }, halo));
     this._unit = svgEl('text', Object.assign({
       x: C, y: C + 58, fill: 'var(--text-faint)', 'font-size': '9.5',
-      'font-family': 'var(--mono)', 'text-anchor': 'middle', 'letter-spacing': '1'
+      'font-family': 'var(--sans)', 'text-anchor': 'middle', 'letter-spacing': '1'
     }, halo, { 'stroke-width': '4' }));
     this._unit.textContent = 'COUNTS';
     this._svg.appendChild(this._value);
@@ -196,7 +200,7 @@ function formatCounts(n) {
   const s = String(Math.trunc(n));
   let out = '';
   for (let i = 0; i < s.length; i++) {
-    if (i > 0 && (s.length - i) % 3 === 0) out += ' ';
+    if (i > 0 && (s.length - i) % 3 === 0) out += ' ';
     out += s[i];
   }
   return out;
