@@ -30,7 +30,27 @@ const DEFAULT_ENCODER_PORT = 6000;
 const DEFAULT_D3_PORT = 6000;
 const D3_FACTORY_PORT = 8000;
 
-/** Internal sensor update time, per manual FAQ 4. CycleTime below this buys nothing. */
+/**
+ * Internal sensor update time, manual FAQ 4: "The internal sensor update time
+ * amounts ~2 ms."
+ *
+ * Treat this as a hint, not a floor. POSITAL give three mutually inconsistent
+ * timing figures for this device:
+ *
+ *   manual §1.2   "you will get a cycle time of less than 2 ms" (direct 100 Mbit)
+ *   manual FAQ 4  "the internal sensor update time amounts ~2 ms"
+ *   datasheet     "Schnittstellen Zykluszeit: >= 10 ms"
+ *
+ * The first two are reconcilable — you can transmit faster than the sensor
+ * samples and simply resend a value — but "a CycleTime below 2 ms buys
+ * nothing" is an inference, not something the vendor states, and §1.2 markets
+ * sub-2 ms operation outright.
+ *
+ * Measured on the reference encoder: a Run! command round-trips in 0.42 ms at
+ * best (p50 2.88, max 3.62), so the transport is nowhere near the constraint.
+ * What a low CycleTime actually delivers can only be established by setting one
+ * — which costs a flash cycle.
+ */
 const SENSOR_UPDATE_MS = 2;
 
 // ---------------------------------------------------------------------------
@@ -127,7 +147,9 @@ const ENCODER_VARS = [
   {
     name: 'CycleTime', group: 'output', type: 'int', min: 1, max: 999999, unit: 'ms',
     label: 'Cycle time',
-    help: 'Interval in Cyclic mode. This dominates end-to-end latency. The sensor itself only updates every ~2 ms.'
+    help: 'Interval in Cyclic mode. This dominates end-to-end latency — everything else in the ' +
+      'chain is measured in microseconds. Below ~2 ms the manual\'s FAQ suggests values may ' +
+      'start repeating, though POSITAL elsewhere advertise cycle times under 2 ms.'
   },
 
   // -- scaling --------------------------------------------------------------
