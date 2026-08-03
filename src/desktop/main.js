@@ -317,14 +317,32 @@ function quit() {
   app.quit();
 }
 
+/**
+ * Die loudly.
+ *
+ * A packaged app has no console, so a startup failure that only tries a dialog
+ * can vanish without trace — which is exactly what happened when the dialog
+ * itself was unavailable: the process exited with an empty log and nothing to
+ * diagnose. Write the reason down first, then try to show it.
+ */
 function fatal(err) {
-  // With no console in a packaged app, a dialog is the only way the user finds
-  // out why nothing happened when they double-clicked.
+  const detail = err && err.stack ? err.stack : String(err);
+  const line = `posi3 failed to start: ${detail}`;
+
+  process.stderr.write(`${line}\n`);
   try {
-    dialog.showErrorBox('posi3 could not start', String(err && err.message ? err.message : err));
-  } finally {
-    app.exit(1);
-  }
+    const fs = require('node:fs');
+    const path = require('node:path');
+    fs.appendFileSync(
+      path.join(app.getPath('userData'), 'posi3.log'),
+      `${new Date().toISOString()} [error] - ${line}\n`
+    );
+  } catch { /* nowhere to write; stderr above is all there is */ }
+
+  try {
+    dialog.showErrorBox('posi3 could not start', detail);
+  } catch { /* no window server, no dialog — the log has it */ }
+  app.exit(1);
 }
 
 app.on('activate', showWindow);

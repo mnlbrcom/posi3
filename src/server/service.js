@@ -42,7 +42,11 @@ function defaultDataDir() {
 async function startService(opts = {}) {
   const dataDir = opts.dataDir || defaultDataDir();
   const bindHost = opts.bindHost || '127.0.0.1';
-  const port = opts.port || 8710;
+  // Not `opts.port || 8710`: port 0 means "any free port", and it is falsy, so
+  // that spelling silently substituted the default. The desktop app's
+  // fall-back-to-an-ephemeral-port path therefore retried the very port it had
+  // just found busy, and the window never opened.
+  const port = opts.port === undefined || opts.port === null ? 8710 : Number(opts.port);
 
   const store = new ConfigStore(dataDir);
   store.load();
@@ -81,7 +85,9 @@ async function startService(opts = {}) {
       dataDir,
       webUrl: http.url(),
       bindHost,
-      port,
+      // `env` is evaluated lazily per request and spread into JSON, so this is
+      // the live bound port, not a function and not the requested one.
+      port: (http.server.address() || {}).port || port,
       tokenRequired: !!token
     }, opts.env || {})
   });

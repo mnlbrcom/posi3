@@ -29,7 +29,6 @@ const content = document.getElementById('content');
 const sidebar = document.getElementById('sidebar');
 const aggregate = document.getElementById('aggregate');
 const versionNode = document.getElementById('version');
-const titlebarSub = document.getElementById('titlebar-sub');
 
 const RENDERERS = {
   dashboard: renderDashboard,
@@ -56,13 +55,18 @@ async function boot() {
   }
 
   versionNode.textContent = `v${store.info.version}`;
-  titlebarSub.textContent = 'POSITAL IXARC → disguise';
 
   if (store.info.loadWarning) {
     banner('warn', store.info.loadWarning, { key: 'profile-warning' });
   }
   if (store.info.readOnly) {
     banner('warn', 'This profile is read-only, so changes will not be saved.', { dismissible: false });
+  }
+
+  // The desktop window uses a hidden-inset title bar on macOS, so the traffic
+  // lights sit over our chrome. A browser tab has no such thing.
+  if (/Electron/i.test(navigator.userAgent) && /Mac/i.test(navigator.platform)) {
+    document.body.classList.add('inset-titlebar');
   }
 
   wireNav();

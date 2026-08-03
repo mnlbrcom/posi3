@@ -83,27 +83,69 @@ html, body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 14px 0 78px; /* clear of the macOS traffic lights */
+  padding: 0 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
 }
-.titlebar-name {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: .2px;
-  color: var(--text);
-}
-.titlebar-name .d3 { color: var(--accent-text); }
-.titlebar-sub { color: var(--text-faint); font-size: 11.5px; }
+/* -- wordmark ---------------------------------------------------------------
+   Monospace because this is instrumentation: the world this app lives in is
+   type labels stamped on housings, counts, and fixed-width numerics. The whole
+   mark is white on anthracite — the one bold move is the inverted die, and
+   nothing else in the chrome competes with it. */
 
-/* Brand mark at the head of the rail. */
-.brandmark { padding: 12px 16px 14px; border-bottom: 1px solid var(--border-soft); margin-bottom: 6px; }
-.brandmark-text {
-  display: block;
-  font-size: 17px; font-weight: 600; letter-spacing: 0.02em;
+/* Only the Electron window on macOS has traffic lights to clear. A browser tab
+   has none, and reserving the space there just pushed the wordmark off the
+   left edge for no reason. */
+body.inset-titlebar .titlebar { padding-left: 78px; }
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  user-select: none;
+}
+.wordmark-name { padding-right: 1px; }
+
+/* The "3" of d3, set as a stamped die: the seam in the name made visible. */
+.wordmark-die {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  margin-left: 3px;
+  border-radius: 3px;
+  background: #fff;
+  color: var(--bg);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  /* Mono digits sit high in the em box; nudge it onto the optical centre. */
+  padding-top: 1px;
+}
+
+.titlebar-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The crosspoint. Brighter than the names it joins, because the join is the
+   product — but still monochrome, so it reads as a hinge, not an accent. */
+.titlebar-x {
   color: var(--text);
+  margin: 0 0.6em;
+  font-weight: 700;
 }
 
 /* ----------------------------------------------------------------- banners */
@@ -732,13 +774,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .brandmark {
-    padding: 10px 12px; border-bottom: none;
-    border-right: 1px solid var(--border-soft);
-    margin-bottom: 0; flex: 0 0 auto;
-  }
-  .brandmark-text { font-size: 14px; }
-
   .nav-item {
     width: auto; flex: 0 0 auto;
     padding: 12px 13px;

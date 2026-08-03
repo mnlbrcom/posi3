@@ -188,6 +188,10 @@ function createServer(opts) {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
 
+  // The port actually bound, which differs from the requested one whenever 0
+  // was asked for. Reporting the request would print "http://127.0.0.1:0".
+  let boundPort = port;
+
   return {
     server,
     hub,
@@ -195,14 +199,16 @@ function createServer(opts) {
       server.once('error', reject);
       server.listen(port, bindHost, () => {
         server.removeListener('error', reject);
-        resolve(server.address());
+        const addr = server.address();
+        if (addr && addr.port) boundPort = addr.port;
+        resolve(addr);
       });
     }),
     close: () => new Promise((resolve) => {
       hub.close();
       server.close(() => resolve());
     }),
-    url: () => `http://${reachableHost(bindHost)}:${port}`
+    url: () => `http://${reachableHost(bindHost)}:${boundPort}`
   };
 }
 
