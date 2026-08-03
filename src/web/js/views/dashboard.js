@@ -5,6 +5,12 @@
  * without a click: is each encoder streaming, is disguise receiving, and is
  * anything degrading.
  *
+ * Everything an encoder has to say lives here, in one card per encoder — dial,
+ * live values and stream health side by side. There used to be a second,
+ * per-connection page carrying the dial and the readouts, which meant the same
+ * question was answered in two places and neither was complete. That page now
+ * holds only the controls, which are not something you watch.
+ *
  * Two clocks, as everywhere in this UI: the card structure is rebuilt only when
  * the profile or a link's state name changes, while the numbers are repainted
  * from the shared requestAnimationFrame loop through `setText`, which skips the
@@ -13,6 +19,7 @@
 
 import { el, clear, pill, groupDigits, fixed, hz, micros, duration, setText, svgEl } from '../ui.js';
 import { store } from '../store.js';
+import { Dial, TravelBar } from '../components/dial.js';
 
 /** Seconds of position history kept per encoder for the sparkline. */
 const TRACE_SECONDS = 12;
@@ -94,7 +101,7 @@ export function renderDashboard(root) {
 
   // -- one card per encoder -------------------------------------------------
   const cards = conns.map((conn) => buildCard(conn));
-  view.appendChild(el('div', { class: 'dash-grid' }, ...cards.map((c) => c.node)));
+  view.appendChild(el('div', { class: 'dash-list' }, ...cards.map((c) => c.node)));
 
   root.appendChild(view);
 
@@ -163,44 +170,64 @@ function buildCard(conn) {
   const pillHolder = el('span', { class: 'pill-holder' });
   const detail = el('div', { class: 'card-detail', text: '' });
 
-  // Position is the headline. Tabular figures on purpose: this repaints many
-  // times a second and proportional digits make the whole card twitch as the
-  // value changes width. (The usual advice — proportional for big standalone
-  // numbers — assumes a value that sits still.)
-  const posValue = el('div', { class: 'card-pos', text: '—' });
-  const posDerived = el('div', { class: 'card-derived', text: '' });
-
+  const dial = new Dial();
+  const travel = new TravelBar();
   const spark = sparkline();
 
-  // Every figure in the summary strip has a counterpart here, so a number seen
-  // at the top can always be traced to the connection that produced it.
-  const metrics = {
-    velocity: metric('Velocity', 'steps/s'),
-    rate: metric('In / out', 'Hz'),
-    latency: metric('Latency', 'p50 / p99'),
-    uptime: metric('Uptime', ''),
-    sent: metric('Sent', 'packets out'),
-    faults: metric('Faults', 'this connection')
-  };
+  // Two columns of figures, deliberately split by the question they answer.
+  // "Live values" is what the encoder is doing; "Stream" is whether the bridge
+  // is keeping up with it. Mixing them is what made the old layout hard to read
+  // at a glance — a bad latency figure sat between two position readings.
+  const live = readouts([
+    ['pos', 'Position', 'lg'],
+    ['angle', 'Angle'],
+    ['rev', 'Revolution'],
+    ['rpm', 'Speed'],
+    ['rawvel', 'Velocity raw'],
+    ['outvel', 'Velocity sent'],
+    ['ts', 'Timestamp']
+  ]);
+  const stream = readouts([
+    ['rate', 'RX / TX'],
+    ['lat', 'App latency'],
+    ['gap', 'Arrival gap'],
+    ['up', 'Uptime'],
+    ['sent', 'Sent'],
+    ['faults', 'Faults']
+  ]);
+
   const faultRow = el('div', { class: 'card-faults' });
 
-  const node = el('div', { class: 'card' },
+  const node = el('div', { class: 'card encoder-card' },
     el('div', { class: 'card-head' },
       el('button', {
         class: 'card-name', text: conn.name,
-        title: 'Open this connection',
+        title: 'Open the controls for this connection',
         onclick: () => store.setView('detail', conn.id)
       }),
-      pillHolder),
+      pillHolder,
+      el('span', { class: 'spacer' }),
+      el('button', {
+        class: 'btn sm ghost', text: 'Controls',
+        onclick: () => store.setView('detail', conn.id)
+      })),
     el('div', { class: 'card-target', title: targetTitle(conn) }, targetLine(conn)),
     detail,
-    el('div', { class: 'card-body' },
-      el('div', { class: 'card-readout' }, posValue, posDerived),
+    el('div', { class: 'encoder-cols' },
+      el('div', { class: 'encoder-pane encoder-dial' },
+        dial.node,
+        travel.node,
+        el('div', { class: 'dial-legend', text: 'outer: angle · inner: revolutions used · bar: mapped range' })),
+      el('div', { class: 'encoder-pane encoder-col' },
+        el('div', { class: 'col-label', text: 'Live values' }), live.node),
+      el('div', { class: 'encoder-pane encoder-col' },
+        el('div', { class: 'col-label', text: 'Stream' }), stream.node)),
+    el('div', { class: 'encoder-pane encoder-trace' },
+      el('div', { class: 'col-label', text: `Position, last ${TRACE_SECONDS} s` }),
       spark.node),
-    el('div', { class: 'card-metrics' },
-      metrics.velocity.node, metrics.rate.node, metrics.latency.node,
-      metrics.uptime.node, metrics.sent.node, metrics.faults.node),
     faultRow);
+
+  const mapping = conn.mapping || { minInput: 0, maxInput: (store.info.constants.TOTAL_COUNTS || 1) - 1 };
 
   let lastState = null;
   let lastDetailText = null;
@@ -225,24 +252,42 @@ function buildCard(conn) {
         lastDetailText = detailText;
       }
 
+      // Revolutions of travel as the *encoder* reports its scaling, not as the
+      // type label implies. A commissioned unit is often nothing like its
+      // nameplate — the reference encoder reports 300 000 counts, 36.62
+      // revolutions, against a nameplate 33 554 432 and 4 096.
+      const revsAvailable = t && t.totalCounts && t.countsPerRev
+        ? t.totalCounts / t.countsPerRev
+        : store.info.constants.REVOLUTIONS;
+      dial.update(t, revsAvailable);
+
       if (!t) {
-        setText(posValue, '—');
-        setText(posDerived, '');
+        for (const k of Object.keys(live.cells)) setText(live.cells[k], null);
+        for (const k of Object.keys(stream.cells)) setText(stream.cells[k], null);
         return null;
       }
+      travel.update(t.pos, mapping.minInput, mapping.maxInput);
 
-      setText(posValue, groupDigits(t.pos));
-      setText(posDerived, `${fixed(t.angleDeg, 2)}°  ·  rev ${groupDigits(t.revs)}`);
-      setText(metrics.velocity.value, groupDigits(t.outVel));
-      setText(metrics.rate.value, `${hz(t.rxHz || 0)} / ${hz(t.txHz || 0)}`);
-      setText(metrics.latency.value,
-        t.latencyUs ? `${micros(t.latencyUs.p50)} / ${micros(t.latencyUs.p99)}` : '—');
-      setText(metrics.uptime.value, duration(t.uptimeMs));
-      setText(metrics.sent.value, groupDigits(t.txTotal));
+      const revDigits = revsAvailable < 100 ? 2 : 0;
+      setText(live.cells.pos, groupDigits(t.pos));
+      setText(live.cells.angle, `${fixed(t.angleDeg, 2)}°`);
+      setText(live.cells.rev, `${groupDigits(t.revs)} / ${fixed(revsAvailable, revDigits)}`);
+      setText(live.cells.rpm, `${fixed(t.rpm, 1)} rpm`);
+      setText(live.cells.rawvel, t.rawVel === null || t.rawVel === undefined
+        ? 'not sent' : `${groupDigits(t.rawVel)} steps/s`);
+      setText(live.cells.outvel, `${groupDigits(t.outVel)} steps/s`);
+      setText(live.cells.ts, t.ts === null || t.ts === undefined ? '—' : `${groupDigits(t.ts)} µs`);
+
+      setText(stream.cells.rate, `${hz(t.rxHz || 0)} / ${hz(t.txHz || 0)} Hz`);
+      setText(stream.cells.lat,
+        t.latencyUs ? `${micros(t.latencyUs.p50)} · ${micros(t.latencyUs.p99)}` : '—');
+      setText(stream.cells.gap, t.gapMs ? `${fixed(t.gapMs.p50, 2)} ms` : '—');
+      setText(stream.cells.up, duration(t.uptimeMs));
+      setText(stream.cells.sent, groupDigits(t.txTotal));
 
       const ownFaults = (t.errors || 0) + (t.txErrors || 0) + (t.unknownLines || 0);
-      setText(metrics.faults.value, groupDigits(ownFaults));
-      metrics.faults.value.classList.toggle('bad', ownFaults > 0);
+      setText(stream.cells.faults, groupDigits(ownFaults));
+      stream.cells.faults.classList.toggle('bad', ownFaults > 0);
 
       const faults = [];
       if (t.errors) faults.push(`${t.errors} error${t.errors > 1 ? 's' : ''}`);
@@ -257,6 +302,18 @@ function buildCard(conn) {
       return t;
     }
   };
+}
+
+/** A definition list of live figures. Returns the cells so they can be repainted. */
+function readouts(rows) {
+  const cells = {};
+  const node = el('dl', { class: 'readouts' });
+  for (const [key, label, cls] of rows) {
+    cells[key] = el('dd', { class: cls || '', text: '—' });
+    node.appendChild(el('dt', { text: label }));
+    node.appendChild(cells[key]);
+  }
+  return { node, cells };
 }
 
 /** "encoder → first destination (+N more)". Full list on hover. */
@@ -280,22 +337,13 @@ function targetTitle(conn) {
     .join('\n');
 }
 
-function metric(label, caption) {
-  const value = el('div', { class: 'metric-value', text: '—' });
-  const node = el('div', { class: 'metric' },
-    el('div', { class: 'metric-label', text: label }),
-    value,
-    caption ? el('div', { class: 'metric-caption', text: caption }) : null);
-  return { node, value };
-}
-
 /**
  * A single-series position trace. One series, so no legend — the card names it.
  * Drawn as an SVG polyline rather than a canvas so it scales with the card and
  * inherits theme colours through CSS.
  */
 function sparkline() {
-  const W = 220;
+  const W = 600;
   const H = 44;
   const line = svgEl('polyline', { class: 'spark-line', points: '', fill: 'none' });
   const svg = svgEl('svg', {
