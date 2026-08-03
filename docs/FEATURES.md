@@ -2020,3 +2020,28 @@ device in the family could accept.
 **Verified on the rig** after a restart: `UsedScopeOfPhysRes 300000`, `TotalScaledRes 300000`,
 `Offset 43156`, and the two dependent fields reading `0 – 299,999`. 154 tests pass; layout audit
 clean on Encoder Config.
+
+## 2026-08-03 — The resolution stated the way the type label reads it
+
+> "i think this is important 4096 resolutions x 8192 steps per revolution = 33,554,432" / "since
+> this is the TotalScaledRes, that should also be the preset / offset range"
+
+It is important, and a bare total loses it. **`33,554,432` cannot be checked against anything;
+`4,096 turns × 8,192 steps/turn` can be read straight off the label of whatever unit is on the
+rig.** That is also how the manual gives it, and it is the stated default for both scaling
+variables — which is what an operator wants when they have scaled an encoder into a corner and need
+to know what to put back. So the field now reads:
+
+    1 – 33,554,432 (4,096 turns × 8,192 steps/turn) · default 33,554,432
+
+Both numbers come from `REVOLUTIONS` and `COUNTS_PER_REV`, so a build for a different model states
+that model's figure without anyone editing prose.
+
+**Preset and Offset take the same ceiling.** They are position values, so they live inside whatever
+`TotalScaledRes` is set to — and `TotalScaledRes` itself cannot exceed the physical resolution.
+Their fallback is therefore `0 – 33,554,431 (one less than TotalScaledRes)`, not the family-wide
+bound no single device can reach, and it is replaced by the real figure the moment the encoder is
+read.
+
+**Verified on the rig:** `UsedScopeOfPhysRes 300000`, `TotalScaledRes 300000`, `Offset 43156`, both
+dependent fields showing `0 – 299,999`. 154 tests pass; Encoder Config audit clean.

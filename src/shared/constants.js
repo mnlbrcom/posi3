@@ -33,6 +33,23 @@ const TOTAL_COUNTS = COUNTS_PER_REV * REVOLUTIONS;
  */
 const MAX_RESOLUTION = 1073741824;
 
+/**
+ * The physical resolution as the type label gives it: revolutions x steps per
+ * revolution. Both scaling variables default to this and neither may exceed it.
+ */
+const PHYS_RES_TEXT = `1 – ${TOTAL_COUNTS.toLocaleString('en-US')}` +
+  ` (${REVOLUTIONS.toLocaleString('en-US')} turns × ${COUNTS_PER_REV.toLocaleString('en-US')}` +
+  ` steps/turn) · default ${TOTAL_COUNTS.toLocaleString('en-US')}`;
+
+/**
+ * Preset and Offset are position values, so they live inside whatever
+ * TotalScaledRes is set to. Until it has been read, the ceiling shown is the
+ * one TotalScaledRes itself defaults to — the type label's resolution — rather
+ * than the family-wide bound, which no single device can reach.
+ */
+const PRESET_RANGE_TEXT =
+  `0 – ${(TOTAL_COUNTS - 1).toLocaleString('en-US')} (one less than TotalScaledRes)`;
+
 /** Factory IP. Hardware switch 2 ON forces this regardless of the programmed IP. */
 const DEFAULT_ENCODER_IP = '10.10.10.10';
 /** TCP 6000 carries the data stream AND the command channel on one socket. */
@@ -179,14 +196,19 @@ const ENCODER_VARS = [
     // this is a 13-bit singleturn x 12-bit multiturn unit, so the family
     // maximum is 32x more than it can hold. MAX_RESOLUTION stays as the server
     // bound, which cannot know the model.
-    range: `1 – ${TOTAL_COUNTS.toLocaleString('en-US')} steps on this model`,
+    //
+    // Written as the product rather than the total, because that is how the
+    // manual gives it and how the type label reads: a bare 33,554,432 cannot be
+    // checked against anything, while "4,096 turns x 8,192 steps/turn" can be
+    // read straight off the label of whatever unit is actually on the rig.
+    range: PHYS_RES_TEXT,
     help: 'The part of the physical resolution used, in physical steps. If it does not divide the ' +
       'total physical resolution evenly, the value jumps to zero at the physical zero point.'
   },
   {
     name: 'TotalScaledRes', group: 'scaling', type: 'int', min: 1, max: MAX_RESOLUTION,
     label: 'Total scaled resolution', default: TOTAL_COUNTS,
-    range: `1 – ${TOTAL_COUNTS.toLocaleString('en-US')} steps on this model`,
+    range: PHYS_RES_TEXT,
     help: 'The scaled resolution counted across the physical steps defined by UsedScopeOfPhysRes.'
   },
   {
@@ -203,7 +225,7 @@ const ENCODER_VARS = [
     // error in front of the operator on every "Read all".
     writeOnly: true,
     rangeFrom: 'TotalScaledRes',
-    range: '0 – one less than TotalScaledRes',
+    range: PRESET_RANGE_TEXT,
     help: 'The position value the encoder will show at the point where the preset is set. An ' +
       'internal offset is calculated and added to all later positions. Cannot be read back — ' +
       'the resulting Offset can.'
@@ -212,7 +234,7 @@ const ENCODER_VARS = [
     name: 'Offset', group: 'scaling', type: 'int', min: 0, max: MAX_RESOLUTION - 1,
     label: 'Offset',
     rangeFrom: 'TotalScaledRes',
-    range: '0 – one less than TotalScaledRes',
+    range: PRESET_RANGE_TEXT,
     help: 'Directly changes the offset that the preset function calculated and set.'
   },
 
