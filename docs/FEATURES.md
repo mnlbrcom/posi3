@@ -1635,3 +1635,51 @@ low; removed.
 
 **Verified:** layout audit clean across all seven views at six widths against the live rig; 146
 tests and 18 desktop checks pass.
+
+## 2026-08-03 — Away from mono, and the menu nobody had ever measured
+
+> "the numbers in the ring or Live Values still show a different font, right?" / "can we go away
+> from mono ?" / "also did you rund this againt the menu ?"
+
+Measured first rather than answered from the stylesheet. The ring and the Live values **agreed** —
+both mono, and `var()` does resolve inside SVG presentation attributes, which had been an open
+question. The odd one out was the four dashboard totals, still set in the prose face.
+
+### Mono is now only for machine language
+
+`font-variant-numeric: tabular-nums` gives the prose face fixed-width digits, and that is the only
+thing mono was really providing for a readout that repaints thirty times a second. So **every
+figure moved to `--sans`**: the totals, the live values, the dial, the throughput line, the route
+and target addresses.
+
+`--mono` is now reserved for text that *is* machine language and would be misread without it: log
+lines, raw commands, encoder variable names and the literal values read back from the device, and
+the disguise field keys meant to be copied. Plus the wordmark, which is a logo.
+
+**The digit separator had to change with it.** It was U+2009 THIN SPACE, which in a monospaced font
+hardly mattered — the glyph still occupied a full cell. In the proportional face the grouping all
+but vanished and `94 952` read as one blob. It is now **U+2007 FIGURE SPACE**, the width of a digit
+in a tabular face, and non-breaking so a figure never wraps mid-number.
+
+### Two guards, because a stylesheet test cannot see this
+
+`.nav-toggle` computed to **Arial 13.33px**. Every rule in the file looked right; the button simply
+set no family, and a form control does not inherit the page's font — it falls back to the user
+agent's. Invisible on a button with no text, obvious the moment someone adds a select. Fixed at the
+class level with `button, input, select, textarea { font-family: inherit }`, which also cleared
+**42 checkbox instances** flagged across the views.
+
+That fault is undetectable by reading the CSS, so `uicheck` now resolves the **computed** family of
+every visible element and fails on anything outside the two stacks. `npm test` gained a companion
+assertion that the figure selectors all declare `tabular-nums`, since moving them off mono removed
+what was keeping their digits from jittering.
+
+### The menu had never been audited
+
+Correct, and worse than not run: below the rail breakpoint the nav is `display: none` until opened,
+and an element with no box is invisible to the audit — so it had been silently skipped at every
+width in every run to date, while appearing to pass. `uicheck` now opens it when the toggle is
+present and labels those runs `+ menu`. Clean at 720, 480 and 390 across all seven views.
+
+**Verified:** 147 tests, 18 desktop checks, layout and font audit clean across seven views at six
+widths with the menu open.

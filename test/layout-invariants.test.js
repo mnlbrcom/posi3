@@ -133,12 +133,28 @@ test('type comes from the scale, not from a number typed at the point of use', (
 });
 
 test('only two font families, each with a job', () => {
-  // --sans for anything read as language, --mono for anything read as data.
-  // A third family, or a raw family name outside the tokens, is how a UI ends
-  // up looking assembled from parts.
+  // --sans is the default and carries the figures too, with tabular-nums for
+  // fixed-width digits; --mono is reserved for text that *is* machine language.
+  // `inherit` is allowed: it is how form controls are stopped from falling back
+  // to the user agent's font.
+  //
+  // This reads the stylesheet, so it cannot see an element that sets no family
+  // at all and inherits the user agent's instead of the page's. `npm run
+  // uicheck` resolves the computed family of every visible element and is the
+  // half of this guard that catches that.
   const families = [...CSS.matchAll(/font-family:\s*([^;]+);/g)].map((m) => m[1].trim());
-  const offScale = families.filter((f) => !/^var\(--(mono|sans)\)$/.test(f));
+  const offScale = families.filter((f) => !/^(var\(--(mono|sans)\)|inherit)$/.test(f));
   assert.deepEqual(offScale, [], `font families set outside the tokens: ${offScale.join(' | ')}`);
+});
+
+test('figures are set in the prose face, so they must be tabular', () => {
+  // Moving the readouts off mono removed what was keeping their digits from
+  // changing width. Anything that repaints continuously has to declare
+  // tabular-nums explicitly now, or the value jitters as it counts.
+  for (const sel of ['.stat-value', '.readouts dd', '.dial svg text', '.agg', '.num']) {
+    const re = new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*font-variant-numeric:\\s*tabular-nums`);
+    assert.match(CSS, re, `${sel} shows live figures and must set tabular-nums`);
+  }
 });
 
 test('the layout re-flows for narrow viewports', () => {

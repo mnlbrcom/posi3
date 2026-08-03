@@ -67,9 +67,16 @@
      600 instead of 400. Reaching for a fifth size is nearly always a sign
      that one of those two was the right answer.
 
-     Two families, and only two, each with a job: --sans for anything read
-     as language, --mono for anything read as data — figures, addresses,
-     variable names, log lines. Nothing else changes family.
+     Two families, and only two. --sans is the default and carries the
+     figures as well as the prose: `font-variant-numeric: tabular-nums` gives
+     it fixed-width digits, which is the only thing mono was really doing for
+     a readout that repaints thirty times a second. Every figure in the app
+     therefore sits in --sans and must set tabular-nums.
+
+     --mono is reserved for text that *is* machine language and would be
+     misread without it: log lines, raw commands, encoder variable names and
+     the literal values read back from the device, and disguise field keys
+     meant to be copied. Plus the wordmark, which is a logo. Nothing else.
 
        --fs-title   one per screen: the view headline
        --fs-head    panel heads, card names, and the figures they exist for
@@ -99,6 +106,12 @@ html, body {
   font-size: var(--fs-body);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Form controls do not inherit the page's font — they take the user agent's,
+   which on this machine is Arial. Invisible on a checkbox, obvious the moment
+   somebody adds a select or a text input without a class. Inherit the family
+   only: sizes and weights are set per control. */
+button, input, select, textarea { font-family: inherit; }
 
 /* ---------------------------------------------------------------- titlebar */
 
@@ -233,7 +246,7 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
 .nav-item.active .nav-dot { background: var(--accent); }
 
 .sidebar-foot { margin-top: auto; padding: 12px 14px 4px; border-top: 1px solid var(--border-soft); }
-.agg { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.agg { font-size: var(--fs-label); color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .ver { font-size: var(--fs-label); color: var(--text-faint); margin-top: 4px; }
 
 .content { flex: 1; overflow-y: auto; overflow-x: hidden; }
@@ -261,7 +274,7 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
    swallows mouse events on everything inside it — so this button was dead in
    Electron while working fine in a browser, which ignores the property. Any
    control placed in the titlebar needs this. */
-.nav-toggle { -webkit-app-region: no-drag; }
+.nav-toggle { -webkit-app-region: no-drag; font: inherit; }
 .nav-toggle:hover { background: var(--surface-3); }
 .nav-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -420,7 +433,7 @@ table.rows tbody tr.clickable { cursor: pointer; }
 table.rows tbody tr.clickable:hover { background: var(--surface-2); }
 table.rows tr.selected { background: var(--accent-wash); }
 
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; }
 .dim { color: var(--text-dim); }
 .faint { color: var(--text-faint); }
 .meta { font-size: var(--fs-label); }
@@ -429,7 +442,7 @@ table.rows tr.selected { background: var(--accent-wash); }
 .mono { font-family: var(--mono); }
 
 .route {
-  font-family: var(--mono); font-size: var(--fs-label); color: var(--text-dim);
+  font-size: var(--fs-label); color: var(--text-dim); font-variant-numeric: tabular-nums;
   display: block; overflow: hidden; text-overflow: ellipsis;
 }
 .route .arrow { color: var(--text-faint); margin: 0 5px; }
@@ -452,7 +465,9 @@ input[type="text"], input[type="number"], select, textarea {
   border-radius: var(--radius);
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
-input.num-input, .mono-input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+input.num-input { font-variant-numeric: tabular-nums; }
+/* Raw commands and addresses are typed as machine language. */
+.mono-input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
 /* A flex child defaults to min-width:auto, i.e. it refuses to shrink below its
@@ -480,7 +495,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   color: var(--text-faint); font-weight: 600;
 }
 .readouts dd {
-  margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  margin: 0; font-variant-numeric: tabular-nums;
   font-size: var(--fs-head); text-align: right;
 }
 .readouts dd small { color: var(--text-faint); font-size: var(--fs-label); margin-left: 6px; }
@@ -492,7 +507,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 5px 14px;
-  font-family: var(--mono); font-size: var(--fs-label); color: var(--text-dim);
+  font-size: var(--fs-label); color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
 /* The value column is a fixed width, not `auto`. With auto the number is
@@ -654,7 +669,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .tag {
   display: inline-block; padding: 1px 6px; border-radius: 3px;
   background: var(--surface-3); color: var(--text-dim);
-  font-size: var(--fs-label); font-family: var(--mono);
+  font-size: var(--fs-label);
 }
 .tag.warn { background: var(--warn-wash); color: var(--warn); }
 .tag.err { background: var(--err-wash); color: var(--err-text); }
@@ -726,7 +741,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 }
 
 .card-target {
-  font-family: var(--mono); font-size: var(--fs-label); color: var(--text-faint);
+  font-size: var(--fs-label); color: var(--text-faint); font-variant-numeric: tabular-nums;
   margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .card-detail {
@@ -766,6 +781,9 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
    card it scales to the column instead, which the viewBox makes lossless. */
 .encoder-dial .dial { width: 100%; }
 .encoder-dial .dial svg { width: 100%; height: auto; }
+/* The centre readout counts continuously; proportional digits would make it
+   shift on every change, which is what mono used to prevent here. */
+.dial svg text { font-variant-numeric: tabular-nums; }
 .dial-legend { font-size: var(--fs-label); color: var(--text-faint); text-align: center; line-height: 1.4; }
 
 /* Sits under the stream figures, separated but inside the same pane. */
@@ -831,7 +849,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .target-main select { max-width: 320px; }
 
 .target-addr {
-  font-family: var(--mono); font-size: var(--fs-label); color: var(--text-dim);
+  font-size: var(--fs-label); color: var(--text-dim); font-variant-numeric: tabular-nums;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .target-live {
@@ -844,7 +862,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   color: var(--text-faint);
 }
 .target-pos {
-  font-family: var(--mono); font-size: var(--fs-head); color: var(--text);
+  font-size: var(--fs-head); color: var(--text); font-variant-numeric: tabular-nums;
   font-variant-numeric: tabular-nums;
 }
 .target-hint { font-size: var(--fs-label); color: var(--text-faint); }
