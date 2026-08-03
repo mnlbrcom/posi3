@@ -20,7 +20,8 @@
     "dist:win": "npm run icon && electron-builder --win --x64",
     "uicheck": "node tools/uicheck.js",
     "tray-icon": "node tools/make-tray-icon.js",
-    "shaft": "node tools/shaft-check.js"
+    "shaft": "node tools/shaft-check.js",
+    "desktopcheck": "node tools/desktopcheck.js"
   },
   "devDependencies": {
     "electron": "43.2.0",

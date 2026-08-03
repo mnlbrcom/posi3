@@ -28,6 +28,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { parseArgs } = require('./cli-args');
+const { CDP, sleep, waitForEndpoint } = require('./cdp');
 
 const opts = parseArgs(process.argv, {
   url: 'http://127.0.0.1:8711',
@@ -41,72 +42,6 @@ const opts = parseArgs(process.argv, {
   /** Run an arbitrary expression in the page instead of the audit. */
   eval: ''
 });
-
-// ---------------------------------------------------------------------------
-// Minimal CDP client
-// ---------------------------------------------------------------------------
-
-class CDP {
-  constructor(ws) {
-    this.ws = ws;
-    this.id = 0;
-    this.pending = new Map();
-    this.handlers = new Map();
-    ws.addEventListener('message', (ev) => {
-      const msg = JSON.parse(ev.data);
-      if (msg.id && this.pending.has(msg.id)) {
-        const { resolve, reject } = this.pending.get(msg.id);
-        this.pending.delete(msg.id);
-        if (msg.error) reject(new Error(`${msg.error.message} (${JSON.stringify(msg.error.data || '')})`));
-        else resolve(msg.result);
-        return;
-      }
-      const list = this.handlers.get(msg.method);
-      if (list) for (const fn of list) fn(msg.params, msg.sessionId);
-    });
-  }
-
-  static connect(url) {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(url);
-      ws.addEventListener('open', () => resolve(new CDP(ws)));
-      ws.addEventListener('error', () => reject(new Error(`cannot connect to ${url}`)));
-    });
-  }
-
-  send(method, params = {}, sessionId) {
-    const id = ++this.id;
-    const payload = { id, method, params };
-    if (sessionId) payload.sessionId = sessionId;
-    this.ws.send(JSON.stringify(payload));
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      setTimeout(() => {
-        if (this.pending.delete(id)) reject(new Error(`${method} timed out`));
-      }, 20000);
-    });
-  }
-
-  on(method, fn) {
-    if (!this.handlers.has(method)) this.handlers.set(method, []);
-    this.handlers.get(method).push(fn);
-  }
-
-  close() { this.ws.close(); }
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function waitForEndpoint(port, tries = 60) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) return (await res.json()).webSocketDebuggerUrl;
-    } catch { /* not up yet */ }
-    await sleep(150);
-  }
-  throw new Error('Chrome did not expose a DevTools endpoint');
-}
 
 // ---------------------------------------------------------------------------
 // The audit, evaluated inside the page
