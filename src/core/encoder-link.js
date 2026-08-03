@@ -372,7 +372,10 @@ class EncoderLink extends EventEmitter {
     const consumed = this._commands.handleParsed(r);
 
     // Cache every reply, consumed or not — see the note on _varCache.
-    if (r.kind === KIND.REPLY) this._varCache.set(r.variable, { value: r.value, atMs: Date.now() });
+    if (r.kind === KIND.REPLY) {
+      this._varCache.set(r.variable, { value: r.value, atMs: Date.now() });
+      this._applyLiveVar(r.variable, r.value);
+    }
 
     switch (r.kind) {
       case KIND.EVENT:
@@ -585,6 +588,67 @@ class EncoderLink extends EventEmitter {
   // -------------------------------------------------------------------------
   // Field layout detection
   // -------------------------------------------------------------------------
+
+  /**
+   * Act on a configuration change, not merely record it.
+   *
+   * The encoder broadcasts to *every* connected TCP client — not just the
+   * reply, but the command itself. So when somebody reconfigures the device
+   * from POSITAL's applet, another posi3, or a raw socket, we are told. Until
+   * this existed we cached the new value and carried on parsing with the old
+   * layout, which is the quiet kind of wrong: benign when a field is removed
+   * from the end, but if `OutputMode` ever loses Position from the front, the
+   * next field takes its place and disguise is driven by a timestamp.
+   *
+   * Observed on the reference rig: `OutputMode` went `POSITION_VELOCITY` ->
+   * `POSITION` and `CycleTime` 18 -> 8 mid-session, and nothing noticed.
+   */
+  _applyLiveVar(name, value) {
+    switch (name) {
+      case 'OutputMode': {
+        const map = parseOutputMode(value);
+        if (!map) return;
+        const before = this._parser.fieldMap;
+        if (before && before.length === map.length && before.every((f, i) => f === map[i])) return;
+        this._parser.setFieldMap(map);
+        this.emit('fieldLayout', { id: this.id, fields: map, inferred: false });
+        this._log('warn', 'rx', `field layout changed on the encoder: ${value}`);
+        break;
+      }
+      case 'OutputType':
+        if (String(value).toUpperCase() === 'BINARY') {
+          this._warn('OutputType was changed to BINARY. This app streams ASCII only.');
+          this.emit('encoderEvent', { id: this.id, kind: 'binaryMode', text: 'OutputType=BINARY' });
+        }
+        break;
+      case 'CycleTime': {
+        // Feeds the stall watchdog: at CycleTime=8 a gap that is normal at 18
+        // would otherwise look like a stall, and vice versa.
+        const ms = Number(value);
+        if (!Number.isFinite(ms) || ms <= 0) return;
+        if (this.config.encoderMeta.cycleTimeMs === ms) return;
+        this.config.encoderMeta.cycleTimeMs = ms;
+        this._log('info', 'rx', `cycle time changed on the encoder: ${ms} ms`);
+        break;
+      }
+      case 'TotalScaledRes':
+      case 'UsedScopeOfPhysRes': {
+        const total = Number((this._varCache.get('TotalScaledRes') || {}).value);
+        const scope = Number((this._varCache.get('UsedScopeOfPhysRes') || {}).value);
+        if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(scope) || scope <= 0) return;
+        const perRev = Math.round(COUNTS_PER_REV * (total / scope));
+        const meta = this.config.encoderMeta;
+        if (meta.totalCounts === total && meta.countsPerRev === perRev) return;
+        meta.totalCounts = total;
+        if (perRev > 0) meta.countsPerRev = perRev;
+        this.emit('encoderMeta', { id: this.id, totalCounts: total, countsPerRev: meta.countsPerRev, usedScope: scope });
+        this._log('info', 'rx', `scaling changed on the encoder: ${total} counts, ${meta.countsPerRev}/rev`);
+        break;
+      }
+      default:
+        break;
+    }
+  }
 
   /**
    * Take the encoder's own scaling rather than the type label's.
