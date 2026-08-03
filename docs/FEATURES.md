@@ -34,6 +34,7 @@ old driver (`<devid>:<pos>,<vel>;\n`), so existing d3 projects need no changes. 
 | Link registry | `src/core/link-manager.js` | Owns all links; one 30 Hz timer emits a single telemetry message for all of them. |
 | Config | `src/core/config-store.js` | Atomic profile persistence (tmp → fsync → rename), rotated backup, corruption quarantine. |
 | Log | `src/core/logger.js` | Bounded ring buffer, batched delivery, explicit dropped-line count. |
+| Instance lock | `src/core/instance-lock.js` | One bridge per profile, across every entry point. Electron's own lock only stops a second *desktop* copy; this also stops a headless one running alongside it. |
 | Log file | `src/core/log-file.js` | Warnings and errors **always**; every line when `logToFile` is on. Size-capped with one rotation. A packaged app has no console, so without this a failure before the UI is up leaves no trace. |
 
 ### Transport — `src/server/`
@@ -1138,3 +1139,57 @@ one warning while still counting every loss.
 
 **Live rig unaffected:** 125 Hz in and out — matching `CycleTime=8` — one destination, zero
 faults.
+
+## 2026-08-03 — The titlebar, and two bugs it uncovered
+
+Brief: make the wordmark dominant, nerdier, in anthracite and satin blacks and white; set
+DISGUISE in caps; replace the arrow with an ×; drop the duplicate wordmark in the rail.
+
+### The mark
+
+Monospace, because this app's world is instrumentation — type labels stamped on housings,
+counts, fixed-width numerics — and that is where the "geeky" register actually lives for this
+audience, rather than in a generic terminal motif. The name is itself a mashup of POSITAL and
+d3, so the mark shows the seam: **`posi` set as a nameplate, the `3` as an inverted die.**
+Strictly white on anthracite. The die is the one bold move and nothing else in the chrome
+competes with it.
+
+`POSITAL IXARC × DISGUISE`. The **×** is a crosspoint, the patching vernacular this audience
+already reads, and it says junction where an arrow said one-way pipe — which is wrong for a
+bridge. Dimmed names, brighter ×, so the join reads as the product without becoming an accent
+colour.
+
+Also fixed: the titlebar reserved 78 px for macOS traffic lights unconditionally, so in a
+browser tab the wordmark was pushed off the left edge by dead space. Reserved now only in the
+Electron window on macOS.
+
+### Two bugs found while checking it in the desktop app
+
+1. **The port fallback never worked.** `const port = opts.port || 8710` turns the `0` that means
+   "any free port" into the default, so the fall-back path retried the very port it had just
+   found busy. A documented feature that had never once run. The reported URL was wrong too — it
+   used the requested port, printing `http://127.0.0.1:0`.
+2. **`fatal()` died silently.** It only tried a dialog, so when the dialog was unavailable the
+   process exited with an empty log and nothing to diagnose — the worst failure mode for an app
+   with no console. It now writes the stack to stderr and to `posi3.log` first.
+
+### One bridge per profile
+
+The user asked whether the desktop app and the web UI are separate instances. **They are not** —
+the window loads the app's own HTTP server, so there is one bridge, one set of sockets, one
+config, and a browser on the LAN sees exactly what the window sees.
+
+But the question exposed a real hazard. Electron's single-instance lock only stops a second
+*desktop* copy; a headless `bin/posi3.js` could run alongside one, which is what had been
+happening all session. The visible symptom is a port clash. **The real risk is two bridges
+opening rival TCP sockets to the same encoder — which accepts only a handful of clients — and
+both driving one disguise axis**, which looks fine on screen.
+
+So the lock now lives with the profile rather than the window, and covers every entry point.
+A live holder is refused with its interface named; a stale lock from a dead process is taken
+over; `--force` overrides; the desktop app offers to open the running instance rather than
+appearing to fail to launch. The same process may re-claim its own lock, because the port
+fallback calls `startService` twice.
+
+Eight tests, plus five on the port binding. **142 pass.** Verified on the rig: the desktop app
+holds the lock and streams to disguise at 120 pkt/s with zero faults.

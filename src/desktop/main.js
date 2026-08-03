@@ -17,6 +17,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, powerSaveBlocker, shell, dialog, clipboard } = require('electron');
 
 const { startService } = require('../server/service');
+const { read: readLock } = require('../core/instance-lock');
 const { TRAY_ICON_PNG } = require('./tray-icon');
 
 const isDev = process.argv.includes('--dev');
@@ -41,7 +42,12 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function start() {
-  svc = await listen();
+  try {
+    svc = await listen();
+  } catch (err) {
+    if (err.code === 'EALREADYRUNNING') return deferToRunningInstance(err.holder);
+    throw err;
+  }
 
   // Launch at login is the host's job, not the API's: the service layer has no
   // business knowing about Electron.
@@ -50,6 +56,33 @@ async function start() {
 
   createTray();
   createWindow();
+}
+
+/**
+ * Hand over to the bridge that is already running.
+ *
+ * Starting a second one would open rival TCP sockets to the same encoder,
+ * which accepts only a handful of clients, and put two senders on one disguise
+ * axis. Refusing silently would look like the app failing to launch, so offer
+ * the running instance's interface instead — the same thing a second
+ * double-click does.
+ */
+function deferToRunningInstance(holder) {
+  const url = (holder && holder.url) || (readLock(app.getPath('userData')) || {}).url;
+  const choice = dialog.showMessageBoxSync({
+    type: 'info',
+    title: 'posi3 is already running',
+    message: 'posi3 is already running for this profile.',
+    detail: url
+      ? `Its interface is at ${url}. Running a second bridge would open rival ` +
+        'connections to the same encoder.'
+      : 'Running a second bridge would open rival connections to the same encoder.',
+    buttons: url ? ['Open it', 'Quit'] : ['Quit'],
+    defaultId: 0,
+    cancelId: url ? 1 : 0
+  });
+  if (url && choice === 0) shell.openExternal(url);
+  app.exit(0);
 }
 
 /**
@@ -66,6 +99,7 @@ async function listen() {
       dataDir: app.getPath('userData'),
       bindHost: readSetting('webBindHost', '127.0.0.1'),
       port: readSetting('webPort', 8710),
+      mode: 'desktop',
       env: { electron: process.versions.electron },
       onSettings: (s) => applyLoginItem(s.launchAtLogin)
     });
@@ -75,6 +109,7 @@ async function listen() {
       dataDir: app.getPath('userData'),
       bindHost: readSetting('webBindHost', '127.0.0.1'),
       port: 0,
+      mode: 'desktop',
       env: { electron: process.versions.electron },
       onSettings: (s) => applyLoginItem(s.launchAtLogin)
     });

@@ -20,7 +20,9 @@ const opts = parseArgs(process.argv, {
   port: 8710,
   dataDir: '',
   token: '',
-  headless: true
+  headless: true,
+  /** Take the profile lock even if another instance claims to hold it. */
+  force: false
 });
 
 startService({
@@ -28,6 +30,8 @@ startService({
   port: Number(opts.port),
   dataDir: opts.dataDir || undefined,
   token: opts.token || undefined,
+  mode: 'headless',
+  force: !!opts.force,
   env: { headless: true }
 }).then((svc) => {
   process.stdout.write(`posi3 listening on ${svc.url}\n`);
@@ -52,8 +56,10 @@ startService({
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }).catch((err) => {
   process.stderr.write(`posi3 failed to start: ${err.message}\n`);
-  if (err.code === 'EADDRINUSE') {
-    process.stderr.write('  another posi3 (or something else) already holds that port\n');
+  if (err.code === 'EALREADYRUNNING') {
+    process.stderr.write('  pass --force to start anyway, but only if you know the other one is dead\n');
+  } else if (err.code === 'EADDRINUSE') {
+    process.stderr.write('  something else already holds that port — pass --port to move this one\n');
   }
   process.exit(1);
 });
