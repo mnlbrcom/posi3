@@ -159,6 +159,9 @@ export function select(options, value, onchange) {
   for (const o of options) {
     const opt = typeof o === 'string' ? { value: o, label: o } : o;
     const node = el('option', { value: opt.value, text: opt.label });
+    // Shown but unchoosable, so a device reporting a value this app cannot use
+    // still displays it truthfully instead of a blank box.
+    if (opt.disabled) node.disabled = true;
     if (String(opt.value) === String(value)) node.selected = true;
     s.appendChild(node);
   }

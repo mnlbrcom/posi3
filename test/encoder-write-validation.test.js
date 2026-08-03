@@ -79,3 +79,14 @@ test('addresses must be four octets in range', () => {
 test('a value is capped in length', () => {
   assert.throws(() => checkValue('x'.repeat(257)), (err) => err.code === 'EINVAL');
 });
+
+test('a value the app cannot stream is refused, even though it is a real one', () => {
+  // OutputType=BINARY is a legitimate encoder setting and a guaranteed outage
+  // here: the app parses ASCII only. It stays in the table so a device already
+  // in it reads back correctly and can be set to something usable — but it can
+  // never be written, and both the break and the repair would be flash writes.
+  assert.equal(checkVarWrite('OutputType', 'ASCII_SHORT').value, 'ASCII_SHORT');
+  assert.equal(checkVarWrite('OutputType', 'ascii').value, 'ASCII');
+  rejects('OutputType', 'BINARY', 'the app cannot stream it');
+  rejects('OutputType', 'binary', 'case does not launder it');
+});

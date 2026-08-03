@@ -229,6 +229,9 @@ function encoderCard(conn) {
       edited.clear();
       refreshDirty();
       applyDependentRanges();
+      // The unknown-status banner asks for exactly this, so answering it has to
+      // clear it — otherwise the instruction is a dead end.
+      onFlashConfirmed(conn.id);
       statusText.textContent = `read ${ok} of ${vars.length} variables`;
     } catch (err) {
       toast('error', `${conn.name}: ${err.message}`);
@@ -290,6 +293,15 @@ function encoderCard(conn) {
       if (failed.length) {
         toast('error', `${failed.length} setting(s) rejected: ` +
           failed.map((f) => `${f.variable} (${f.error})`).join(', '));
+      }
+      // An explicit rejection means the encoder never accepted the value, so
+      // there is no commit to wait for. Standing there for 30s and then saying
+      // "status unknown" is worse than saying nothing: it puts a do-not-power-
+      // off warning in front of an operator when nothing is being written.
+      if (failed.length === results.length) {
+        clearTimeout(timeout);
+        pendingFlash.delete(conn.id);
+        dismissBanner('flash');
       }
       for (const r of results.filter((x) => x.ok)) {
         current.set(r.variable, r.value);
@@ -353,7 +365,14 @@ export function onFlashConfirmed(id) {
 
 function buildControl(spec, onChange) {
   if (spec.type === 'enum') {
-    const sel = select(spec.values, spec.values[0], onChange);
+    const blocked = spec.unsupported || [];
+    const sel = select(
+      spec.values.map((v) => ({
+        value: v,
+        label: blocked.includes(v) ? `${v} — not supported` : v,
+        disabled: blocked.includes(v)
+      })),
+      spec.values[0], onChange);
     /**
      * Resolve whatever the device said to one of our options.
      *
