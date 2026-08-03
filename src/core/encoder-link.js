@@ -209,17 +209,51 @@ class EncoderLink extends EventEmitter {
         tx: 0,
         txErrors: 0,
         lastError: null,
+        // Announced on a backing-off schedule, not per N failures. A dead
+        // destination fails once per sample: at 125 Hz a "every 500 errors"
+        // rule shouts every four seconds, indefinitely, about a situation that
+        // has not changed — which buries anything that has.
+        nextWarnAt: 0,
+        warnBackoffMs: 0,
         onError: (err) => {
           if (!err) return;
           sink.txErrors++;
           this.counters.txErrors++;
           sink.lastError = err.message;
-          if (sink.txErrors === 1 || sink.txErrors % 500 === 0) {
-            this._warn(`UDP to ${dest.host}:${dest.port} failed (${sink.txErrors}x): ${err.message}`);
-          }
+          // Arm the recovery notice again: a destination that comes back, goes
+          // away and comes back once more should say so both times.
+          sink.recovered = false;
+
+          const now = Date.now();
+          if (now < sink.nextWarnAt) return;
+          // 0s, 15s, 60s, 240s, then every 15 minutes.
+          sink.warnBackoffMs = sink.warnBackoffMs
+            ? Math.min(sink.warnBackoffMs * 4, 900000)
+            : 15000;
+          sink.nextWarnAt = now + sink.warnBackoffMs;
+
+          const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
+          this._warn(`Cannot reach ${where}: ${err.message}. ${sink.txErrors} packets lost so far.`);
+        },
+        onSent: () => {
+          // Recovery is news too. Without this a destination that came back
+          // leaves its last warning as the most recent thing anyone was told.
+          if (!sink.txErrors || sink.recovered) return;
+          sink.recovered = true;
+          const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
+          this._log('info', 'tx', `${where} is reachable again after ${sink.txErrors} lost packets`);
+          this.emit('encoderEvent', {
+            id: this.id, kind: 'destinationUp',
+            text: `${where} is reachable again`
+          });
+          sink.nextWarnAt = 0;
+          sink.warnBackoffMs = 0;
         }
       };
 
+      // Only installed once a failure has been seen, so the happy path stays a
+      // bare callback with nothing extra to do per packet.
+      sink.onSendResult = (err) => (err ? sink.onError(err) : sink.onSent());
       udp.on('error', sink.onError);
 
       const afterBind = () => {
@@ -472,7 +506,7 @@ class EncoderLink extends EventEmitter {
         builtFor = sink.dest.devid;
       }
 
-      sink.udp.send(buf, 0, len, sink.onError);
+      sink.udp.send(buf, 0, len, sink.txErrors ? sink.onSendResult : sink.onError);
       sink.tx++;
       this.counters.tx++;
     }

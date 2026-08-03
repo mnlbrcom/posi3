@@ -173,6 +173,10 @@ function wireEvents() {
         store.fieldLayouts.set(e.id, { fields: e.fields, inferred: false });
         break;
 
+      case 'destinationUp':
+        toast('info', `${who}: ${e.text}`);
+        break;
+
       case 'error':
         toast('error', `${who}: ${e.text}`);
         break;

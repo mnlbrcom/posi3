@@ -1107,3 +1107,34 @@ same positions actually being transmitted, so it is self-consistent with what di
 via the axis `velocitycalcmode`.
 
 Establishing which is right needs a constant-speed drive rather than a hand-turn. Not attempted.
+
+## 2026-08-03 — A dead destination should be said once, not shouted forever
+
+The user reported *"LOTS of errors — Real encoder: UDP to 127.0.0.1:6001 failed (3000x):
+recvmsg ECONNREFUSED"*. The destination was a local tap added for the velocity capture and since
+removed, so the underlying condition was self-inflicted and already gone. **The reporting was
+not.**
+
+A dead destination fails once per sample. The rule was `txErrors === 1 || txErrors % 500 === 0`,
+which at the rig's 125 Hz is a warning **every four seconds, indefinitely**, about a situation
+that has not changed. That is worse than saying nothing: a channel that cries constantly is one
+nobody reads, and it buries the events that do matter.
+
+Now:
+
+- **Announced once, then backing off** — 15 s, 60 s, 240 s, then every 15 minutes. Time-based,
+  so the cadence does not depend on the sample rate.
+- **The message says what and how much**: *"Cannot reach disguise (10.10.10.5:6000):
+  ECONNREFUSED. 412 packets lost so far."* rather than a bare failure count.
+- **Recovery is reported too.** Without it, a destination that came back left its last warning as
+  the most recent thing anyone had been told. A second outage re-arms the notice, so a flapping
+  destination is not silently recovered.
+
+The success callback is only installed once a failure has been seen, so the healthy path keeps a
+bare callback with nothing extra to do per packet.
+
+Four tests, including the case that prompted it: 1,500 consecutive failures must produce exactly
+one warning while still counting every loss.
+
+**Live rig unaffected:** 125 Hz in and out — matching `CycleTime=8` — one destination, zero
+faults.
