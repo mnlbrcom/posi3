@@ -114,6 +114,10 @@ function checkVarWrite(name, value) {
     const match = spec.values.find((v) => foldKey(v) === key) ||
       (spec.aliases && spec.aliases[key]);
     if (!match) fail('EINVAL', `${variable} must be one of: ${spec.values.join(', ')}`);
+    // Recognised, so it can be displayed and repaired — but refused as a write.
+    if ((spec.unsupported || []).includes(match)) {
+      fail('EINVAL', `${variable}=${match} is not supported by this app and would stop the stream`);
+    }
     return { variable, value: match };
   }
 

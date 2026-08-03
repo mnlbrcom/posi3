@@ -156,6 +156,16 @@ const ENCODER_VARS = [
   {
     name: 'OutputType', group: 'output', type: 'enum',
     values: ['ASCII', 'ASCII_SHORT', 'BINARY'],
+    /**
+     * Still listed, so a device already in BINARY resolves to a real option
+     * and can be read and repaired — but never selectable and never writable.
+     *
+     * It is the one setting on this screen whose only available change is
+     * breakage: the app cannot stream binary at all, so choosing it stops the
+     * show, and both the break and the repair are flash writes out of a budget
+     * of about 100,000.
+     */
+    unsupported: ['BINARY'],
     label: 'Output type',
     help: 'ASCII_SHORT sends "<position> <velocity> <time>" separated by spaces. ' +
       'ASCII sends "POSITION=… VELOCITY=… TIMESTAMP=…". BINARY sends 32-bit values with no ' +
