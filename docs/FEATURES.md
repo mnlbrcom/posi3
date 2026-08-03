@@ -2191,3 +2191,52 @@ parser: Revolve streaming, `errors 0`, `unknown 0`. Bench: `rx 3000 tx 3000 unpa
 Also: the CycleTime description is now just *"States the time in ms for the cyclic time mode."*
 
 **170 tests pass.**
+
+## 2026-08-04 — A remembered write dialect that disabled writing
+
+> "changing the CycleTime did not work for me. But it workded earlier." / "i changed the Timestamp
+> check and it gave a error?" / "it said 1 setting(s) rejected: OutputMode (unknown command)"
+
+Not the second encoder, and not the parser. The log named it:
+
+    tx  CycleTime=10          ← bare, where "set CycleTime=10" had worked earlier
+    tx  read CycleTime        ← no reply, no confirmation
+
+This firmware answers `set Var=Value` and ignores the bare `Var=Value` form. The link tries the
+documented form first and falls back to bare once, then **remembers** the winner — but it
+remembered it as the *only* form, so `forms` became a one-element list. A single wrong guess
+therefore disabled writing for the rest of the connection: every later `set` went out in a dialect
+the device silently ignores, with no fallback and nothing in the log to explain it. Writes worked
+earlier in the session and stopped without anything visibly changing.
+
+**The remembered dialect is now a preference, not a restriction.** It is tried first and the other
+form stays behind it. If both are refused, the remembered one is discarded, since it has just been
+disproved. And the decision is logged — `write dialect for this encoder: "set Var=Value"` — so the
+next person can see it in the log rather than infer it from a silence.
+
+Confirmed on the rig immediately afterwards:
+
+    tx  set CycleTime=10
+    rx  cycle time changed on the encoder: 10 ms
+    rx  Parameters successfully written!
+
+with the stream's arrival gap moving from 8.11 ms to 10.11 ms, `errors 0`, `unknown 0`.
+
+### The banner that warned about a write that never happened
+
+Two more, both reported here. The encoder had refused the command outright, so nothing was being
+committed — yet the flash banner and its 30-second timer ran anyway, telling the operator not to
+power off a device that was doing nothing, then resolving to "write status unknown". An explicit
+rejection now clears both at once.
+
+That banner also says to press Read, and Read did not clear it. A successful read is exactly the
+confirmation it asks for, so it dismisses it now; otherwise the instruction was a dead end.
+
+**`OutputMode` remains unwritable on this firmware** — both dialects answer `ERROR: unknown
+command`, and four probes with a deliberately invalid value (which cannot commit) drew no reply at
+all. The encoder was verified unchanged afterwards: `OutputMode=POSITION_VELOCITY`,
+`OutputType=ASCII_SHORT`, `TimeMode=CYCLIC`. POSITAL's own IP-change note uses a third form —
+`set ip 198.100.100.54`, space-separated and lower-case — which is the next thing to try, and costs
+a flash cycle to test.
+
+**171 tests pass.**
