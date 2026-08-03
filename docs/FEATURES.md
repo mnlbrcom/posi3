@@ -34,6 +34,7 @@ old driver (`<devid>:<pos>,<vel>;\n`), so existing d3 projects need no changes. 
 | Link registry | `src/core/link-manager.js` | Owns all links; one 30 Hz timer emits a single telemetry message for all of them. |
 | Config | `src/core/config-store.js` | Atomic profile persistence (tmp → fsync → rename), rotated backup, corruption quarantine. |
 | Log | `src/core/logger.js` | Bounded ring buffer, batched delivery, explicit dropped-line count. |
+| Log file | `src/core/log-file.js` | Warnings and errors **always**; every line when `logToFile` is on. Size-capped with one rotation. A packaged app has no console, so without this a failure before the UI is up leaves no trace. |
 
 ### Transport — `src/server/`
 
@@ -264,6 +265,7 @@ would never have connected anything.
   reloads the page, so it needs an in-page handler before the web UI ships.
 - Three settings remain dead: `defaultLocalAddress`, `defaultVelocityPolicy`, and `logToFile`
   (there is no file logging at all, which matters because a packaged app has no console).
+  *(All three resolved 2026-08-03: the first two deleted, `logToFile` implemented.)*
 - `tools/udp-sink.js` does not really verify the trailing `;` — it splits on `;` and re-appends
   one, so a payload missing its terminator still parses. disguise drops the final axis when
   that `;` is absent, so this deserves a real check.
@@ -662,3 +664,18 @@ A README exists for the first time.
   needs a screen-recording permission this session does not have. Tray *construction* is proven,
   since a failure would have hit the fatal-error path and exited.
 - The Windows artifacts have not been run; they were built on macOS.
+
+### Log file (same session)
+
+`logToFile` was the last of the three dead settings. It is implemented, and deliberately not a
+simple on/off: **warnings and errors are always written**, because a packaged app has no console
+and a failure before the UI is up would otherwise leave no trace anywhere — the operator just
+sees an app that did nothing. The setting widens it to every line for a session someone is
+actively debugging. Size-capped at 10 MB with one rotation; a read-only directory disables it
+rather than stopping the bridge.
+
+### Clean-checkout check
+
+`git clone` → `npm ci` → `npm test`: **100 tests pass**, with `build/icon.png`, `build/icon.icns`
+and `src/desktop/tray-icon.js` all present without running any generator. That was the specific
+failure of the previous build and it is now verified rather than assumed.
