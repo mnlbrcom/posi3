@@ -78,6 +78,7 @@ still reached through the Electron IPC bridge until the desktop window switches 
 | `udp-sink.js` | disguise stand-in; validates packets, reports rate, gaps and jitter. **Also the on-site diagnostic** — prove the bridge before blaming d3. |
 | `latency-bench.js` | Single-process end-to-end latency measurement. |
 | `link-harness.js` | Drives the bridge headless, no Electron. |
+| `shaft-check.js` | Confirms an encoder's scaling by turning it. Waits for motion, accumulates wrap-aware displacement, reports measured counts/rev against what the device claims. Hand accuracy is enough — the failure modes worth catching are off by whole multiples, not percent. `npm run shaft`. |
 | `uicheck.js` | Headless layout audit. Drives Chrome over the DevTools protocol at a range of viewport widths, reports anything overflowing its container and any console error, optionally writes screenshots. Zero dependencies — Node's built-in WebSocket speaks CDP. `npm run uicheck`. |
 | `make-app-icon.js` | Generates `build/icon.png` and, on macOS, `build/icon.icns` via Apple's `iconutil` — each size rendered at its true size, the two smallest without the needle. |
 | `make-tray-icon.js` | Generates the tray icon into `src/desktop/tray-icon.js` as base64. |
@@ -806,11 +807,31 @@ touching the disguise machine. This is exactly why the socket is connected rathe
 
 ### Not yet done
 
-- **Counts per revolution is unverified.** The shaft was stationary throughout (position held at
-  298 575). Turning it exactly one revolution should advance the count by 8192 — the one check
-  that proves the scaling end to end.
+- ~~Counts per revolution is unverified.~~ **Confirmed** — see below.
 - **The disguise end is unconfirmed.** Packets arrive at 10.10.10.5:6000 with no ICMP errors, so
   something is listening, but whether a Navigator driver is bound to it and an axis is moving has
   not been seen.
 - **No flash write has been attempted.** Nothing has been written to the encoder — every
   interaction so far has been read-only.
+
+### Counts per revolution: confirmed
+
+One hand-turned revolution, measured by `tools/shaft-check.js`:
+
+```
+travelled          8812 counts (clockwise)
+that is            387.2deg at the claimed scaling
+counts per turn    8812
+encoder claims     8192
+difference         +7.6% (620 counts)
+direction changes  1 — the shaft was rocked, not turned cleanly
+```
+
+**8192 counts/rev confirmed.** The 7.6% is a 27° overshoot on a hand turn, and the ratio is the
+evidence: 1.076. A genuine scaling fault — wrong resolution, an unmentioned gearbox, a mis-set
+`UsedScopeOfPhysRes` — shows up as a whole multiple or a gear ratio, never a few percent. The
+tool also caught the small rock-back at the end (8813 → 8812) as a direction change, which is
+what makes the reading trustworthy rather than merely plausible.
+
+This also exercised, on real hardware, the wrap-aware displacement maths and live position
+tracking at 30 Hz.
