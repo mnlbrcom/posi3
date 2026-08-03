@@ -1325,3 +1325,30 @@ no-drag; }` deleted: `no interactive control sits inside a drag region — nav-t
   have no user namespaces for it, a developer's machine does.
 
 **144 tests pass; 12 desktop checks pass.**
+
+## 2026-08-03 — A stray test window, and why the lock did not stop it
+
+> "there is an instance open that is not seeing our connection, how is this possible, i thought
+> all instances now look at the same server?"
+
+A second desktop window was on screen with an empty connection list. The instance lock was
+working correctly; the window was left behind by the desktop check.
+
+**Why the lock let it through, by design.** The lock is *per profile*, because what it exists to
+prevent is two bridges opening rival TCP sockets to the same encoder from the same configuration.
+`tools/desktopcheck.js` deliberately runs under its own throwaway `--user-data-dir` so it cannot
+disturb a running bridge — different profile, so no contention, so no lock, and its own port. The
+isolation did exactly what it was written to do.
+
+**Why the window survived anyway — a real bug in the tool.** It spawned
+`node_modules/.bin/electron`, which is a Node *shim* that launches Electron as its own child.
+`child.kill()` therefore killed the shim and left the app running. It now resolves the binary
+through `require('electron')`, which returns the executable path directly, so the signal reaches
+Electron itself. Added with it: a `SIGKILL` follow-up if it does not exit within two seconds, and
+reapers on `exit` and `SIGINT` so Ctrl-C takes the window too.
+
+**Verified:** run the check with the real app open — 12 checks pass, and afterwards only the real
+app's process group remains.
+
+The confusing part is that the two windows are indistinguishable on screen. Worth considering
+later: show the profile path or port somewhere in the window when it is not the default.
