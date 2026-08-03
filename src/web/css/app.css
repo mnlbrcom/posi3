@@ -847,6 +847,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
    the limits are, and a rejected write costs a round trip to the device. */
 .field-range { font-size: var(--fs-label); color: var(--text-faint); margin-top: 3px; }
 
+/* The address and its Search button. min-width:0 on the box or the button gets
+   squeezed out of the panel at narrow widths. */
+.addr-row { display: flex; gap: 8px; align-items: center; }
+.addr-row > input { flex: 1 1 auto; min-width: 0; }
+.addr-row > .btn { flex: 0 0 auto; }
+
 /* Encoder config cards: one per encoder, its groups retractable. */
 .cfg-card { padding: 12px 14px 6px; }
 .cfg-card .card-head .pill-holder { margin-left: 0; }

@@ -161,6 +161,90 @@ function destSummary(conn) {
   };
 }
 
+/**
+ * The encoder address: type it, or go and find it.
+ *
+ * An encoder whose address nobody wrote down is otherwise a dead end — POSITAL
+ * documents no discovery mechanism at all, and the factory default only helps
+ * if the unit has never been programmed. The Search button probes TCP 6000
+ * across the chosen interface's subnet and offers what answers.
+ *
+ * A `datalist` rather than a `select`, so the field stays typeable: the
+ * encoder you want may be on a subnet this machine cannot see, and being made
+ * to pick from a list that cannot contain it would be worse than no list. It
+ * also behaves natively in all three engines, which an invented dropdown would
+ * have to reimplement.
+ */
+function encoderAddressField(c, nicOf) {
+  const info = store.info;
+  const listId = `enc-found-${Math.random().toString(36).slice(2, 9)}`;
+  const options = el('datalist', { id: listId });
+  const box = input({
+    class: 'mono-input', value: c.encoder.host, list: listId,
+    oninput: (e) => { c.encoder.host = e.target.value.trim(); }
+  });
+  const status = el('div', { class: 'hint' });
+  const search = el('button', {
+    class: 'btn sm', type: 'button', text: 'Search',
+    onclick: async () => {
+      const nic = nicOf();
+      if (!nic) {
+        // The scan needs a subnet, and "Any" does not name one.
+        setText(status, 'Choose an encoder interface below first — the search needs a subnet to look in.');
+        status.className = 'hint warn-text';
+        return;
+      }
+      search.disabled = true;
+      status.className = 'hint';
+      setText(status, 'searching…');
+      try {
+        const res = await window.d3d.net.discoverEncoders(nic, Number(c.encoder.port) || undefined);
+        clear(options);
+        for (const hit of res.found) {
+          options.appendChild(el('option', {
+            value: hit.host,
+            label: hit.totalScaledRes
+              ? `${hit.host} — ${hit.totalScaledRes.toLocaleString('en-US')} counts`
+              : `${hit.host} — ${hit.evidence}`
+          }));
+        }
+        const kin = res.silentKin || [];
+        if (res.found.length) {
+          setText(status, `${res.found.length} found of ${res.scanned} addresses on ` +
+            `${res.interface.name} — ${res.found.map((h) => h.host).join(', ')}`);
+        } else if (kin.length) {
+          // Seen on the wire but not answering: almost always an encoder
+          // holding an address on another subnet.
+          status.className = 'hint warn-text';
+          setText(status, `Nothing answered, but ${kin.length} device(s) with an encoder's ` +
+            `manufacturer prefix are on this segment (${kin.map((k) => k.mac).join(', ')}). ` +
+            'They are probably set to an address outside this subnet — ' +
+            `switch 2 in the connection cap forces ${info.constants.DEFAULT_ENCODER_IP} after a power cycle.`);
+        } else {
+          status.className = 'hint';
+          setText(status, `Nothing answering on ${res.scanned} addresses on ${res.interface.name}. ` +
+            'If the encoder is on another subnet, switch 2 in the connection cap forces ' +
+            `${info.constants.DEFAULT_ENCODER_IP} after a power cycle.`);
+        }
+        if (res.found.length === 1) {
+          box.value = res.found[0].host;
+          c.encoder.host = res.found[0].host;
+        }
+      } catch (err) {
+        status.className = 'hint warn-text';
+        setText(status, err.message);
+      } finally {
+        search.disabled = false;
+      }
+    }
+  });
+
+  return el('div', {},
+    el('div', { class: 'addr-row' }, box, search),
+    options,
+    status);
+}
+
 /** Two connections sharing a device ID collide silently inside disguise. */
 function duplicateWarnings(connections) {
   const byDevid = new Map();
@@ -330,10 +414,7 @@ export async function openEditor(existing) {
     field('Name', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } })),
 
     el('div', { class: 'row-inline' },
-      field('Encoder address', input({
-        class: 'mono-input', value: c.encoder.host,
-        oninput: (e) => { c.encoder.host = e.target.value.trim(); }
-      })),
+      field('Encoder address', encoderAddressField(c, () => c.encoder.localAddress)),
       field('Port', input({
         class: 'num-input shrink', type: 'number', value: c.encoder.port, style: 'width:90px',
         oninput: (e) => { c.encoder.port = Number(e.target.value); }

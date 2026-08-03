@@ -15,8 +15,10 @@
 const constants = require('../shared/constants');
 const { computeMapping, d3Fields, suggestedPreset } = require('../shared/mapping');
 const {
-  fail, checkId, checkVariable, checkValue, checkVarWrite, sanitiseConnection, listInterfaces
+  fail, checkId, checkHost, checkPort, checkVariable, checkValue, checkVarWrite,
+  sanitiseConnection, listInterfaces
 } = require('./validate');
+const { scanSubnet, scannableInterfaces } = require('../core/discover');
 
 /**
  * @param {object} ctx
@@ -74,6 +76,25 @@ function createApi(ctx) {
      * plugged in at a venue used to need an app restart before it appeared.
      */
     interfaces: () => listInterfaces(),
+
+    /** Interfaces this machine could scan from, with the ones too wide marked. */
+    discoverInterfaces: () => scannableInterfaces(),
+
+    /**
+     * Look for encoders on the subnet of one of this machine's interfaces.
+     *
+     * `localAddress` selects a NIC — it is not a target. The subnet comes from
+     * that NIC's own netmask, so this cannot be pointed at someone else's
+     * network: a route that took a range from the caller would be a port
+     * scanner with an HTTP front end.
+     */
+    discoverEncoders: async ({ localAddress, port }) => {
+      const nic = checkHost(localAddress, 'Interface address');
+      return scanSubnet({
+        localAddress: nic,
+        port: port === undefined || port === null ? undefined : checkPort(port, 'Encoder port')
+      });
+    },
 
     // -- mapping helper -----------------------------------------------------
 
