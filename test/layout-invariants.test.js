@@ -92,6 +92,21 @@ test('the narrow-width nav is one menu, not a second bar', () => {
     'the select-bar approach must be gone, not merely hidden');
 });
 
+test('every control in the titlebar escapes the drag region', () => {
+  // The desktop window makes the titlebar draggable, and a drag region
+  // swallows mouse events on everything inside it. A browser ignores the
+  // property, so a control placed there works in the browser and is dead in
+  // Electron — and `element.click()` in a test cannot tell the difference,
+  // because it does not go through hit-testing. Assert the CSS instead.
+  if (!/-webkit-app-region:\s*drag/.test(rule('.titlebar'))) return;
+  const interactive = [...HTML.matchAll(/<(button|a|select|input)\b[^>]*class="([^"]*)"/g)]
+    .map((m) => m[2])
+    .filter((cls) => /nav-toggle/.test(cls));
+  assert.ok(interactive.length, 'expected at least one control in the titlebar');
+  assert.match(CSS, /\.nav-toggle \{[^}]*-webkit-app-region:\s*no-drag/,
+    'a titlebar control must opt out of the drag region or it is unclickable in the desktop app');
+});
+
 test('the layout re-flows for narrow viewports', () => {
   const widths = [...CSS.matchAll(/@media\s*\(max-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]));
   assert.ok(widths.some((w) => w <= 480), 'needs a phone breakpoint');

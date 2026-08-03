@@ -232,6 +232,11 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
   align-items: center;
   justify-content: center;
 }
+/* The titlebar is a drag region in the desktop window, and a drag region
+   swallows mouse events on everything inside it — so this button was dead in
+   Electron while working fine in a browser, which ignores the property. Any
+   control placed in the titlebar needs this. */
+.nav-toggle { -webkit-app-region: no-drag; }
 .nav-toggle:hover { background: var(--surface-3); }
 .nav-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
