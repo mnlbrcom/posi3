@@ -842,6 +842,40 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* One series, so no legend — the card's own name identifies it. */
 .spark-line { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 
+/* Encoder config cards: one per encoder, its groups retractable. */
+.cfg-card { padding: 12px 14px 6px; }
+.cfg-card .card-head .pill-holder { margin-left: 0; }
+.cfg-card .card-actions .meta { margin-right: 4px; }
+
+.cfg-target {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px;
+  margin: 6px 0 10px; font-size: var(--fs-label); color: var(--text-faint);
+}
+.cfg-target .target-live { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+
+/* `details` rather than a hand-rolled toggle: it opens without JavaScript, it
+   is keyboard-operable for free, and it behaves the same in all three engines
+   — which a `popover` or an anchored panel would not. */
+.cfg-group { border-top: 1px solid var(--border-soft); }
+.cfg-group > summary {
+  cursor: pointer; list-style: none; padding: 9px 2px;
+  font-size: var(--fs-label); font-weight: 700; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: .06em;
+  display: flex; align-items: center; gap: 8px;
+}
+.cfg-group > summary::-webkit-details-marker { display: none; }
+/* A rotating caret drawn in CSS, so it needs no font and no asset. */
+.cfg-group > summary::before {
+  content: ''; flex: 0 0 auto; width: 0; height: 0;
+  border-left: 4px solid var(--text-faint);
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transition: transform .12s ease;
+}
+.cfg-group[open] > summary::before { transform: rotate(90deg); }
+.cfg-group > summary:hover { color: var(--text); }
+.cfg-group .cfg-body { padding-bottom: 10px; overflow-x: auto; }
+.cfg-group.danger-zone > summary { color: var(--warn); }
+
 /* Connection cards.
 
    This screen was a table with eight fixed-width columns and a horizontal
