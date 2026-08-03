@@ -1065,3 +1065,45 @@ them.
 Verified on the rig: with the test sink removed the dashboard reads Faults 0 / "none", one link
 streaming to disguise at 123 pkt/s — matching `CycleTime=8` — with 21,734 packets sent and no
 faults. Layout clean at 1440, 860, 560 and 390 px.
+
+## 2026-08-03 — Velocity on the wire, and a caveat about it
+
+The last piece of hardware evidence: the encoder's own velocity reaching disguise, captured
+byte-for-byte while the user turned the shaft.
+
+```
+1:76698,-6010;
+1:76539,-7600;
+1:76377,-9156;
+1:76064,-11674;
+```
+
+Position falling, velocity negative. **1,747 of 2,216 datagrams carried a non-zero velocity**,
+spanning −18,242 .. +23,819 steps/s — a peak of 174.5 rpm — in both directions. `passthrough`
+forwards the device's figure unchanged and the packet grammar never varies.
+
+### The caveat
+
+Cross-checking the encoder's velocity against the rate implied by consecutive positions (at
+`CycleTime=8`, so ~8 ms apart) over 772 moving samples:
+
+| | |
+|---|---|
+| sign agreement | **755/772 = 97.8 %** |
+| derived from position | −33,375 .. +38,375 steps/s |
+| encoder reported | −18,242 .. +23,819 steps/s |
+| median ratio, encoder ÷ derived | **0.60** |
+
+**Direction is confirmed. Magnitude is not.** The encoder consistently reports around 60 % of the
+instantaneous rate the position deltas imply. The most likely explanation is that the device
+smooths its velocity estimate over some window, so a hand-turn full of acceleration reads lower
+at the peaks than raw deltas do — but a single hand-turned capture cannot distinguish smoothing
+from a scaling difference, and no POSITAL document states how the figure is computed.
+
+**Worth knowing before driving anything from it.** If velocity accuracy matters more than
+provenance, `derived` may be the better choice than `passthrough`: it is computed here from the
+same positions actually being transmitted, so it is self-consistent with what disguise receives.
+`zero` — the default — sidesteps the question entirely by letting disguise derive velocity itself
+via the axis `velocitycalcmode`.
+
+Establishing which is right needs a constant-speed drive rather than a hand-turn. Not attempted.
