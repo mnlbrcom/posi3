@@ -178,6 +178,26 @@ function encoderCard(conn) {
 
   // -- behaviour -------------------------------------------------------------
 
+  /**
+   * Some limits are not constants. Preset and Offset are bounded by the scaled
+   * resolution actually in force, which is a value on the device — on the
+   * reference encoder that is 300 000, not the 33 million its type label
+   * implies. Stating a fixed number under those fields would be wrong on any
+   * commissioned unit, so the field names its dependency until the value has
+   * been read and then shows it.
+   */
+  function applyDependentRanges() {
+    for (const spec of vars) {
+      if (!spec.rangeFrom) continue;
+      const ctl = controls.get(spec.name);
+      if (!ctl || !ctl.setRange) continue;
+      const n = Number(current.get(spec.rangeFrom));
+      ctl.setRange(Number.isFinite(n) && n > 0
+        ? `0 – ${(n - 1).toLocaleString('en-US')}  (one less than ${spec.rangeFrom})`
+        : spec.range);
+    }
+  }
+
   function refreshDirty() {
     for (const [name, row] of rows) row.classList.toggle('dirty', edited.has(name));
     applyBtn.disabled = edited.size === 0;
@@ -209,6 +229,7 @@ function encoderCard(conn) {
       }
       edited.clear();
       refreshDirty();
+      applyDependentRanges();
       statusText.textContent = `read ${ok} of ${vars.length} variables`;
     } catch (err) {
       toast('error', `${conn.name}: ${err.message}`);
@@ -419,7 +440,9 @@ function buildControl(spec, onChange) {
     return {
       node: el('div', {}, box, range, hint),
       set: (v) => { box.value = v; updateHint(v); },
-      setRateHint: updateHint
+      setRateHint: updateHint,
+      /** Replace the stated range once the value it depends on is known. */
+      setRange: (text) => { if (range) setText(range, text); }
     };
   }
 

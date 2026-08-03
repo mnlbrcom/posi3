@@ -175,14 +175,18 @@ const ENCODER_VARS = [
   {
     name: 'UsedScopeOfPhysRes', group: 'scaling', type: 'int', min: 1, max: MAX_RESOLUTION,
     label: 'Used scope of physical resolution', default: TOTAL_COUNTS,
-    range: '1 – 1,073,741,824 steps',
+    // The type label's figure, not the 30-bit ceiling of the product family:
+    // this is a 13-bit singleturn x 12-bit multiturn unit, so the family
+    // maximum is 32x more than it can hold. MAX_RESOLUTION stays as the server
+    // bound, which cannot know the model.
+    range: `1 – ${TOTAL_COUNTS.toLocaleString('en-US')} steps on this model`,
     help: 'The part of the physical resolution used, in physical steps. If it does not divide the ' +
       'total physical resolution evenly, the value jumps to zero at the physical zero point.'
   },
   {
     name: 'TotalScaledRes', group: 'scaling', type: 'int', min: 1, max: MAX_RESOLUTION,
     label: 'Total scaled resolution', default: TOTAL_COUNTS,
-    range: '1 – 1,073,741,824 steps',
+    range: `1 – ${TOTAL_COUNTS.toLocaleString('en-US')} steps on this model`,
     help: 'The scaled resolution counted across the physical steps defined by UsedScopeOfPhysRes.'
   },
   {
@@ -198,7 +202,8 @@ const ENCODER_VARS = [
     // Offset instead, which is readable. Reading it anyway would put a spurious
     // error in front of the operator on every "Read all".
     writeOnly: true,
-    range: '0 – 1,073,741,823',
+    rangeFrom: 'TotalScaledRes',
+    range: '0 – one less than TotalScaledRes',
     help: 'The position value the encoder will show at the point where the preset is set. An ' +
       'internal offset is calculated and added to all later positions. Cannot be read back — ' +
       'the resulting Offset can.'
@@ -206,7 +211,8 @@ const ENCODER_VARS = [
   {
     name: 'Offset', group: 'scaling', type: 'int', min: 0, max: MAX_RESOLUTION - 1,
     label: 'Offset',
-    range: '0 – 1,073,741,823',
+    rangeFrom: 'TotalScaledRes',
+    range: '0 – one less than TotalScaledRes',
     help: 'Directly changes the offset that the preset function calculated and set.'
   },
 
