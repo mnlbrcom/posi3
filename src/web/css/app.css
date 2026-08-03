@@ -839,11 +839,19 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .conn-card .card-head .pill-holder { margin-left: 0; }
 .conn-card > .tag { margin-top: 8px; }
 
-/* auto-fit, so the same markup is four fields across a wide window and one per
-   line on a phone, with no sideways scroll at any width between. */
+/* auto-fit, so the same markup is five fields across a wide window and one per
+   line on a phone, with no sideways scroll at any width between.
+
+   116px, not 150: measured, the widest thing a field holds is an encoder
+   address at 109px and the widest label is 60px, so 150 was reserving about
+   40px per column that nothing used — and since auto-fit drops a column the
+   moment the row cannot afford the minimum, that spare space made the layout
+   break to two rows while there was still plenty of room. Values ellipsise and
+   carry the full text as hover, so an unusually long address costs a few
+   characters at the narrowest widths rather than a column. */
 .conn-fields {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px 16px; margin-top: 12px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 10px 14px; margin-top: 12px;
   padding-top: 11px; border-top: 1px solid var(--border-soft);
 }
 .conn-field { min-width: 0; }

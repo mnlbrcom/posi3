@@ -1840,3 +1840,38 @@ with no way to remove a connection.
 
 **Verified:** no horizontal scroll at 1440, 1024, 860, 720, 480 or 390; the card wraps to two
 button rows and two field columns at 390. 147 tests, 18 desktop checks, layout and font audit clean.
+
+## 2026-08-03 — The connection fields hold five columns longer
+
+> "i like the even spacing … but it jumps to early when narrowing the window. each item doest need
+> as muche fix space" / "does the encoder card still takes in account for fanning to multiple
+> disguise?"
+
+Measured rather than guessed at: the widest thing a field holds is an encoder address at **109px**
+and the widest label is 60px, so the 150px minimum was reserving about 40px per column that nothing
+used. `auto-fit` drops a column the moment the row cannot afford its minimum, so that spare space
+made the layout break to two rows while there was still plenty of room.
+
+Now `minmax(116px, 1fr)` with a 14px column gap. **Five columns hold down to a 950px window**,
+where they used to give up at about 1096. Swept 1440 → 390 checking every value for truncation:
+none at any width.
+
+(The count goes back up to five at 720 and below, because that is where the sidebar becomes a menu
+and hands its width to the content. Non-monotonic, and correct — there genuinely is more room.)
+
+### Fan-out, confirmed on a rendered card
+
+Checked by building a real three-destination connection on a throwaway headless instance rather
+than by reading the code, and rendering it:
+
+| field | shows |
+|---|---|
+| disguise | `10.10.10.5:6000  +1` |
+| hover | all three, including `10.10.10.7:6000 · id 3 (disabled)` |
+| Device ID | `1, 2` |
+| Rate | **403 Hz** — 200 samples/s across two enabled destinations |
+
+The `+N` and the device-id list count **enabled** destinations only, while the hover shows every
+one and marks the disabled. The dashboard card does the same through `targetLine`/`targetTitle`:
+`127.0.0.1:17000 → 10.10.10.5:6000 · id 1  +1 more`. The rate is the proof it is real routing and
+not just a summary string.
