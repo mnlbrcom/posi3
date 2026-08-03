@@ -51,7 +51,7 @@ export function renderEncoderConfig(root) {
   const applyBtn = el('button', { class: 'btn primary', text: 'Apply changes', disabled: true });
   const revertBtn = el('button', { class: 'btn', text: 'Revert', disabled: true });
   const readBtn = el('button', { class: 'btn', text: 'Read all from encoder' });
-  const statusText = el('span', { class: 'faint', style: 'font-size:11.5px' });
+  const statusText = el('span', { class: 'faint meta' });
 
   view.appendChild(el('div', { class: 'view-head' },
     el('button', { class: 'btn sm ghost', text: '‹ Back', onclick: () => store.setView('detail', conn.id) }),
@@ -148,7 +148,7 @@ export function renderEncoderConfig(root) {
   view.appendChild(el('details', { class: 'danger-zone' },
     el('summary', { text: 'Network settings — changing these will drop the connection' }),
     el('div', { class: 'dz-body' },
-      el('p', { class: 'help', style: 'font-size:11.5px;color:var(--text-faint);line-height:1.5' },
+      el('p', { class: 'help faint' },
         'A new IP address only takes effect after the encoder is power-cycled. ' +
         'If hardware switch 2 in the connection cap is ON, the encoder stays at ' +
         `${store.info.constants.DEFAULT_ENCODER_IP} no matter what is programmed here — ` +

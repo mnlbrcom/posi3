@@ -1578,3 +1578,60 @@ change, plus a `.readouts { 110px 1fr }` narrow-width override that would have u
 
 **Verified:** layout audit clean at 1440, 1300, 1024, 900, 720, 480 and 390, and across all seven
 views. 144 tests and 18 desktop checks pass.
+
+## 2026-08-03 — A type scale, and a rule about when to reach for one
+
+> "we need to fix fonts, there are no good guidlines… Make sure its the same font everywhere, only
+> change font when it makes sense… If thinks need to be more or less dominant, change the colour or
+> use bold, not nessesary size changes… let's try to stick to roughly 3-4 sizes."
+
+The audit found **66 `font-size` declarations across 15 distinct sizes**: 9.5, 10, 10.5, 11, 11.5,
+12, 12.5, 13, 13.5, 14, 15, 16, 17, 19 and 28px. Most of them half a pixel apart. That is not a
+scale, it is the absence of one — each size was chosen at the point of use and never compared with
+its neighbours.
+
+### The scale
+
+Four text sizes and one figure size, as tokens in `:root`:
+
+| token | size | for |
+|---|---|---|
+| `--fs-title` | 17px | one per screen: the view headline |
+| `--fs-head` | 14px | panel heads, card names, and the figures they exist to show |
+| `--fs-body` | 12.5px | default — prose, buttons, inputs, table cells |
+| `--fs-label` | 11px | uppercase labels, captions, hints, status meta |
+| `--fs-figure` | 28px | the dashboard totals only |
+
+**Emphasis is carried by weight and colour, not by size.** The clearest case was the Position
+readout, which was 19px purely so it would stand out among 14px figures. It is now `--fs-head` at
+weight 600 — still the loudest thing in its list, without inventing a size for it. `.panel-head`
+and `.card-name` moved the other way: they were written at body size but are subheadings, so they
+take `--fs-head`.
+
+The responsive step-down at 480px used to be `.view-head h1 { font-size: 16px }`. It now redefines
+`--fs-title` inside the media query, so it applies to the whole top of the scale rather than to one
+selector that happened to be remembered.
+
+**Two families, each with a job**, which is the only font change that makes sense here: `--sans`
+for anything read as language, `--mono` for anything read as data — figures, addresses, variable
+names, log lines.
+
+### Kept out of the scale, deliberately
+
+`dial.js` sets font sizes in **viewBox units, not CSS pixels** — they scale with the dial as its
+column resizes, so tying them to a pixel scale would be wrong. Noted in the file so it does not
+look like an oversight.
+
+### Two guards
+
+`npm test` now fails if a font size is written directly as a number anywhere in the stylesheet, if
+the scale grows beyond five tokens, or if any `font-family` names a family outside `--sans` and
+`--mono`. Four inline `font-size` values set from JS were replaced with classes, so there is one
+place where type is decided.
+
+Also fixed while sweeping: the log's direction column carried `padding-top: 2px` to optically
+centre 9.5px text against 11.5px text. Both are `--fs-label` now, so the nudge was making it sit
+low; removed.
+
+**Verified:** layout audit clean across all seven views at six widths against the live rig; 146
+tests and 18 desktop checks pass.

@@ -114,6 +114,33 @@ test('every control in the titlebar escapes the drag region', () => {
     'a titlebar control must opt out of the drag region or it is unclickable in the desktop app');
 });
 
+test('type comes from the scale, not from a number typed at the point of use', () => {
+  // Fifteen sizes, most of them half a pixel apart, is not a scale — it is the
+  // absence of one. These two assertions are what stop it growing back: a size
+  // may only be named in the token block, and there may only be a few tokens.
+  const tokens = [...CSS.matchAll(/^\s*(--fs-[a-z]+)\s*:\s*([0-9.]+)px/gm)];
+  const names = new Set(tokens.map((m) => m[1]));
+  assert.ok(names.size >= 3 && names.size <= 5,
+    `the scale should be 3-5 sizes, found ${names.size}: ${[...names].join(', ')}`);
+
+  // Every other font-size must reference one of them. A responsive step-down
+  // redefines a token, so those are matched by the rule above, not here.
+  const raw = [...CSS.matchAll(/font-size:\s*([0-9.]+)px/g)].map((m) => m[0]);
+  assert.deepEqual(raw, [], `font sizes written directly: ${raw.join(', ')}`);
+  for (const m of CSS.matchAll(/font-size:\s*var\((--[a-z-]+)\)/g)) {
+    assert.ok(names.has(m[1]), `${m[1]} is not part of the type scale`);
+  }
+});
+
+test('only two font families, each with a job', () => {
+  // --sans for anything read as language, --mono for anything read as data.
+  // A third family, or a raw family name outside the tokens, is how a UI ends
+  // up looking assembled from parts.
+  const families = [...CSS.matchAll(/font-family:\s*([^;]+);/g)].map((m) => m[1].trim());
+  const offScale = families.filter((f) => !/^var\(--(mono|sans)\)$/.test(f));
+  assert.deepEqual(offScale, [], `font families set outside the tokens: ${offScale.join(' | ')}`);
+});
+
 test('the layout re-flows for narrow viewports', () => {
   const widths = [...CSS.matchAll(/@media\s*\(max-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]));
   assert.ok(widths.some((w) => w <= 480), 'needs a phone breakpoint');
