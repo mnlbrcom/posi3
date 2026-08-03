@@ -80,7 +80,7 @@ export function renderDashboard(root) {
   const summaryStats = {
     streaming: statTile('Streaming', 'of ' + conns.length),
     inRate: statTile('Samples in', 'per second'),
-    faults: statTile('Faults', 'errors + drops')
+    faults: statTile('Faults', 'none')
   };
 
   view.appendChild(el('div', { class: 'summary' },
@@ -103,7 +103,13 @@ export function renderDashboard(root) {
       let out = 0;
       let inRate = 0;
       let streaming = 0;
-      let faults = 0;
+      // Counted apart, because "9 faults" says nothing an operator can act on.
+      // A dead destination and a misconfigured encoder need opposite responses.
+      let sendFails = 0;
+      let encoderErrors = 0;
+      let unparsed = 0;
+      const unreachable = [];
+      const faulted = new Set();
 
       for (const card of cards) {
         const t = card.refresh();
@@ -111,8 +117,17 @@ export function renderDashboard(root) {
         out += t.txHz || 0;
         inRate += t.rxHz || 0;
         if (t.state === 'streaming') streaming++;
-        faults += (t.errors || 0) + (t.txErrors || 0) + (t.unknownLines || 0);
+        sendFails += t.txErrors || 0;
+        encoderErrors += t.errors || 0;
+        unparsed += t.unknownLines || 0;
+        for (const d of t.destinations || []) {
+          // Named by connection *and* destination: with several encoders,
+          // "cannot reach 10.10.10.5:6000" does not say whose link is failing.
+          if (d.txErrors) unreachable.push(`${card.name} → ${d.name || `${d.host}:${d.port}`}`);
+        }
+        if ((t.errors || 0) + (t.unknownLines || 0) > 0) faulted.add(card.name);
       }
+      const faults = sendFails + encoderErrors + unparsed;
 
       setText(heroValue, hz(out));
       setText(heroNote, out > 0 ? 'to disguise' : 'nothing being sent');
@@ -120,18 +135,28 @@ export function renderDashboard(root) {
       setText(summaryStats.inRate.value, hz(inRate));
       setText(summaryStats.faults.value, groupDigits(faults));
       summaryStats.faults.value.classList.toggle('bad', faults > 0);
+      // Name the dominant cause. Sending is listed first because an
+      // unreachable destination is the one an operator can usually fix.
+      setText(summaryStats.faults.caption,
+        !faults ? 'none'
+          : sendFails ? `cannot reach ${[...new Set(unreachable)].join(', ') || 'a destination'}`
+            : encoderErrors ? `errors from ${[...faulted].join(', ') || 'the encoder'}`
+              : `unparsed lines from ${[...faulted].join(', ') || 'the encoder'}`);
+      summaryStats.faults.node.title = faults
+        ? `${sendFails} send failures · ${encoderErrors} encoder errors · ${unparsed} unparsed lines`
+        : '';
     }
   };
 }
 
-/** Label + big value + caption. The caption never changes; the value does. */
+/** Label + big value + caption. Some captions carry the explanation. */
 function statTile(label, caption) {
   const value = el('div', { class: 'stat-value', text: '—' });
+  const cap = el('div', { class: 'stat-caption', text: caption });
   const node = el('div', { class: 'stat' },
     el('div', { class: 'stat-label', text: label }),
-    value,
-    el('div', { class: 'stat-caption', text: caption }));
-  return { node, value };
+    value, cap);
+  return { node, value, caption: cap };
 }
 
 function buildCard(conn) {
@@ -147,11 +172,15 @@ function buildCard(conn) {
 
   const spark = sparkline();
 
+  // Every figure in the summary strip has a counterpart here, so a number seen
+  // at the top can always be traced to the connection that produced it.
   const metrics = {
     velocity: metric('Velocity', 'steps/s'),
     rate: metric('In / out', 'Hz'),
     latency: metric('Latency', 'p50 / p99'),
-    uptime: metric('Uptime', '')
+    uptime: metric('Uptime', ''),
+    sent: metric('Sent', 'packets out'),
+    faults: metric('Faults', 'this connection')
   };
   const faultRow = el('div', { class: 'card-faults' });
 
@@ -169,7 +198,8 @@ function buildCard(conn) {
       el('div', { class: 'card-readout' }, posValue, posDerived),
       spark.node),
     el('div', { class: 'card-metrics' },
-      metrics.velocity.node, metrics.rate.node, metrics.latency.node, metrics.uptime.node),
+      metrics.velocity.node, metrics.rate.node, metrics.latency.node,
+      metrics.uptime.node, metrics.sent.node, metrics.faults.node),
     faultRow);
 
   let lastState = null;
@@ -177,6 +207,7 @@ function buildCard(conn) {
 
   return {
     node,
+    name: conn.name,
     refresh() {
       const state = store.stateOf(conn.id);
       const t = store.telemetryOf(conn.id);
@@ -207,6 +238,11 @@ function buildCard(conn) {
       setText(metrics.latency.value,
         t.latencyUs ? `${micros(t.latencyUs.p50)} / ${micros(t.latencyUs.p99)}` : '—');
       setText(metrics.uptime.value, duration(t.uptimeMs));
+      setText(metrics.sent.value, groupDigits(t.txTotal));
+
+      const ownFaults = (t.errors || 0) + (t.txErrors || 0) + (t.unknownLines || 0);
+      setText(metrics.faults.value, groupDigits(ownFaults));
+      metrics.faults.value.classList.toggle('bad', ownFaults > 0);
 
       const faults = [];
       if (t.errors) faults.push(`${t.errors} error${t.errors > 1 ? 's' : ''}`);

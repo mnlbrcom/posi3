@@ -1026,3 +1026,42 @@ needs Velocity switched back on at the encoder, which is a flash write.
 Six tests pin both halves, including the packet grammar under extreme values and the encoder
 gaining or losing its velocity field mid-run — which needs no reconfiguration here, since the
 live-reconfiguration handling added earlier re-derives the field map on the broadcast.
+
+## 2026-08-03 — Stats tied to the connection that produced them
+
+The user asked what "Faults 9 · errors + drops" on the dashboard meant. Every one of those faults
+came from a local UDP sink used during hardware testing, which had been killed and restarted
+repeatedly; the disguise destination had 46,729 packets and zero errors. But **they should not
+have had to ask.**
+
+A tile reading "Faults 9 · errors + drops" is an anonymous aggregate. With one connection it is
+merely unhelpful; with five encoders it says nothing about which link is failing or why — the
+same class of problem as the stale counters fixed earlier today, where 3,188 send errors were
+attributed to a configuration that no longer existed.
+
+### Faults now name what and where
+
+The tile counts three unrelated things and used to sum them silently. They are tracked apart now,
+because they call for opposite responses:
+
+| Cause | Caption |
+|---|---|
+| UDP send failed | `cannot reach Real encoder → disguise` |
+| errors from the encoder | `errors from <connection>` |
+| unparsed lines | `unparsed lines from <connection>` |
+| none | `none` |
+
+Named by **connection and destination**, since with several encoders "cannot reach
+10.10.10.5:6000" does not identify whose link is failing. A tooltip carries the full breakdown.
+
+### Every summary figure has a per-connection counterpart
+
+At the user's direction — *"all stats should be tied to each connection"* — the card gained
+**Sent** (total packets out) and **Faults** (its own count, red when non-zero), taking it to six
+metrics in three columns, folding to two at phone width. Nothing in the summary strip is now
+unattributable: packets out, samples in, streaming and faults each have a per-card figure behind
+them.
+
+Verified on the rig: with the test sink removed the dashboard reads Faults 0 / "none", one link
+streaming to disguise at 123 pkt/s — matching `CycleTime=8` — with 21,734 packets sent and no
+faults. Layout clean at 1440, 860, 560 and 390 px.

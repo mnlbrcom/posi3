@@ -612,12 +612,13 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   /* Two columns, not four: at a card width of ~370px four columns left the
      latency pair ("47 µs / 424 µs") ellipsised, which is the one metric you
      open this screen to read. */
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 9px 12px;
   border-top: 1px solid var(--border-soft); padding-top: 9px;
 }
 .metric { min-width: 0; }
 .metric-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
+.metric-value.bad { color: var(--err-text); }
 .metric-value {
   font-family: var(--mono); font-size: 12px; color: var(--text);
   font-variant-numeric: tabular-nums; margin-top: 2px;
@@ -790,3 +791,8 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* A value the encoder reported that this build does not recognise. Flagged
    rather than silently shown as something plausible. */
 select.unknown-value { border-color: var(--warn); }
+
+@media (max-width: 560px) {
+  /* Three metric columns stop fitting once the card is phone-width. */
+  .card-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
