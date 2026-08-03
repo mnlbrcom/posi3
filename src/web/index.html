@@ -28,30 +28,18 @@
     <span class="titlebar-sub">
       POSITAL&nbsp;IXARC<span class="titlebar-x">&#215;</span>DISGUISE
     </span>
+    <!-- Only present below the rail breakpoint. The rail itself becomes the
+         panel this opens, so there is one nav to style and one to maintain. -->
+    <button class="nav-toggle" id="nav-toggle" type="button"
+            aria-label="Menu" aria-expanded="false" aria-controls="sidebar">
+      <span class="nav-toggle-bars" aria-hidden="true"></span>
+    </button>
   </div>
 
   <div id="banners" class="banners"></div>
 
   <div class="shell">
     <nav class="sidebar" id="sidebar">
-      <!-- Below the rail breakpoint the buttons give way to this. A native
-           select rather than a bespoke menu: the platform then supplies the
-           right affordance for the device — a proper picker on a phone — and
-           it is keyboard and screen-reader correct without any of it being
-           re-implemented here. The rail and this are the same six routes; only
-           one is ever visible. -->
-      <label class="nav-picker">
-        <span class="nav-picker-label">Screen</span>
-        <select id="nav-select" aria-label="Choose a screen">
-          <option value="dashboard">Dashboard</option>
-          <option value="connections">Connections</option>
-          <option value="encoder">Encoder config</option>
-          <option value="mapping">disguise mapping</option>
-          <option value="log">Log</option>
-          <option value="settings">Settings</option>
-        </select>
-      </label>
-
       <button class="nav-item" data-view="dashboard">
         <span class="nav-dot"></span>Dashboard
       </button>

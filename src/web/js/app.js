@@ -27,7 +27,7 @@ import { renderSettings } from './views/settings.js';
 
 const content = document.getElementById('content');
 const sidebar = document.getElementById('sidebar');
-const navSelect = document.getElementById('nav-select');
+const navToggle = document.getElementById('nav-toggle');
 const aggregate = document.getElementById('aggregate');
 const versionNode = document.getElementById('version');
 
@@ -127,11 +127,40 @@ function wireVisibility() {
 
 function wireNav() {
   for (const btn of sidebar.querySelectorAll('.nav-item')) {
-    btn.addEventListener('click', () => store.setView(btn.dataset.view));
+    btn.addEventListener('click', () => {
+      store.setView(btn.dataset.view);
+      setMenu(false);
+    });
   }
-  // The picker is the same six routes at narrow widths. Only one of the two is
-  // ever visible, and renderView keeps both showing the same thing.
-  navSelect.addEventListener('change', () => store.setView(navSelect.value));
+
+  navToggle.addEventListener('click', () => setMenu(!isMenuOpen()));
+
+  // Anywhere else dismisses it, which is what a dropped panel has to do.
+  document.addEventListener('pointerdown', (ev) => {
+    if (!isMenuOpen()) return;
+    if (sidebar.contains(ev.target) || navToggle.contains(ev.target)) return;
+    setMenu(false);
+  });
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && isMenuOpen()) {
+      setMenu(false);
+      navToggle.focus();
+    }
+  });
+
+  // Widening past the breakpoint brings the rail back; a panel left open would
+  // then be an orphaned overlay on top of it.
+  window.addEventListener('resize', () => {
+    if (isMenuOpen() && getComputedStyle(navToggle).display === 'none') setMenu(false);
+  });
+}
+
+const isMenuOpen = () => sidebar.classList.contains('open');
+
+function setMenu(open) {
+  sidebar.classList.toggle('open', open);
+  navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
 function wireEvents() {
@@ -212,7 +241,7 @@ function renderView() {
   for (const btn of sidebar.querySelectorAll('.nav-item')) {
     btn.classList.toggle('active', btn.dataset.view === navView);
   }
-  if (navSelect.value !== navView) navSelect.value = navView;
+
 
   const renderer = RENDERERS[view] || renderConnections;
   try {

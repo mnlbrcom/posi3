@@ -1194,7 +1194,7 @@ fallback calls `startService` twice.
 Eight tests, plus five on the port binding. **142 pass.** Verified on the rig: the desktop app
 holds the lock and streams to disguise at 120 pkt/s with zero faults.
 
-## 2026-08-03 — The narrow-width nav is a picker, not a scrolling strip
+## 2026-08-03 — The narrow-width nav (first attempt, superseded below)
 
 The user reported a scrollbar on the navigation once the window narrows, and asked for a
 dropdown — *"as it should be for proper framework adaptation / adaptive design"*. Correct on both
@@ -1223,3 +1223,30 @@ serialised as the empty object a pending Promise becomes, and an exception was r
 output at all. Both now surface.
 
 `test/layout-invariants.test.js` gained a guard so the scrolling strip cannot come back.
+
+## 2026-08-03 — One nav, two placements
+
+The select-bar was rejected: *"i dont like the design for the narrow menu, also dont like the
+second rail."* Correct — it fixed the scrolling but kept the mistake underneath it. Both attempts
+put a **second strip of chrome** below the titlebar, and a bar that exists only to hold one
+control is worse than the control being somewhere it already belongs.
+
+**The rail is now the menu.** Below the breakpoint it becomes a panel hanging from a toggle in
+the titlebar's top-right corner, keeping exactly the layout it has when there is room for it —
+same rows, same dots, same active mark with its accent bar. One nav to style, one to maintain,
+and nothing new to learn: the wide layout *is* the narrow one, relocated.
+
+- **Three bars**, the one nav affordance nobody has to be taught. Open, they become a cross, so
+  the control says how to undo itself — one element and its two pseudo-elements, no icon assets.
+- Dismissed by choosing something, by Escape (which returns focus to the toggle), by a pointer
+  anywhere outside, and by widening past the breakpoint — a panel left open would otherwise be an
+  orphaned overlay on top of the returning rail.
+- `aria-expanded` and `aria-controls` on the toggle; the panel is out of flow, so the content
+  pane keeps the full width.
+- The panel's right edge is flush with the toggle's, both inside the titlebar's 14 px padding.
+  Verified rather than eyeballed: 376 px at both 390 and 720, exactly aligned.
+
+The layout invariant test now asserts the select approach is **gone rather than merely hidden** —
+and immediately caught a leftover `.nav-picker select` rule that had survived the rewrite.
+
+**143 tests pass.** Layout clean across six views and six widths; the rail is untouched at 1440.

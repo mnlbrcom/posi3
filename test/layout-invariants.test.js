@@ -73,18 +73,23 @@ test('viewport-height sizing survives a mobile URL bar', () => {
   }
 });
 
-test('the narrow-width nav is a picker, not a scrolling strip', () => {
-  // A horizontally scrolling nav hides its own contents behind a gesture and
-  // gives no sign that anything is off-screen. Below the rail breakpoint the
-  // buttons give way to a native select, which lets the platform supply the
-  // right affordance for the device.
-  assert.match(CSS, /\.nav-item \{ display: none; \}/,
-    'the rail buttons must be hidden at narrow widths');
-  assert.match(rule('.nav-picker'), /display:\s*none/,
-    '.nav-picker must be hidden while the rail is a rail');
+test('the narrow-width nav is one menu, not a second bar', () => {
+  // Two earlier attempts were wrong in the same way: they put a second strip
+  // of chrome under the titlebar. A scrolling strip hid its own contents
+  // behind a gesture; a select bar was still a bar. The rail itself now hangs
+  // from a toggle, so there is one nav with two placements.
+  assert.match(HTML, /id="nav-toggle"/, 'the toggle must exist in the markup');
+  assert.match(HTML, /aria-expanded="false"/, 'the toggle must report its state');
+  assert.match(HTML, /aria-controls="sidebar"/, 'the toggle must name what it opens');
+
+  assert.match(rule('.nav-toggle'), /display:\s*none/,
+    'the toggle must be absent while the rail is a rail');
+  assert.ok(/\.sidebar \{[^}]*position: absolute/s.test(CSS),
+    'the narrow-width rail must hang from the toggle rather than sit in flow');
   assert.ok(!/\.sidebar \{[^}]*overflow-x:\s*auto/s.test(CSS),
     'the sidebar must not scroll sideways at any width');
-  assert.match(HTML, /<select id="nav-select"/, 'the picker must exist in the markup');
+  assert.ok(!/nav-select|nav-picker/.test(CSS + HTML),
+    'the select-bar approach must be gone, not merely hidden');
 });
 
 test('the layout re-flows for narrow viewports', () => {
