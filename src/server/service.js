@@ -15,6 +15,7 @@ const { LinkManager } = require('../core/link-manager');
 const { ConfigStore } = require('../core/config-store');
 const { Logger } = require('../core/logger');
 const { LogFile } = require('../core/log-file');
+const { acquire } = require('../core/instance-lock');
 const { createApi } = require('./api');
 const { createServer } = require('./http');
 const { newToken, isLoopback } = require('./security');
@@ -47,6 +48,11 @@ async function startService(opts = {}) {
   // fall-back-to-an-ephemeral-port path therefore retried the very port it had
   // just found busy, and the window never opened.
   const port = opts.port === undefined || opts.port === null ? 8710 : Number(opts.port);
+
+  // Claim the profile before anything opens a socket. Two bridges sharing one
+  // profile would fight over the port and, far worse, open rival connections to
+  // the same encoder — which accepts only a handful of clients.
+  const lock = acquire(dataDir, { mode: opts.mode || 'headless' }, !!opts.force);
 
   const store = new ConfigStore(dataDir);
   store.load();
@@ -99,7 +105,13 @@ async function startService(opts = {}) {
   const http = createServer({ api, manager, bindHost, port, token });
   logFile.note(`posi3 ${require('../../package.json').version} starting — profile ${dataDir}`, 'warn');
   announceConfigChange = () => http.hub.broadcast('configChanged', { t: Date.now() });
-  await http.listen();
+  try {
+    await http.listen();
+  } catch (err) {
+    lock.release();
+    throw err;
+  }
+  lock.update({ url: http.url() });
 
   /**
    * Auto-start is deliberately not tied to a window loading. It used to hang
@@ -135,6 +147,7 @@ async function startService(opts = {}) {
       store.flushNow();
       await http.close();
       logFile.close();
+      lock.release();
     }
   };
 }
