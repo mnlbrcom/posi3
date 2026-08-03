@@ -1416,3 +1416,51 @@ whole check green for the wrong reason.
 `did-finish-load` hook removed: `a reload releases a viewport left emulated — 420px -> 420px`.
 
 **144 tests pass.**
+
+## 2026-08-03 — Cmd+R reloads the UI and nothing else, now proven
+
+> "lets restart it, and make sure that cmd+r only reloads UI not server or connections or anything
+> running in operations."
+
+**It does, and the architecture always intended it to** — the bridge lives in the main process and
+the page is an ordinary HTTP client of it. Two things were checked before trusting that: auto-start
+runs in `startService()` at app start, not on page load (the plan's M1 moved it off
+`did-finish-load` for exactly this reason), and the only load-time hook now is
+`releaseStuckEmulation`. Nothing in the UI's init stops or starts anything.
+
+Restarted on the rig: the stale lock from the previous process was correctly taken over, auto-start
+reconnected, and the Revolve link came back streaming with 0 errors and 0 reconnects.
+
+### The check that proved it was wrong twice first
+
+This is the part worth keeping. A check that reloads and then asserts the connection survived is
+easy to write and easy to get wrong, and both wrong versions were green.
+
+**First version — measured the wrong page.** It called `location.reload()`, slept 3.5 s, then read
+the counters. But `location.reload()` returns immediately and the load can outlast any guessed
+delay, so the snapshot was sometimes taken before the reload had even happened. Replaced with
+`reloadAndWait()`, which marks the current document and waits for the mark to disappear — proof the
+swap actually occurred.
+
+**Second version — asserted the wrong property.** It required uptime and `rxTotal` to have *gone
+up*. They always do. A link that is torn down and rebuilt also has bigger numbers a few seconds
+later than a link that was half a second old at the baseline. The assertion was satisfied by both
+outcomes.
+
+The fix is to assert **continuity rather than magnitude**: a link that ran straight through has an
+uptime that advanced by exactly the wall time that elapsed. So the check now lets the link build
+more than 5 s of history first, records wall time across the reload, and requires
+`|Δuptime − elapsed| < 1500 ms`. A restart makes Δuptime go *negative*, which no amount of waiting
+disguises.
+
+**Both wrong versions were caught by a negative control** — patching `did-finish-load` to call
+`stopAll(); startAll()` and requiring the check to fail. It passed both times, which is the only
+reason the flaws were found. Instrumenting the manager settled it: the control was working exactly
+as intended (`streaming → idle → connecting`, `rx` reset to 0) and the check simply could not see
+it. A test that cannot fail is not evidence.
+
+**Verified both ways.** Normal: `uptime advanced 1.5s over 1.3s wall, rx 2387 -> 2690`. With the
+negative control: `uptime advanced -10.3s over 1.3s wall — the clock restarted, so the link did,
+rx 2366 -> 311`, failing 2 checks.
+
+**144 tests pass; 18 desktop checks pass.**

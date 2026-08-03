@@ -130,6 +130,28 @@ async function main() {
       return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
     })()`);
 
+    /**
+     * Reload and wait for the *new* document.
+     *
+     * A fixed sleep is not good enough: `location.reload()` returns at once and
+     * the load can outlast any delay guessed here, so a check that sleeps and
+     * then measures may be reading the old page — passing for the wrong reason
+     * and hiding a regression. Marking the current document and waiting for the
+     * mark to disappear proves the swap actually happened.
+     */
+    const reloadAndWait = async () => {
+      await evaluate('window.__reloadMarker = 1');
+      await evaluate('location.reload()');
+      for (let i = 0; i < 80; i++) {
+        await sleep(250);
+        try {
+          const done = await evaluate('window.__reloadMarker === undefined && document.readyState === "complete"');
+          if (done) return true;
+        } catch { /* the context is being torn down; keep waiting */ }
+      }
+      return false;
+    };
+
     const setWidth = async (width) => {
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width, height: Number(opts.height), deviceScaleFactor: 1, mobile: false
@@ -263,13 +285,94 @@ async function main() {
       check('an abandoned override really does survive its client', survived === 420,
         `${survived}px — the fix is only meaningful if this reproduces`);
 
-      await evaluate('location.reload()');
-      await sleep(3000);
+      const reloaded = await reloadAndWait();
+      check('the window actually reloads', reloaded, reloaded ? '' : 'never saw a fresh document');
       const recovered = await evaluate('innerWidth');
       check('a reload releases a viewport left emulated', recovered === real,
         `${survived}px -> ${recovered}px (window is ${real}px)`);
     } finally {
       setter.kill('SIGKILL');
+    }
+
+    // -- a reload is a UI reload, not a restart -----------------------------
+    // The bridge runs in the main process; the page is an ordinary HTTP client
+    // of it. So Cmd+R must repaint the UI and leave the encoder socket, the
+    // UDP sinks and the counters completely alone. Proven against a simulated
+    // rig rather than argued from the architecture.
+    const sim = [
+      spawn(process.execPath, [path.join(__dirname, 'mock-encoder.js'), '--port', '16000', '--cycle', '5', '--motion', 'sine', '--quiet'], { stdio: 'ignore' }),
+      spawn(process.execPath, [path.join(__dirname, 'udp-sink.js'), '--port', '16001', '--quiet'], { stdio: 'ignore' })
+    ];
+    try {
+      await sleep(1200);
+      const call = async (op, body) => {
+        const r = await fetch(`${page.url.replace(/\/$/, '')}/api/${op}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body === undefined ? null : body)
+        });
+        return r.json();
+      };
+
+      const saved = await call('configSaveConnection', {
+        name: 'reload check', autoStart: false,
+        encoder: { host: '127.0.0.1', port: 16000 },
+        destinations: [{ host: '127.0.0.1', port: 16001, devid: 1 }]
+      });
+      const id = saved.ok && (saved.data.id || (saved.data.connection || {}).id);
+      if (!id) {
+        check('a reload leaves a running connection alone', false,
+          `could not seed a connection: ${JSON.stringify(saved.error || saved)}`);
+      } else {
+        await call('linkStart', { id });
+
+        // Let it build a real history first. Comparing against a link that is
+        // half a second old proves nothing: a link torn down and rebuilt also
+        // ends up with a bigger number a few seconds later, so "it went up" is
+        // satisfied either way. Establishing several seconds of uptime is what
+        // makes the continuity test below able to tell them apart.
+        let a = null;
+        for (let i = 0; i < 60; i++) {
+          await sleep(250);
+          const snap = await call('linkSnapshot', { id });
+          if (snap.ok && snap.data.state === 'streaming' && snap.data.telemetry.uptimeMs > 5000) { a = snap.data.telemetry; break; }
+        }
+        check('the simulated rig streams before the reload', !!a,
+          a && `${a.rxTotal} samples over ${Math.round(a.uptimeMs / 1000)}s`);
+
+        if (a) {
+          const t0 = Date.now();
+          await reloadAndWait();
+          await sleep(1000);            // let a restarted link, if any, show itself
+          const elapsed = Date.now() - t0;
+          const b = (await call('linkSnapshot', { id })).data;
+
+          // Continuity, not magnitude. If the link ran straight through, its
+          // uptime advanced by exactly the wall time that passed. If it was
+          // torn down and rebuilt, its clock restarted, and the advance falls
+          // short by however long it had been up before — which is why the
+          // history above had to be worth several seconds.
+          const advance = b.telemetry.uptimeMs - a.uptimeMs;
+          const continuous = Math.abs(advance - elapsed) < 1500;
+          const survived = b.state === 'streaming'
+            && continuous
+            && b.telemetry.rxTotal > a.rxTotal
+            && b.telemetry.reconnects === a.reconnects;
+          check('a reload leaves a running connection alone', survived,
+            `state ${b.state}, uptime advanced ${(advance / 1000).toFixed(1)}s over ${(elapsed / 1000).toFixed(1)}s wall` +
+            `${continuous ? '' : ' — the clock restarted, so the link did'}, ` +
+            `rx ${a.rxTotal} -> ${b.telemetry.rxTotal}, reconnects ${a.reconnects} -> ${b.telemetry.reconnects}`);
+
+          const tx = (b.telemetry.destinations || [])[0] || {};
+          const txBefore = ((a.destinations || [])[0] || {}).tx || 0;
+          check('the UDP sink keeps receiving across the reload',
+            tx.tx > txBefore && !tx.txErrors, `tx ${txBefore} -> ${tx.tx}, errors ${tx.txErrors}`);
+
+          await call('linkStop', { id });
+        }
+      }
+    } finally {
+      for (const p of sim) { try { p.kill('SIGKILL'); } catch { /* gone */ } }
     }
   } finally {
     if (clearMetrics) await clearMetrics();
