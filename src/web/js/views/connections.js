@@ -8,6 +8,7 @@
 
 import { el, clear, pill, groupDigits, hz, setText, confirmModal, toast, field, input, select, checkbox, segmented } from '../ui.js';
 import { store } from '../store.js';
+import { openControls } from './detail.js';
 
 export function renderConnections(root) {
   clear(root);
@@ -93,7 +94,7 @@ export function renderConnections(root) {
 
     const row = el('tr', {
       class: 'clickable' + (conn.id === store.selectedId ? ' selected' : ''),
-      onclick: () => store.setView('detail', conn.id)
+      onclick: () => openControls(conn)
     },
       pillCell,
       el('td', {}, el('div', { text: conn.name }),

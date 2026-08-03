@@ -480,6 +480,10 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .row-inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .row-inline > * { flex: 1 1 170px; min-width: 0; }
 .row-inline > .shrink { flex: 0 0 auto; }
+/* Actions sized to their labels. `.row-inline` grows its children to equal
+   widths, which suits a row of form fields and makes a row of buttons look
+   like a segmented control. */
+.modal-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 
 .check { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: var(--fs-body); }
 .check label { margin: 0; color: var(--text); font-size: var(--fs-body); }
@@ -638,6 +642,9 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 18px 50px rgba(0,0,0,.55);
 }
+/* Opt-in for dialogs holding controls rather than a form — the segmented
+   pickers need the width or their options wrap two to a line. */
+.modal-wide { width: min(720px, 92vw); }
 .modal h3 { margin: 0; padding: 14px 18px; font-size: var(--fs-head); border-bottom: 1px solid var(--border); }
 .modal .modal-body { padding: 16px 18px; }
 .modal .modal-foot {

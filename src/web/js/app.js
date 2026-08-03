@@ -19,7 +19,6 @@ import { el, clear, hz, toast, banner } from './ui.js';
 import { store } from './store.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderConnections } from './views/connections.js';
-import { renderDetail } from './views/detail.js';
 import { renderEncoderConfig, onFlashConfirmed } from './views/encoder-config.js';
 import { renderMapping } from './views/mapping.js';
 import { renderLog, ingestLog } from './views/log.js';
@@ -34,7 +33,6 @@ const versionNode = document.getElementById('version');
 const RENDERERS = {
   dashboard: renderDashboard,
   connections: renderConnections,
-  detail: renderDetail,
   encoder: renderEncoderConfig,
   mapping: renderMapping,
   log: renderLog,
@@ -235,11 +233,8 @@ function onStoreChange(reason) {
 
 function renderView() {
   const view = store.view;
-  // 'detail' is reached from the connections list rather than the nav, so it
-  // shows as Connections in both.
-  const navView = view === 'detail' ? 'connections' : view;
   for (const btn of sidebar.querySelectorAll('.nav-item')) {
-    btn.classList.toggle('active', btn.dataset.view === navView);
+    btn.classList.toggle('active', btn.dataset.view === view);
   }
 
 

@@ -198,25 +198,61 @@ export function panel(title, bodyChildren, headExtras, note) {
 // -------------------------------------------------------------------- modals
 
 /** @returns {Promise<boolean>} */
-export function confirmModal({ title, body, confirmLabel = 'Confirm', danger = false }) {
+/**
+ * The dialog shell: backdrop, title, body, footer, and dismissal by backdrop
+ * click or Escape.
+ *
+ * `buildFoot` receives the close function so a caller decides what its buttons
+ * do. `onDismiss` fires only for the backdrop and Escape paths, which is what
+ * lets a promise-based dialog settle when the user walks away from it rather
+ * than leaving the caller waiting.
+ */
+function modalShell({ title, body, wide = false }, buildFoot, onDismiss) {
+  const root = document.getElementById('modal-root');
+  let closed = false;
+
+  const onKey = (e) => { if (e.key === 'Escape') close(true); };
+  function close(dismissed = false) {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener('keydown', onKey);
+    clear(root);
+    if (dismissed && onDismiss) onDismiss();
+  }
+
+  const backdrop = el('div', {
+    class: 'modal-backdrop',
+    onclick: (e) => { if (e.target === backdrop) close(true); }
+  }, el('div', { class: `modal${wide ? ' modal-wide' : ''}` },
+    el('h3', { text: title }),
+    el('div', { class: 'modal-body' }, ...[].concat(body)),
+    el('div', { class: 'modal-foot' }, ...buildFoot(() => close(false)))));
+
+  document.addEventListener('keydown', onKey);
+  clear(root).appendChild(backdrop);
+  return () => close(false);
+}
+
+export function confirmModal({ title, body, confirmLabel = 'Confirm', danger = false, wide = false }) {
   return new Promise((resolve) => {
-    const root = document.getElementById('modal-root');
-    const close = (result) => { clear(root); resolve(result); };
-
-    const backdrop = el('div', { class: 'modal-backdrop', onclick: (e) => { if (e.target === backdrop) close(false); } },
-      el('div', { class: 'modal' },
-        el('h3', { text: title }),
-        el('div', { class: 'modal-body' }, ...[].concat(body)),
-        el('div', { class: 'modal-foot' },
-          el('button', { class: 'btn ghost', text: 'Cancel', onclick: () => close(false) }),
-          el('button', { class: `btn ${danger ? 'danger' : 'primary'}`, text: confirmLabel, onclick: () => close(true) }))));
-
-    const onKey = (e) => {
-      if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); close(false); }
-    };
-    document.addEventListener('keydown', onKey);
-    clear(root).appendChild(backdrop);
+    modalShell({ title, body, wide }, (close) => [
+      el('button', { class: 'btn ghost', text: 'Cancel', onclick: () => { close(); resolve(false); } }),
+      el('button', {
+        class: `btn ${danger ? 'danger' : 'primary'}`, text: confirmLabel,
+        onclick: () => { close(); resolve(true); }
+      })
+    ], () => resolve(false));
   });
+}
+
+/**
+ * A dialog with no decision to make: it holds controls that take effect as they
+ * are used, so its only footer button closes it. Returns that close function,
+ * so a control inside can dismiss the dialog before navigating.
+ */
+export function openModal({ title, body, closeLabel = 'Close', wide = false }) {
+  return modalShell({ title, body, wide },
+    (close) => [el('button', { class: 'btn', text: closeLabel, onclick: close })]);
 }
 
 /** Persistent notice strip under the title bar. Returns a dismiss function. */

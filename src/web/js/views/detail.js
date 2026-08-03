@@ -1,16 +1,20 @@
 /**
- * Per-connection controls.
+ * Per-connection controls, as a dialog.
  *
- * This page used to carry the dial and the live readouts as well, which meant
- * the same questions were answered both here and on the dashboard, and neither
- * place answered all of them. The watching now lives on the dashboard; what is
- * left here is the things you *do* to a connection — none of which belong on a
- * screen that is left open all show, least of all a flash write.
+ * This was a page, and before that a page that also carried the dial and the
+ * live readouts. The watching moved to the dashboard; what is left is the
+ * things you *do* to a connection, and those are a dialog rather than a
+ * destination — the same shape as Add and Edit, opened from the card and
+ * dismissed when you are done. Keeping them out of the dashboard also keeps a
+ * flash-write button off the screen that is open all show.
+ *
+ * The controls act as they are used, so there is nothing to confirm: the
+ * footer only closes.
  */
 
 import {
-  el, clear, pill, groupDigits, setText,
-  confirmModal, toast, segmented, panel
+  el, pill, groupDigits,
+  confirmModal, openModal, toast, segmented
 } from '../ui.js';
 import { store } from '../store.js';
 
@@ -35,37 +39,7 @@ function velocityHint(conn) {
     'velocitycalcmode. Byte-identical to d3driver.exe.';
 }
 
-export function renderDetail(root) {
-  clear(root);
-  const conn = store.selected;
-  if (!conn) {
-    root.appendChild(el('div', { class: 'view' },
-      el('div', { class: 'empty' }, el('h3', { text: 'No connection selected' }))));
-    return { refreshLive() {} };
-  }
-
-  const view = el('div', { class: 'view' });
-
-  const pillHolder = el('span', {}, pill(store.stateOf(conn.id)));
-  const detailText = el('span', { class: 'status-detail' });
-  const runStop = el('button', { class: 'btn', text: '—', onclick: () => toggleLink(conn) });
-
-  view.appendChild(el('div', { class: 'view-head' },
-    el('button', { class: 'btn sm ghost', text: '‹ Dashboard', onclick: () => store.setView('dashboard') }),
-    el('h1', { text: conn.name }),
-    el('span', { class: 'view-head-sub', text: 'controls' }),
-    pillHolder,
-    detailText,
-    el('span', { class: 'spacer' }),
-    runStop));
-
-  view.appendChild(el('div', { class: 'route', style: 'margin:-10px 0 16px' },
-    `${conn.encoder.host}:${conn.encoder.port}`,
-    el('span', { class: 'arrow', text: '→' }),
-    `${conn.d3.host}:${conn.d3.port}`,
-    el('span', { class: 'arrow', text: '·' }),
-    `device ID ${conn.d3.devid}`));
-
+export function openControls(conn) {
   const zeroBtn = el('button', {
     class: 'btn primary big', text: 'Zero / Preset 0',
     title: 'Make the encoder read 0 at its current physical position',
@@ -82,10 +56,33 @@ export function renderDetail(root) {
     }
   });
 
-  view.appendChild(el('div', { class: 'panel' },
-    el('div', { class: 'panel-head' }, el('span', { text: 'Controls' })),
-    el('div', { class: 'panel-body' },
-      el('div', { class: 'row-inline', style: 'margin-bottom:14px' }, zeroBtn, runBtn),
+  const state = store.stateOf(conn.id);
+  const running = state !== 'idle' && state !== 'error';
+  const runStop = el('button', {
+    class: running ? 'btn' : 'btn primary',
+    text: running ? 'Stop' : 'Start',
+    onclick: () => toggleLink(conn)
+  });
+
+  // Where the dialog was opened from decides where "go to" should land, so
+  // close first: leaving a dialog over a screen the user just asked for is the
+  // kind of thing that looks like a bug.
+  const goTo = (view) => { close(); store.setView(view, conn.id); };
+
+  const close = openModal({
+    title: `${conn.name} · controls`,
+    closeLabel: 'Done',
+    wide: true,
+    body: [
+      el('div', { class: 'route', style: 'margin-bottom:14px' },
+        `${conn.encoder.host}:${conn.encoder.port}`,
+        el('span', { class: 'arrow', text: '→' }),
+        `${conn.d3.host}:${conn.d3.port}`,
+        el('span', { class: 'arrow', text: '·' }),
+        `device ID ${conn.d3.devid}`),
+
+      el('div', { class: 'modal-actions' }, pill(state), runStop, zeroBtn, runBtn),
+
       el('div', { class: 'field' },
         el('label', { text: 'Velocity sent to disguise' }),
         segmented([
@@ -98,47 +95,24 @@ export function renderDetail(root) {
           { value: 'derived', label: 'Derived here', title: 'Computed from position deltas, wrap-aware' }
         ], conn.velocityPolicy, (v) => saveField(conn, { velocityPolicy: v })),
         el('div', { class: 'hint' }, velocityHint(conn))),
+
       el('div', { class: 'field' },
         el('label', { text: 'When records arrive coalesced' }),
         segmented([
           { value: 'every', label: 'Forward every', title: 'Original behaviour; best for velocity derivation in disguise' },
           { value: 'latest', label: 'Newest only', title: 'Lowest latency when only current position matters' }
-        ], conn.udpSendPolicy, (v) => saveField(conn, { udpSendPolicy: v }))))));
+        ], conn.udpSendPolicy, (v) => saveField(conn, { udpSendPolicy: v }))),
 
-  view.appendChild(panel('Where to go next', [
-    el('div', { class: 'row-inline' },
-      el('button', { class: 'btn', text: 'Encoder configuration', onclick: () => store.setView('encoder', conn.id) }),
-      el('button', { class: 'btn', text: 'disguise mapping helper', onclick: () => store.setView('mapping', conn.id) }),
-      el('button', { class: 'btn', text: 'Log', onclick: () => store.setView('log', conn.id) }))
-  ]));
+      el('div', { class: 'field' },
+        el('label', { text: 'Go to' }),
+        el('div', { class: 'row-inline' },
+          el('button', { class: 'btn', text: 'Encoder configuration', onclick: () => goTo('encoder') }),
+          el('button', { class: 'btn', text: 'disguise mapping helper', onclick: () => goTo('mapping') }),
+          el('button', { class: 'btn', text: 'Log', onclick: () => goTo('log') })))
+    ]
+  });
 
-  root.appendChild(view);
-
-  let lastState = null;
-  let lastDetail = null;
-
-  return {
-    refreshLive() {
-      const st = store.states.get(conn.id);
-      const state = store.stateOf(conn.id);
-      // Runs every animation frame. Recreating these nodes each time both
-      // wastes work and makes the header flicker, so touch them only on a
-      // real change — including the button, whose label used to be whatever
-      // the state happened to be when the page was opened.
-      if (state !== lastState) {
-        clear(pillHolder).appendChild(pill(state));
-        const running = state !== 'idle' && state !== 'error';
-        setText(runStop, running ? 'Stop' : 'Start');
-        runStop.className = running ? 'btn' : 'btn primary';
-        lastState = state;
-      }
-      const detail = st && st.detail ? st.detail : '';
-      if (detail !== lastDetail) {
-        detailText.textContent = detail;
-        lastDetail = detail;
-      }
-    }
-  };
+  return close;
 }
 
 async function toggleLink(conn) {

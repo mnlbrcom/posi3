@@ -31,7 +31,7 @@ export function renderMapping(root) {
   }, conn.mapping || {});
 
   view.appendChild(el('div', { class: 'view-head' },
-    el('button', { class: 'btn sm ghost', text: '‹ Back', onclick: () => store.setView('detail', conn.id) }),
+    el('button', { class: 'btn sm ghost', text: '‹ Dashboard', onclick: () => store.setView('dashboard') }),
     el('h1', { text: 'disguise mapping' }),
     el('span', { class: 'spacer' }),
     el('button', {
