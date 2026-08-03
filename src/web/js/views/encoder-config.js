@@ -396,6 +396,7 @@ function buildControl(spec, onChange) {
 
   if (spec.type === 'int') {
     const hint = el('div', { class: 'hint' });
+    const range = spec.range ? el('div', { class: 'field-range', text: spec.range }) : null;
     const box = input({
       type: 'number', class: 'num-input',
       min: spec.min, max: spec.max,
@@ -416,7 +417,7 @@ function buildControl(spec, onChange) {
     }
 
     return {
-      node: el('div', {}, box, hint),
+      node: el('div', {}, box, range, hint),
       set: (v) => { box.value = v; updateHint(v); },
       setRateHint: updateHint
     };
@@ -424,5 +425,6 @@ function buildControl(spec, onChange) {
 
   // ip and free text
   const box = input({ class: 'mono-input', oninput: (e) => onChange(e.target.value) });
-  return { node: box, set: (v) => { box.value = v; } };
+  const range = spec.range ? el('div', { class: 'field-range', text: spec.range }) : null;
+  return { node: el('div', {}, box, range), set: (v) => { box.value = v; } };
 }

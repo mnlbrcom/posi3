@@ -15,7 +15,7 @@
 const constants = require('../shared/constants');
 const { computeMapping, d3Fields, suggestedPreset } = require('../shared/mapping');
 const {
-  fail, checkId, checkVariable, checkValue, sanitiseConnection, listInterfaces
+  fail, checkId, checkVariable, checkValue, checkVarWrite, sanitiseConnection, listInterfaces
 } = require('./validate');
 
 /**
@@ -194,28 +194,32 @@ function createApi(ctx) {
       return { vars: link.cachedVars(), flashPending: link.flashPending };
     },
 
-    encoderWrite: ({ id, variable, value }) =>
-      requireLink(id).write(checkVariable(variable), checkValue(value)),
+    encoderWrite: ({ id, variable, value }) => {
+      const w = checkVarWrite(variable, value);
+      return requireLink(id).write(w.variable, w.value);
+    },
 
     encoderWriteMany: ({ id, entries }) => {
       const link = requireLink(id);
       if (!Array.isArray(entries) || !entries.length) fail('EINVAL', 'Nothing to write');
       // Rate limiting and the flash-commit window live in EncoderLink, so every
       // transport shares one budget for the device's ~100,000 write cycles.
-      return link.writeMany(entries.map((e) => ({
-        variable: checkVariable(e.variable),
-        value: checkValue(e.value)
-      })));
+      return link.writeMany(entries.map((e) => checkVarWrite(e.variable, e.value)));
     },
 
     encoderPreset: ({ id, value, force }) => {
       const link = requireLink(id);
-      const v = checkValue(value === undefined || value === null ? 0 : value);
-      return link.setPreset(Number(v), { force: !!force });
+      const w = checkVarWrite('Preset', value === undefined || value === null ? 0 : value);
+      return link.setPreset(Number(w.value), { force: !!force });
     },
 
     encoderRun: ({ id }) => requireLink(id).run(),
 
+    // Deliberately only line-break-checked: this exists to send what the
+    // variable table does not cover, so validating it against the table would
+    // defeat its purpose. It is the one route that reaches the device with an
+    // arbitrary command, which is why it is not reachable without the token
+    // when bound off localhost.
     encoderRaw: ({ id, line }) => requireLink(id).raw(checkValue(line)),
 
     // -- log ----------------------------------------------------------------

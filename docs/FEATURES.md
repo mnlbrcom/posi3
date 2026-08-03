@@ -1940,3 +1940,51 @@ The standing blurb about Java and Internet Explorer is gone.
 
 **Verified with two encoders** on a simulated rig: two cards, two independent Read buttons, both
 reporting `read 13 of 14 variables`. 147 tests, 18 desktop checks, layout and font audit clean.
+
+## 2026-08-03 — The manual's words, the manual's limits, and a validation gap
+
+> "use manual-ixarc-ocd-em.pdf text only to add text to the config, clean up the texts, to much and
+> not important stuff. Und each text filed should havea min max information below it… Also check
+> that these text fields are save only except the values possible and cant be used for injections."
+> / "don't say this shows that here and there just use the text."
+
+No PDF tooling on this machine, so the manual was read by inflating its streams and pulling the
+text operators directly — §5.6.2 *Variables*, pages 18–19. Every help string is now that text,
+trimmed to what an operator needs at the control, with the citations dropped: the text states the
+fact rather than pointing at where the fact came from.
+
+**Every field that takes a typed value now prints what the encoder will accept**, under the box:
+`1 – 999,999 ms`, `1 – 1,073,741,824 steps`, `0 – 1,073,741,823`, `a.b.c.d, each part 0 – 255`.
+Dropdowns get none, because a `select` cannot be out of range. A number input's own `min`/`max`
+only nudges the spinner — it never says what the limits are, and finding out by being rejected
+costs a round trip to the device.
+
+### The gap
+
+`checkValue` refused a line break and a value over 256 characters, and nothing else. **The line
+break is the dangerous one** — the command channel *is* the data channel, so a value containing
+CR or LF becomes a second command — and that was already covered. But nothing checked a value
+against the variable it was being written to. `set CycleTime=abc`, a negative resolution, an
+address of `localhost`, or `CW; Run!` all travelled to the encoder to be rejected there.
+
+`checkVarWrite(name, value)` now enforces everything the variable table knows, **on the server**,
+where a hand-made HTTP request meets it too and the UI's own constraints are only a convenience:
+
+| type | rule |
+|---|---|
+| int | whole number, within the documented range |
+| enum | resolved case- and separator-insensitively, so the device's `CYCLIC` and the applet's `COS` are both accepted and normalised |
+| flags | built only from the declared tokens; empty is legitimate |
+| ip | four octets, 0–255, leading zeros normalised |
+
+`encoderRaw` is deliberately left with only the line-break check: it exists to send what the table
+does not cover, so validating it against the table would defeat it. It is the one route that
+reaches the device with an arbitrary command, and it is unreachable without the token when bound
+off localhost.
+
+**16 new assertions across 7 tests**, including that every injection shape is refused:
+`0\nset IP=1.2.3.4`, `CW; Run!`, `255.255.255.0 ; Run!`, `IP; rm -rf /`.
+
+**154 tests pass.** Screen verified on a simulated rig, since the running app serves `ENCODER_VARS`
+from the process it started with — a constants change needs a restart, unlike the JS and CSS, which
+are read from disk.
