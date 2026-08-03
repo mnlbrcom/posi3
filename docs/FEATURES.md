@@ -1546,3 +1546,35 @@ the dial's height, so the figure lists carried a block of dead space under them.
 **Verified:** layout audit clean at 1440, 1360, 1300, 1280, 1024, 940, 900, 860, 720, 480 and 390
 against the live rig, and across all seven views at the standard widths. 144 tests and 18 desktop
 checks pass.
+
+## 2026-08-03 — The dashboard header as one object
+
+> "give the dashboard top items packets out, steaming 1 of 1, smaples per second, faults one tile
+> with same sized cards all similar size text and cleaner look with dashboard headline, include the
+> Start all and stop all."
+
+The top of the screen was three stacked bands: a bare heading with two buttons, a hero panel, and a
+row of tiles. **All of it is now one panel** — title, Start all / Stop all, and four equal tiles.
+
+The hero is gone. Its 46px figure made "packets out" look like a different *class* of fact from the
+other three, and it is not: all four are totals across every encoder, so they are now the same size
+(28px) in the same tile, in four equal columns rather than `auto-fit`. Unequal tiles would imply a
+ranking that does not exist.
+
+The tiles use the same recessed treatment as the panes inside an encoder card — inset on a raised
+panel — so the two objects on the screen are built from the same parts.
+
+`view-head` is kept as the class on the header row so it behaves like every other screen's header
+and stays covered by the desktop check; only its spacing differs inside the panel.
+
+### A third source-order collision, same shape as the last
+
+`@media (max-width: 480px)` still carried `.summary-stats { grid-template-columns: repeat(2, …) }`
+from the old layout, and it sits *after* the new `@media (max-width: 460px)` single-column rule, so
+it won at 390px and the tiles stayed two-up. Removed. Cleaned out with it: `.hero`, `.hero-value`,
+`.hero-note`, `.hero-label`, `.card-pos` and `.dash-grid`, all orphaned by this and the previous
+change, plus a `.readouts { 110px 1fr }` narrow-width override that would have undone the
+`minmax(0, 1fr)` shrink fix below 560px.
+
+**Verified:** layout audit clean at 1440, 1300, 1024, 900, 720, 480 and 390, and across all seven
+views. 144 tests and 18 desktop checks pass.

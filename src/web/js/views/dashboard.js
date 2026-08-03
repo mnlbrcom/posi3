@@ -55,17 +55,35 @@ export function renderDashboard(root) {
     if (!conns.some((c) => c.id === id)) traces.delete(id);
   }
 
-  view.appendChild(el('div', { class: 'view-head' },
-    el('h1', { text: 'Dashboard' }),
-    el('span', { class: 'spacer' }),
-    el('button', {
-      class: 'btn', text: 'Start all',
-      onclick: () => window.d3d.link.startAll().catch(() => {})
-    }),
-    el('button', {
-      class: 'btn', text: 'Stop all',
-      onclick: () => window.d3d.link.stopAll().catch(() => {})
-    })));
+  // Title, the two global actions and the four totals are one object. They were
+  // three stacked bands before — a heading, a hero panel and a row of tiles —
+  // which spent the top third of the screen restating that this is the
+  // dashboard. The `view-head` class is kept so the header behaves like every
+  // other screen's; only its spacing differs inside the panel.
+  const summaryStats = {
+    out: statTile('Packets out', 'to disguise'),
+    streaming: statTile('Streaming', 'of ' + conns.length),
+    inRate: statTile('Samples in', 'per second'),
+    faults: statTile('Faults', 'none')
+  };
+
+  view.appendChild(el('div', { class: 'panel dash-summary' },
+    el('div', { class: 'view-head dash-head' },
+      el('h1', { text: 'Dashboard' }),
+      el('span', { class: 'spacer' }),
+      el('button', {
+        class: 'btn', text: 'Start all',
+        onclick: () => window.d3d.link.startAll().catch(() => {})
+      }),
+      el('button', {
+        class: 'btn', text: 'Stop all',
+        onclick: () => window.d3d.link.stopAll().catch(() => {})
+      })),
+    el('div', { class: 'summary-stats' },
+      summaryStats.out.node,
+      summaryStats.streaming.node,
+      summaryStats.inRate.node,
+      summaryStats.faults.node)));
 
   if (!conns.length) {
     view.appendChild(el('div', { class: 'empty' },
@@ -78,26 +96,6 @@ export function renderDashboard(root) {
     root.appendChild(view);
     return { refreshLive() {} };
   }
-
-  // -- summary strip --------------------------------------------------------
-  // One hero figure for the view: total datagrams per second reaching disguise.
-  // That is the number that means "the show is being driven".
-  const heroValue = el('div', { class: 'hero-value', text: '—' });
-  const heroNote = el('div', { class: 'hero-note', text: 'to disguise' });
-  const summaryStats = {
-    streaming: statTile('Streaming', 'of ' + conns.length),
-    inRate: statTile('Samples in', 'per second'),
-    faults: statTile('Faults', 'none')
-  };
-
-  view.appendChild(el('div', { class: 'summary' },
-    el('div', { class: 'hero' },
-      el('div', { class: 'hero-label', text: 'Packets out' }),
-      heroValue, heroNote),
-    el('div', { class: 'summary-stats' },
-      summaryStats.streaming.node,
-      summaryStats.inRate.node,
-      summaryStats.faults.node)));
 
   // -- one card per encoder -------------------------------------------------
   const cards = conns.map((conn) => buildCard(conn));
@@ -136,8 +134,8 @@ export function renderDashboard(root) {
       }
       const faults = sendFails + encoderErrors + unparsed;
 
-      setText(heroValue, hz(out));
-      setText(heroNote, out > 0 ? 'to disguise' : 'nothing being sent');
+      setText(summaryStats.out.value, hz(out));
+      setText(summaryStats.out.caption, out > 0 ? 'to disguise' : 'nothing being sent');
       setText(summaryStats.streaming.value, String(streaming));
       setText(summaryStats.inRate.value, hz(inRate));
       setText(summaryStats.faults.value, groupDigits(faults));
