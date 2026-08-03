@@ -1250,3 +1250,22 @@ The layout invariant test now asserts the select approach is **gone rather than 
 and immediately caught a leftover `.nav-picker select` rule that had survived the rewrite.
 
 **143 tests pass.** Layout clean across six views and six widths; the rail is untouched at 1440.
+
+### The menu was dead in the desktop window
+
+Reported straight after: the toggle did nothing in a narrow Electron window, while working in a
+browser.
+
+The titlebar carries `-webkit-app-region: drag` so the desktop window can be moved by it, and
+**a drag region swallows mouse events on everything inside it**. A browser ignores the property
+entirely, so the button worked there and was inert in the app. Any control placed in the titlebar
+needs `-webkit-app-region: no-drag`.
+
+What made this slip through is worth recording: every test of the menu so far used
+`element.click()`, which dispatches straight at the node and never goes through hit-testing — so
+it passes whether or not the region is swallowing input. Confirming the fix meant sending a
+**real mouse event** at the toggle's coordinates in the actual Electron window over CDP. It now
+opens; `aria-expanded` flips; the browser is unaffected.
+
+A layout invariant now asserts that a titlebar control opts out of the drag region, since the
+failure is invisible to the kind of test that would normally cover it.
