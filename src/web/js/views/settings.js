@@ -67,7 +67,7 @@ export function renderSettings(root) {
   'prep room to the show server.'));
 
   view.appendChild(panel('If something is not working', [
-    el('div', { class: 'help', style: 'font-size:12px;line-height:1.7;color:var(--text-dim)' },
+    el('div', { class: 'help dim' },
       el('p', {}, el('b', { text: 'No packets reaching disguise? ' }),
         'Point the connection at a laptop running the bundled UDP sink first ' +
         '(node tools/udp-sink.js). If packets arrive there, the bridge is fine and the ' +

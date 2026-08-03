@@ -13,6 +13,12 @@
 
 import { svgEl, el } from '../ui.js';
 
+/*
+ * Font sizes below are viewBox units, not CSS pixels: they scale with the dial
+ * as it is sized by its column, so they sit outside the app's type scale by
+ * design. Everything drawn in HTML uses the --fs-* tokens.
+ */
+
 const SIZE = 320;
 const C = SIZE / 2;
 

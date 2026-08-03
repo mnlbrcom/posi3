@@ -29,7 +29,7 @@ export function renderLog(root) {
   const view = el('div', { class: 'view' });
 
   const box = el('div', { class: 'logbox' });
-  const droppedNote = el('span', { class: 'warn-text', style: 'font-size:11.5px' });
+  const droppedNote = el('span', { class: 'warn-text meta' });
 
   const connOptions = [{ value: '', label: 'All connections' }].concat(
     store.connections.map((c) => ({ value: c.id, label: c.name })));
