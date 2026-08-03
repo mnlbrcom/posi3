@@ -1988,3 +1988,35 @@ off localhost.
 **154 tests pass.** Screen verified on a simulated rig, since the running app serves `ENCODER_VARS`
 from the process it started with — a constants change needs a restart, unlike the JS and CSS, which
 are read from disk.
+
+## 2026-08-03 — Three ranges that were wrong or invented
+
+> "which input field is unclear about its range or input it can get? all values should be documented
+> in the folder tools-ixarc-ocd-em-java_client"
+
+**That folder does not document them.** Its `Modbus Encoder Parametrization via Command Lines.pdf`
+says only: *"You can find the list of Variables and Values in our online manual, 5.6.2 Variables,
+page 18"* — the section already used. `tcpcl.java` and `udpcl.java` are a plain TCP/UDP terminal
+with no variable table and no validation. The datasheet and the type-label scan are image-only and
+yield no text. So the question had to be answered against what the app was claiming, and three of
+those claims were mine rather than the manual's.
+
+| field | was | now | why |
+|---|---|---|---|
+| UsedScopeOfPhysRes | `1 – 1,073,741,824 steps` | `1 – 33,554,432 steps on this model` | the old figure is the **product family's** 30-bit ceiling (65,536 steps/rev × 16,384 revs). This is a 13-bit singleturn × 12-bit multiturn unit — the family maximum is **32× more than it can hold** |
+| TotalScaledRes | same | same | same |
+| Preset / Offset | `0 – 1,073,741,823` | `0 – 299,999  (one less than TotalScaledRes)` | **the manual states no bound at all.** Preset is "the position value the encoder will show", so it is bounded by the scaled resolution in force — a value on the device, not a constant |
+
+The Preset and Offset limits are therefore **read from the encoder**, not hardcoded: the field names
+its dependency (`0 – one less than TotalScaledRes`) until a read fills in the number. That matters
+because a commissioned unit is nothing like its type label — the reference encoder is scaled to
+300 000 where the label implies 33 million, so any fixed number under those two fields would have
+been wrong on it.
+
+`MAX_RESOLUTION` stays as the **server-side** bound, because the server cannot know which model is
+on the other end of a socket. The UI states the model's own limit; the server refuses only what no
+device in the family could accept.
+
+**Verified on the rig** after a restart: `UsedScopeOfPhysRes 300000`, `TotalScaledRes 300000`,
+`Offset 43156`, and the two dependent fields reading `0 – 299,999`. 154 tests pass; layout audit
+clean on Encoder Config.
