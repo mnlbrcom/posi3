@@ -252,7 +252,11 @@ function buildCard(conn) {
         clear(pillHolder).appendChild(pill(state));
         lastState = state;
       }
-      const detailText = s && s.detail ? s.detail : '';
+      // While streaming the detail is "receiving from <host>", and the host is
+      // already on the line above — so it is shown only for the states where it
+      // carries something the card does not already say: which interface is
+      // being tried, how long until the next retry, why a connection failed.
+      const detailText = s && s.detail && state !== 'streaming' ? s.detail : '';
       if (detailText !== lastDetailText) {
         setText(detail, detailText);
         lastDetailText = detailText;

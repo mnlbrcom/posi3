@@ -2100,3 +2100,45 @@ silent, it says so and gives the MAC, because that is a much stronger hint than 
 
 **Verified on the rig:** finds `10.10.10.10` with its real 300,000 scaling in 2.8 s, does not flag
 the disguise server, and the running link came through it at `reconnects 0, errors 0`. 166 tests.
+
+## 2026-08-04 — A status line that repeated itself, and one that only sometimes appeared
+
+> "in the dashbard the 2nd encoder says \"receiving from 10.10.10.20\" the first one doesn't" / "its
+> kind of reduntand, ip is right above" / "in Encoder config there is no gap between each encoder
+> card, also by default all configs should be folded away."
+
+Two faults behind one observation.
+
+**The redundancy.** While streaming, the state detail is `receiving from <host>` — and the host is
+already on the line above it. The card now shows the detail only for states where it says something
+the card does not: which interface is being tried, how long until the next retry, why a connection
+failed.
+
+**The inconsistency, which was the more interesting half.** Link state arrives as a *transition*
+event, so a client that connects to an already-running bridge never hears one. Telemetry is
+reconciled every frame to cover that — but telemetry carried `state` and **not** `detail`, and the
+reconciler filled in an empty string. So a link that was already streaming when the page loaded
+showed nothing, while one that started later had heard the real event and showed the text. Identical
+state, different display, decided entirely by when the page happened to load.
+
+`detail` now rides along with every telemetry frame, and the store adopts it. It also refreshes when
+the detail changes but the state name does not — a retry countdown was previously frozen at whatever
+it said when the state last changed — **without** triggering a re-render, since detail text is
+painted by the animation loop and re-rendering for it would undo the two-clock model.
+
+**Encoder Config:** the cards had no gap (they were appended straight into the view); they are in a
+`.cfg-list` grid now. And every group starts folded — with more than one encoder on the page an
+expanded card is most of a screen, and what the list is for is seeing the encoders.
+
+### The second encoder
+
+It is real: `10.10.10.20`, MAC `00:0e:cf:07:17:77` — the same manufacturer prefix as the first —
+scaled to 100,000 counts. **It was not on the network when the earlier sweep ran**: a full ICMP
+sweep of all 254 addresses answered from `.5` and `.10` only, and there was no ARP entry for `.20`.
+So the scan had no false negative; the device arrived afterwards. Re-run with both powered:
+
+    scanned 260 on en3
+      10.10.10.10  300000 counts  (answered read TotalScaledRes)
+      10.10.10.20  100000 counts  (answered read TotalScaledRes)
+
+**166 tests pass; Dashboard and Encoder Config audits clean.**

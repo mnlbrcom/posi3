@@ -53,7 +53,7 @@ export function renderEncoderConfig(root) {
   }
 
   const cards = conns.map((c) => encoderCard(c));
-  for (const card of cards) view.appendChild(card.node);
+  view.appendChild(el('div', { class: 'cfg-list' }, ...cards.map((c) => c.node)));
   root.appendChild(view);
 
   readAllBtn.onclick = async () => {
@@ -139,14 +139,13 @@ function encoderCard(conn) {
       table.appendChild(row);
     }
 
-    // Network stays shut and stays marked: changing the IP drops the
-    // connection, and hardware switch 2 can make it look like nothing happened
-    // at all. Everything else opens, because it is what you came to read.
+    // Every group starts folded. With more than one encoder on the page an
+    // expanded card is most of a screen, and what the list is for is seeing the
+    // encoders — the settings are a click away when you want them. Network
+    // stays marked as well as shut: changing an IP drops the connection, and
+    // hardware switch 2 can make it look like nothing happened at all.
     const danger = group === 'network';
-    groupNodes.push(el('details', {
-      class: `cfg-group${danger ? ' danger-zone' : ''}`,
-      open: danger ? undefined : true
-    },
+    groupNodes.push(el('details', { class: `cfg-group${danger ? ' danger-zone' : ''}` },
       el('summary', {
         text: danger
           ? 'Network — changing these will drop the connection'
