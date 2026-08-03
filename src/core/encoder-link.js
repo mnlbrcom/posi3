@@ -820,9 +820,14 @@ class EncoderLink extends EventEmitter {
         // ERROR, so nothing reached flash. A timeout or a dropped link leaves
         // us not knowing whether the write landed, and repeating it could
         // spend a second of the device's ~100,000 cycles.
+        // Say what the device actually objected to. Without this the log showed
+        // a retry with no reason for it, and the first form's error was
+        // invisible — which is most of why the OutputMode failure took so long
+        // to pin down.
+        this._log('warn', 'tx', `"${forms[i]}" refused: ${err.message}`);
         if (err.code !== 'EENCODER') throw err;
         if (i + 1 < forms.length) {
-          this._log('info', 'tx', `"${forms[i]}" refused; retrying as "${forms[i + 1]}"`);
+          this._log('info', 'tx', `retrying as "${forms[i + 1]}"`);
         } else if (this._setDialect) {
           // Both forms refused, so what was remembered is no longer trusted —
           // the next write starts from the documented form again instead of
