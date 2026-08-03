@@ -2045,3 +2045,58 @@ read.
 
 **Verified on the rig:** `UsedScopeOfPhysRes 300000`, `TotalScaledRes 300000`, `Offset 43156`, both
 dependent fields showing `0 – 299,999`. 154 tests pass; Encoder Config audit clean.
+
+## 2026-08-04 — Finding an encoder whose address nobody wrote down
+
+> "if i dont know an encoders ip, can we add a encoder search under add connection and make avalibe
+> endocers either a drop donw on the ip field or a manual enter of the ip?" / "there should be a 2nd
+> encoder"
+
+**POSITAL documents no discovery mechanism.** No broadcast, no announce; the manual permits UDP only
+on port 5000 and only for polled reads. The encoder's one identifying behaviour is that it answers
+on TCP 6000, so `src/core/discover.js` connects to every host in a subnet and asks.
+
+Three properties mattered more than speed:
+
+- **The subnet comes from this machine's interfaces, never from the caller.** `localAddress` picks
+  a NIC; that NIC's netmask decides what is probed. A route that took a range from the caller would
+  be a port scanner with an HTTP front end.
+- **A hit is disconnected the instant it is identified.** TCP 6000 accepts only a handful of
+  clients, and during a show those slots are the difference between a desk connecting and not.
+- **Identification is positive.** An open port is not evidence; the device must either stream
+  samples or answer `read TotalScaledRes`. A test points an HTTP server at the probe and requires
+  it to be rejected.
+
+A `/16` is refused rather than clipped — 65,534 probes is not a scan, it is a nuisance.
+
+The field is an `<input list>` with a `datalist`, so it is a dropdown **and** typeable: the encoder
+you want may be on a subnet this machine cannot see, and being forced to pick from a list that
+cannot contain it would be worse than no list at all.
+
+### The second encoder
+
+It is not on the wire. Established rather than assumed:
+
+- a full ICMP sweep of `10.10.10.0/24` answers from **two** hosts — `.5` (disguise) and `.10`
+- the neighbour table for `en3` holds exactly three MACs: this Mac, disguise, and one device with
+  the encoder's manufacturer prefix `00:0e:cf`
+- the link-local addresses that had appeared on that segment answer nothing on 6000
+- the other interface, `192.168.100.0/24`, yields nothing
+
+So it is powered down, unplugged, or holding an address on a subnet nobody here has an address in —
+and **no IP scan can reach that last case**, which is the honest limit of this feature.
+
+Two things came out of chasing it:
+
+**Neighbours outside the subnet are probed too.** A device that has spoken is in the ARP table even
+if its address is foreign, so those get a probe as well — 283 addresses instead of 253 on the rig.
+Best effort: a missing `arp`, an unparsable format or a different platform all end with an empty
+list and a scan that carries on.
+
+**When nothing answers, the screen names the actual remedy.** More scanning is not it — switch 2 in
+the connection cap forces the encoder back to the factory address after a power cycle, regardless
+of what is programmed. If a device with the encoder's manufacturer prefix is on the segment but
+silent, it says so and gives the MAC, because that is a much stronger hint than "nothing found".
+
+**Verified on the rig:** finds `10.10.10.10` with its real 300,000 scaling in 2.8 s, does not flag
+the disguise server, and the running link came through it at `reconnects 0, errors 0`. 166 tests.

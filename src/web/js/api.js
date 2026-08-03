@@ -212,7 +212,9 @@ if (!window.d3d) {
     },
 
     net: {
-      interfaces: () => call('interfaces')
+      interfaces: () => call('interfaces'),
+      discoverInterfaces: () => call('discoverInterfaces'),
+      discoverEncoders: (localAddress, port) => call('discoverEncoders', { localAddress, port })
     },
 
     log: {
