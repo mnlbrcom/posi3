@@ -14,6 +14,7 @@ const path = require('node:path');
 const { LinkManager } = require('../core/link-manager');
 const { ConfigStore } = require('../core/config-store');
 const { Logger } = require('../core/logger');
+const { LogFile } = require('../core/log-file');
 const { createApi } = require('./api');
 const { createServer } = require('./http');
 const { newToken, isLoopback } = require('./security');
@@ -49,6 +50,13 @@ async function startService(opts = {}) {
   const logger = new Logger();
   const manager = new LinkManager({ logger, telemetryHz: store.settings.telemetryHz });
 
+  // Always on for warnings and errors: a packaged app has no console, so
+  // without this a failure before the UI is up leaves no trace anywhere.
+  // `logToFile` widens it to every line.
+  const logFile = new LogFile(dataDir, { verbose: !!store.settings.logToFile });
+  manager.on('log', (batch) => logFile.write(batch));
+  if (store.loadWarning) logFile.note(store.loadWarning, 'warn');
+
   // Reaching beyond loopback exposes flash writes and the encoder's IP
   // settings to the whole LAN, so it is never token-less.
   const token = opts.token || (isLoopback(bindHost) ? null : newToken());
@@ -62,7 +70,10 @@ async function startService(opts = {}) {
     store,
     syncLink: (conn) => manager.upsert(conn),
     onConfigChanged: () => announceConfigChange(),
-    onSettings: opts.onSettings,
+    onSettings: (settings) => {
+      logFile.setVerbose(!!settings.logToFile);
+      if (opts.onSettings) opts.onSettings(settings);
+    },
     env: () => Object.assign({
       version: require('../../package.json').version,
       platform: process.platform,
@@ -80,6 +91,7 @@ async function startService(opts = {}) {
   for (const conn of store.connections) manager.upsert(conn);
 
   const http = createServer({ api, manager, bindHost, port, token });
+  logFile.note(`posi3 ${require('../../package.json').version} starting — profile ${dataDir}`, 'warn');
   announceConfigChange = () => http.hub.broadcast('configChanged', { t: Date.now() });
   await http.listen();
 
@@ -103,6 +115,7 @@ async function startService(opts = {}) {
     store,
     manager,
     logger,
+    logFile,
     api,
     http,
     token,
@@ -115,6 +128,7 @@ async function startService(opts = {}) {
       manager.dispose();
       store.flushNow();
       await http.close();
+      logFile.close();
     }
   };
 }
