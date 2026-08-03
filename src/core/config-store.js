@@ -193,37 +193,6 @@ class ConfigStore {
     return this.profile.connections.length !== before;
   }
 
-  duplicateConnection(id) {
-    const src = this.find(id);
-    if (!src) return null;
-    const copy = JSON.parse(JSON.stringify(src));
-    copy.id = crypto.randomUUID();
-    copy.name = `${src.name} copy`;
-    copy.autoStart = false; // never silently start a clone
-    // A clone needs its own axis, and fresh destination ids so the two
-    // connections cannot be confused in the UI.
-    const devid = this.nextFreeDevid();
-    for (const d of copy.destinations) {
-      d.id = crypto.randomUUID();
-      d.devid = devid;
-    }
-    copy.d3 = Object.assign({}, copy.destinations[0]);
-    this.profile.connections.push(copy);
-    this.save();
-    return copy;
-  }
-
-  /** Lowest device id not already claimed — duplicate ids silently collide in d3. */
-  nextFreeDevid() {
-    const used = new Set();
-    for (const c of this.profile.connections) {
-      for (const d of c.destinations || []) used.add(Number(d.devid));
-    }
-    let id = 1;
-    while (used.has(id)) id++;
-    return id;
-  }
-
   reorder(ids) {
     const byId = new Map(this.profile.connections.map((c) => [c.id, c]));
     const next = [];
