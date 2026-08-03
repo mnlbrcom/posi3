@@ -108,11 +108,36 @@ export function openControls(conn) {
         el('div', { class: 'row-inline' },
           el('button', { class: 'btn', text: 'Encoder configuration', onclick: () => goTo('encoder') }),
           el('button', { class: 'btn', text: 'disguise mapping helper', onclick: () => goTo('mapping') }),
-          el('button', { class: 'btn', text: 'Log', onclick: () => goTo('log') })))
+          el('button', { class: 'btn', text: 'Log', onclick: () => goTo('log') }))),
+
+      // Deleting used to live in the connections row menu, which is gone. It
+      // belongs on the one surface that is about managing a single connection,
+      // set apart from the controls above so it is not next to anything you
+      // would press in a hurry.
+      el('div', { class: 'modal-danger' },
+        el('button', {
+          class: 'btn danger', text: 'Delete connection…',
+          onclick: () => { close(); confirmDelete(conn); }
+        }),
+        el('span', { class: 'hint', text: 'Removes it from the profile. The encoder is not touched.' }))
     ]
   });
 
   return close;
+}
+
+async function confirmDelete(conn) {
+  const sure = await confirmModal({
+    title: 'Delete this connection?',
+    body: el('p', { text: `“${conn.name}” will be removed from the profile. This cannot be undone.` }),
+    confirmLabel: 'Delete',
+    danger: true
+  });
+  if (!sure) return;
+  try {
+    await window.d3d.config.deleteConnection(conn.id);
+    store.setProfile(await window.d3d.config.get());
+  } catch (err) { toast('error', err.message); }
 }
 
 async function toggleLink(conn) {

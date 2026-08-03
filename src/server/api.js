@@ -108,13 +108,6 @@ function createApi(ctx) {
       return announce(store.deleteConnection(key));
     },
 
-    configDuplicateConnection: ({ id }) => {
-      const copy = store.duplicateConnection(checkId(id));
-      if (!copy) fail('ENOENT', 'No such connection');
-      ctx.syncLink(copy);
-      return announce(copy);
-    },
-
     configReorder: ({ ids }) => {
       if (!Array.isArray(ids)) fail('EINVAL', 'Expected an array of ids');
       store.reorder(ids.map(checkId));

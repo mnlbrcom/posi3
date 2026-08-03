@@ -44,94 +44,98 @@ export function renderConnections(root) {
     return { refreshLive() {} };
   }
 
-  const tbody = el('tbody');
-  // Explicit column widths, because the position and rate cells change digit
-  // count constantly and an auto-sized table would re-measure on every frame.
-  const cols = el('colgroup', {},
-    el('col', { style: 'width:142px' }),   // status — must clear the widest pill
-    el('col', {}),                          // name (takes the slack)
-    el('col', { style: 'width:146px' }),   // encoder
-    el('col', { style: 'width:146px' }),   // disguise
-    el('col', { style: 'width:46px' }),    // id
-    el('col', { style: 'width:112px' }),   // position
-    el('col', { style: 'width:80px' }),    // rate
-    el('col', { style: 'width:108px' }));  // actions
-  const table = el('table', { class: 'rows' },
-    cols,
-    el('thead', {},
-      el('tr', {},
-        el('th', { text: 'Status' }),
-        el('th', { text: 'Name' }),
-        el('th', { text: 'Encoder' }),
-        el('th', { text: 'disguise' }),
-        el('th', { class: 'right', text: 'ID' }),
-        el('th', { class: 'right', text: 'Position' }),
-        el('th', { class: 'right', text: 'Rate' }),
-        el('th', { text: '' }))),
-    tbody);
-
   const live = [];
   const warnings = duplicateWarnings(store.connections);
+  const list = el('div', { class: 'conn-list' });
 
   for (const conn of store.connections) {
     const state = store.stateOf(conn.id);
-    const posCell = el('td', { class: 'right num', text: '—' });
-    const rateCell = el('td', { class: 'right num faint', text: '—' });
-    const pillCell = el('td', {}, pill(state));
-
     const running = state !== 'idle' && state !== 'error';
-    const toggle = el('button', {
-      class: running ? 'btn sm' : 'btn sm primary',
-      text: running ? 'Stop' : 'Start',
-      onclick: async (e) => {
-        e.stopPropagation();
-        try {
-          if (running) await window.d3d.link.stop(conn.id);
-          else await window.d3d.link.start(conn.id);
-        } catch (err) { toast('error', err.message); }
-      }
+    const pillHolder = el('span', { class: 'pill-holder' }, pill(state));
+
+    // Start and Stop as two buttons rather than one that changes label. A
+    // toggle means the control under your finger is whichever one the link
+    // was in when the card was drawn, and on a show that is worth avoiding.
+    const startBtn = el('button', {
+      class: 'btn', text: 'Start', disabled: running || undefined,
+      onclick: () => act(() => window.d3d.link.start(conn.id))
+    });
+    const stopBtn = el('button', {
+      class: 'btn', text: 'Stop', disabled: !running || undefined,
+      onclick: () => act(() => window.d3d.link.stop(conn.id))
     });
 
-    const row = el('tr', {
-      class: 'clickable' + (conn.id === store.selectedId ? ' selected' : ''),
-      onclick: () => openControls(conn)
-    },
-      pillCell,
-      el('td', {}, el('div', { text: conn.name }),
-        warnings.get(conn.id)
-          ? el('div', { class: 'tag warn', text: warnings.get(conn.id) })
-          : null),
-      el('td', { title: `${conn.encoder.host}:${conn.encoder.port}` },
-        el('span', { class: 'route', text: `${conn.encoder.host}:${conn.encoder.port}` })),
-      el('td', { title: destSummary(conn).full },
-        el('span', { class: 'route', text: destSummary(conn).short })),
-      el('td', { class: 'right num', text: destSummary(conn).ids }),
-      posCell,
-      rateCell,
-      el('td', { class: 'right nowrap' },
-        toggle,
-        ' ',
-        el('button', {
-          class: 'btn sm ghost', text: '⋯', title: 'More',
-          onclick: (e) => { e.stopPropagation(); openRowMenu(conn); }
-        })));
+    const dest = destSummary(conn);
+    const cells = {
+      pos: el('div', { class: 'conn-value', text: '—' }),
+      rate: el('div', { class: 'conn-value', text: '—' })
+    };
 
-    tbody.appendChild(row);
-    live.push({ id: conn.id, posCell, rateCell, pillCell, toggle, row });
+    const card = el('div', { class: 'card conn-card' },
+      el('div', { class: 'card-head' },
+        el('button', {
+          class: 'card-name', text: conn.name, title: 'Open the controls',
+          onclick: () => openControls(conn)
+        }),
+        pillHolder,
+        el('span', { class: 'spacer' }),
+        startBtn, stopBtn,
+        el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
+        el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) })),
+
+      warnings.get(conn.id)
+        ? el('div', { class: 'tag warn', text: warnings.get(conn.id) })
+        : null,
+
+      // auto-fit rather than a fixed column count: the same markup carries four
+      // fields across a wide window and one per line on a phone, with no
+      // sideways scroll at any width in between.
+      el('div', { class: 'conn-fields' },
+        connField('Encoder', `${conn.encoder.host}:${conn.encoder.port}`),
+        connField('disguise', dest.short, dest.full),
+        connField('Device ID', dest.ids),
+        connField('Position', cells.pos),
+        connField('Rate', cells.rate)));
+
+    list.appendChild(card);
+    live.push({ id: conn.id, cells, pillHolder, startBtn, stopBtn, lastState: state });
   }
 
-  view.appendChild(el('div', { class: 'panel' }, table));
+  view.appendChild(list);
   root.appendChild(view);
 
   return {
     refreshLive() {
       for (const l of live) {
         const t = store.telemetryOf(l.id);
-        setText(l.posCell, t ? groupDigits(t.pos) : null);
-        setText(l.rateCell, t && t.txHz > 0.5 ? `${hz(t.txHz)} Hz` : null);
+        setText(l.cells.pos, t ? groupDigits(t.pos) : null);
+        setText(l.cells.rate, t && t.txHz > 0.5 ? `${hz(t.txHz)} Hz` : null);
+
+        // Only on a real change: this runs every animation frame, and
+        // rebuilding the pill or reassigning `disabled` each time is what made
+        // earlier versions of this screen shiver.
+        const state = store.stateOf(l.id);
+        if (state !== l.lastState) {
+          clear(l.pillHolder).appendChild(pill(state));
+          const running = state !== 'idle' && state !== 'error';
+          l.startBtn.disabled = running;
+          l.stopBtn.disabled = !running;
+          l.lastState = state;
+        }
       }
     }
   };
+}
+
+async function act(fn) {
+  try { await fn(); } catch (err) { toast('error', err.message); }
+}
+
+/** One labelled field in a connection card. Value may be a string or a node. */
+function connField(label, value, title) {
+  return el('div', { class: 'conn-field', title: title || undefined },
+    el('div', { class: 'conn-label', text: label }),
+    typeof value === 'string' ? el('div', { class: 'conn-value', text: value }) : value);
 }
 
 /**
@@ -178,41 +182,6 @@ function duplicateWarnings(connections) {
 }
 
 const destKey = (d) => `${d.host}:${d.port}/${d.devid}`;
-
-async function openRowMenu(conn) {
-  const ok = await confirmModal({
-    title: conn.name,
-    body: [
-      el('p', { class: 'dim', text: 'Duplicating copies every setting and assigns the next free device ID.' }),
-      el('div', { class: 'row-inline' },
-        el('button', {
-          class: 'btn', text: 'Edit…',
-          onclick: () => { document.getElementById('modal-root').replaceChildren(); openEditor(conn); }
-        }),
-        el('button', {
-          class: 'btn', text: 'Duplicate',
-          onclick: async () => {
-            document.getElementById('modal-root').replaceChildren();
-            await window.d3d.config.duplicateConnection(conn.id);
-            store.setProfile(await window.d3d.config.get());
-          }
-        }))
-    ],
-    confirmLabel: 'Delete',
-    danger: true
-  });
-  if (!ok) return;
-
-  const sure = await confirmModal({
-    title: 'Delete this connection?',
-    body: el('p', { text: `“${conn.name}” will be removed from the profile. This cannot be undone.` }),
-    confirmLabel: 'Delete',
-    danger: true
-  });
-  if (!sure) return;
-  await window.d3d.config.deleteConnection(conn.id);
-  store.setProfile(await window.d3d.config.get());
-}
 
 // ---------------------------------------------------------------------------
 

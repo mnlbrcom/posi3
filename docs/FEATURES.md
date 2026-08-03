@@ -1807,3 +1807,36 @@ does.
 **Verified:** Edit opens "Edit connection" from the card; the controls dialog opens from the card,
 the connection name and the connections list. 149 tests, 18 desktop checks, layout and font audit
 clean.
+
+## 2026-08-03 — Connections becomes cards, and duplicate is removed
+
+> "Wirst we dont want the horizontal slider, les make a conection a bigger card. The stop button
+> shoudl get some friends. Start, Ctrl (Control) and Edit. The … buttone can then be deleted, also
+> its funtion to dublicated is nothing i ever asked for. Delete duplicate function and UI elements
+> too."
+
+**The table is gone.** It had eight fixed-width columns and a horizontal scrollbar, which put the
+routing — the thing you check before a show — off the right-hand edge on anything but a wide
+window. One card per connection now, full width, stacked, with the fields in a
+`repeat(auto-fit, minmax(150px, 1fr))` grid: four across a wide window, two on a phone, no sideways
+scroll at any width between.
+
+**Four buttons: Start, Stop, Controls, Edit.** Start and Stop are two buttons rather than one that
+changes label — a toggle means the control under your finger is whichever state the link was in
+when the card was drawn, which is worth avoiding on a show. The inactive one is disabled, and both
+are updated only when the state actually changes, since this repaints every frame.
+
+Labelled **Controls**, not Ctrl, to match the dashboard card — two words for one dialog invites the
+question of whether they are the same thing.
+
+**The `⋯` menu is gone**, and with it duplicate: `configDuplicateConnection` (route),
+`duplicateConnection` (store), `CONFIG_DUPLICATE_CONNECTION` (channel name), the browser shim
+method, its test, and `nextFreeDevid`, which existed only to serve it.
+
+**Delete moved into the controls dialog**, since the row menu that held it is gone. It is set apart
+below a rule rather than sitting beside the controls, so it is not next to anything you would press
+in a hurry. It was the one thing in that menu that had to survive — the alternative was a screen
+with no way to remove a connection.
+
+**Verified:** no horizontal scroll at 1440, 1024, 860, 720, 480 or 390; the card wraps to two
+button rows and two field columns at 390. 147 tests, 18 desktop checks, layout and font audit clean.

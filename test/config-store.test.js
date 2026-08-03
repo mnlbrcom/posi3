@@ -114,35 +114,6 @@ test('a profile from a newer build loads read-only', () => {
   assert.match(s.loadWarning, /newer version/);
 });
 
-test('device ids are allocated across every destination, not just the first', () => {
-  const s = loaded(tmpDir());
-  s.upsertConnection({
-    name: 'A',
-    encoder: { host: '10.0.0.9', port: 6000 },
-    destinations: [
-      { host: '10.0.0.1', port: 6000, devid: 1 },
-      { host: '10.0.0.2', port: 6000, devid: 2 }
-    ]
-  });
-  // 1 and 2 are taken by one connection's two destinations.
-  assert.equal(s.nextFreeDevid(), 3);
-});
-
-test('duplicating a connection gives it a free axis and fresh destination ids', () => {
-  const s = loaded(tmpDir());
-  const src = s.upsertConnection({
-    name: 'A',
-    encoder: { host: '10.0.0.9', port: 6000 },
-    destinations: [{ host: '10.0.0.1', port: 6000, devid: 1 }]
-  });
-  const copy = s.duplicateConnection(src.id);
-
-  assert.notEqual(copy.id, src.id);
-  assert.equal(copy.autoStart, false, 'a clone must never silently start');
-  assert.notEqual(copy.destinations[0].devid, src.destinations[0].devid);
-  assert.notEqual(copy.destinations[0].id, src.destinations[0].id);
-});
-
 test('a write leaves no temporary file behind', () => {
   const dir = tmpDir();
   const s = loaded(dir);
