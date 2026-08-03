@@ -22,6 +22,17 @@ const REVOLUTIONS = 4096;
 /** 25-bit total = 33,554,432 counts. Position range is 0 .. TOTAL_COUNTS-1. */
 const TOTAL_COUNTS = COUNTS_PER_REV * REVOLUTIONS;
 
+/**
+ * Family ceiling, manual §1.1 p.4: "a maximum resolution of 65,536 steps per
+ * revolution (16 Bit) […] up to 16,384 revolutions (14 Bit). Therefore the
+ * largest resulting resolution is 30 Bit = 1,073,741,824 steps."
+ *
+ * The scaling variables were bounded at 2^32-1 — a plain 32-bit integer limit,
+ * not anything the hardware can do. Offering a range four times what any unit
+ * in the family supports is an invitation to write a value it will refuse.
+ */
+const MAX_RESOLUTION = 1073741824;
+
 /** Factory IP. Hardware switch 2 ON forces this regardless of the programmed IP. */
 const DEFAULT_ENCODER_IP = '10.10.10.10';
 /** TCP 6000 carries the data stream AND the command channel on one socket. */
@@ -141,25 +152,31 @@ const ENCODER_VARS = [
   {
     name: 'TimeMode', group: 'output', type: 'enum',
     values: ['Polled', 'Cyclic', 'Change of state'],
+    // The device answers in upper case (`CYCLIC`), and POSITAL's own applet
+    // labels the third mode `COS`. Neither matches the manual's spelling, so
+    // the dropdown has to resolve what it is given rather than compare
+    // literally — otherwise it shows the operator the wrong current mode.
+    aliases: { cos: 'Change of state', changeofstate: 'Change of state' },
     label: 'Time mode',
     help: 'Cyclic is required for a continuous stream. Polled only answers Run!. Change of state checks every 5 ms.'
   },
   {
     name: 'CycleTime', group: 'output', type: 'int', min: 1, max: 999999, unit: 'ms',
     label: 'Cycle time',
-    help: 'Interval in Cyclic mode. This dominates end-to-end latency — everything else in the ' +
-      'chain is measured in microseconds. Below ~2 ms the manual\'s FAQ suggests values may ' +
-      'start repeating, though POSITAL elsewhere advertise cycle times under 2 ms.'
+    help: 'Interval in Cyclic mode, 1 to 999,999 ms. This dominates end-to-end latency — ' +
+      'everything else in the chain is measured in microseconds. POSITAL\'s own manual shows ' +
+      'CycleTime=1 in use (§4.2 screenshot), and §1.2 advertises cycle times under 2 ms; ' +
+      'FAQ 4 gives ~2 ms for the internal sensor update, so below that values may repeat.'
   },
 
   // -- scaling --------------------------------------------------------------
   {
-    name: 'UsedScopeOfPhysRes', group: 'scaling', type: 'int', min: 1, max: 4294967295,
+    name: 'UsedScopeOfPhysRes', group: 'scaling', type: 'int', min: 1, max: MAX_RESOLUTION,
     label: 'Used scope of physical resolution', default: TOTAL_COUNTS,
     help: 'Portion of the physical resolution used, in physical steps. Must divide the total resolution evenly or the count jumps at the physical zero point.'
   },
   {
-    name: 'TotalScaledRes', group: 'scaling', type: 'int', min: 1, max: 4294967295,
+    name: 'TotalScaledRes', group: 'scaling', type: 'int', min: 1, max: MAX_RESOLUTION,
     label: 'Total scaled resolution', default: TOTAL_COUNTS,
     help: 'Scaled steps counted across the span defined by UsedScopeOfPhysRes.'
   },
@@ -169,7 +186,7 @@ const ENCODER_VARS = [
     help: 'Which rotation direction increases the position value.'
   },
   {
-    name: 'Preset', group: 'scaling', type: 'int', min: 0, max: 4294967295,
+    name: 'Preset', group: 'scaling', type: 'int', min: 0, max: MAX_RESOLUTION - 1,
     label: 'Preset',
     // Write-only on the firmware tested here: `read Preset` answers
     // "ERROR: Preset is an unknown variable." The value it produces shows up in
@@ -180,7 +197,7 @@ const ENCODER_VARS = [
       'Writes to flash. Cannot be read back — the resulting Offset can.'
   },
   {
-    name: 'Offset', group: 'scaling', type: 'int', min: 0, max: 4294967295,
+    name: 'Offset', group: 'scaling', type: 'int', min: 0, max: MAX_RESOLUTION - 1,
     label: 'Offset',
     help: 'Directly edits the internal offset that Preset calculates.'
   },
@@ -244,6 +261,7 @@ module.exports = {
   COUNTS_PER_REV,
   REVOLUTIONS,
   TOTAL_COUNTS,
+  MAX_RESOLUTION,
   DEFAULT_ENCODER_IP,
   DEFAULT_ENCODER_PORT,
   DEFAULT_D3_PORT,

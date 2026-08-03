@@ -118,8 +118,11 @@ export function renderEncoderConfig(root) {
       currentCells.set(spec.name, curCell);
 
       const ctl = buildControl(spec, (value) => {
+        // Compare like with like: the device may have answered `CYCLIC` where
+        // the control offers `Cyclic`, and that is not an edit.
         const cur = current.get(spec.name);
-        if (String(value) === String(cur)) edited.delete(spec.name);
+        const norm = (v) => (ctl && ctl.normalise ? ctl.normalise(v) || String(v) : String(v));
+        if (norm(value) === norm(cur)) edited.delete(spec.name);
         else edited.set(spec.name, String(value));
         refreshDirty();
       });
@@ -302,8 +305,37 @@ export function onFlashConfirmed(id) {
 
 function buildControl(spec, onChange) {
   if (spec.type === 'enum') {
-    const s = select(spec.values, spec.values[0], onChange);
-    return { node: s, set: (v) => { s.value = v; } };
+    const sel = select(spec.values, spec.values[0], onChange);
+    /**
+     * Resolve whatever the device said to one of our options.
+     *
+     * The encoder does not answer in the manual's spelling: `TimeMode` comes
+     * back as `CYCLIC`, and POSITAL's own applet writes the third mode as
+     * `COS`. Assigning an unmatched value to a <select> silently leaves it
+     * blank, so a literal comparison would show the operator no current mode
+     * at all — or worse, the first option, which is wrong rather than absent.
+     */
+    const resolve = (v) => {
+      const raw = String(v == null ? '' : v).trim();
+      if (!raw) return '';
+      const key = raw.toLowerCase().replace(/[\s_-]/g, '');
+      const exact = spec.values.find((o) => o.toLowerCase().replace(/[\s_-]/g, '') === key);
+      if (exact) return exact;
+      const alias = spec.aliases && spec.aliases[key];
+      return alias || '';
+    };
+    return {
+      node: sel,
+      set: (v) => {
+        const match = resolve(v);
+        sel.value = match || spec.values[0];
+        // Say so rather than quietly showing something plausible.
+        sel.title = match ? '' : `Encoder reported "${v}", which is not a value this build knows`;
+        sel.classList.toggle('unknown-value', !match && String(v || '') !== '');
+      },
+      /** The canonical spelling, for comparing against an edit. */
+      normalise: resolve
+    };
   }
 
   if (spec.type === 'flags') {
