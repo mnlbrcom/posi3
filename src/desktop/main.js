@@ -178,6 +178,55 @@ function applyLoginItem(enabled) {
 // Window
 // ---------------------------------------------------------------------------
 
+/**
+ * Undo a viewport left emulated by a debugging session that never cleaned up.
+ *
+ * A DevTools client can pin the page to an arbitrary size with
+ * `Emulation.setDeviceMetricsOverride`. Closing that client cleanly releases
+ * it — but a client that dies without detaching leaves the override in place,
+ * and then the window renders at, say, 420px inside its real 1180px frame.
+ * It reads as a layout bug, resizing does not touch it, and only a restart
+ * clears it. That happened during development and cost real time to diagnose.
+ *
+ * Two things do *not* fix it, both verified rather than assumed:
+ *   - `webContents.disableDeviceEmulation()` — a different mechanism; the
+ *     override is re-applied as soon as the document commits.
+ *   - a later client sending `clearDeviceMetricsOverride` — a session cannot
+ *     clear an override it does not own, so the call is a no-op.
+ *
+ * What works is taking ownership first: set an override at the window's real
+ * size, then clear it in that same session. So this attaches the app's own
+ * debugger, does exactly that, and detaches.
+ *
+ * Called after every load, which makes Cmd+R the cure — where a person reaches
+ * first anyway.
+ */
+async function releaseStuckEmulation(win) {
+  try {
+    if (win.isDestroyed()) return;
+    const wc = win.webContents;
+    const [width, height] = win.getContentSize();
+
+    // Zoom also divorces innerWidth from the content size, and is legitimate,
+    // so account for it before deciding anything is wrong.
+    const inner = await wc.executeJavaScript('innerWidth', true);
+    const expected = width / (wc.getZoomFactor() || 1);
+    if (Math.abs(inner - expected) <= 2) return;
+
+    // Someone is genuinely debugging this window; their override is theirs.
+    if (wc.debugger.isAttached()) return;
+
+    wc.debugger.attach('1.3');
+    try {
+      await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride',
+        { width, height, deviceScaleFactor: 0, mobile: false });
+      await wc.debugger.sendCommand('Emulation.clearDeviceMetricsOverride');
+    } finally {
+      try { wc.debugger.detach(); } catch { /* already gone */ }
+    }
+  } catch { /* best effort — never let this break a load */ }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -198,6 +247,9 @@ function createWindow() {
       backgroundThrottling: false
     }
   });
+
+  // Cmd+R is the way out of a stuck viewport. See releaseStuckEmulation.
+  mainWindow.webContents.on('did-finish-load', () => { void releaseStuckEmulation(mainWindow); });
 
   mainWindow.loadURL(svc.url);
 

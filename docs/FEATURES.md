@@ -1375,3 +1375,44 @@ disconnection to do it.
 **Worth remembering when debugging the running app**: a viewport override, a CPU or network
 throttle, and a forced colour scheme all survive the debugging session that set them. Anything set
 on the app the user is actually using has to be unset explicitly.
+
+## 2026-08-03 — Cmd+R now rescues a stuck viewport
+
+> "can this be coded, so it resets with reload cmd+r ?"
+
+Yes, and it is — but not the way it first looked, so the failed attempts are worth recording.
+
+`Cmd+R` was already a plain `role: 'reload'`; the earlier collision with "start all connections"
+was resolved to `Cmd+Shift+R` when the menu was built, so there was nothing to untangle. The work
+was making a reload actually release the override.
+
+**Two obvious approaches do not work, both measured rather than reasoned about:**
+
+| Attempt | Result |
+|---|---|
+| `webContents.disableDeviceEmulation()` on `did-start-loading` | reload → still 420px. Different mechanism; the override is re-applied when the document commits. |
+| the same call on `did-finish-load` | reload → still 420px. Not a race — it simply does not reach a CDP-set override. |
+| a later client sending `clearDeviceMetricsOverride` | no-op. A session cannot clear an override it does not own. |
+
+**What works is taking ownership first.** `releaseStuckEmulation()` in `src/desktop/main.js`
+attaches the app's own debugger, sets an override at the window's real content size, clears it in
+that same session, and detaches. It runs after every load, so `Cmd+R` is the cure.
+
+It only acts when something is actually wrong: it compares `innerWidth` against the content size
+**divided by the zoom factor**, because zoom legitimately divorces the two and must not look like
+a fault, and it stands down entirely if a debugger is already attached — that override belongs to
+whoever is using it.
+
+### Reproducing it honestly
+
+The first regression attempt did not reproduce the bug. Closing a DevTools client *cleanly*
+releases its override, so a test that connects, overrides and disconnects proves nothing. The real
+case is a client that **dies without detaching**, which is what happened here. The check therefore
+spawns a real child process to set the override and `SIGKILL`s it, and asserts the reproduction
+before asserting the fix — an override that quietly stopped surviving would otherwise turn the
+whole check green for the wrong reason.
+
+**Verified both ways.** With the fix: 14 of 14 desktop checks pass, `420px -> 1180px`. With the
+`did-finish-load` hook removed: `a reload releases a viewport left emulated — 420px -> 420px`.
+
+**144 tests pass.**
