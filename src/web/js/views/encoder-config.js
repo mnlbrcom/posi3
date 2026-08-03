@@ -54,7 +54,7 @@ export function renderEncoderConfig(root) {
   const statusText = el('span', { class: 'faint meta' });
 
   view.appendChild(el('div', { class: 'view-head' },
-    el('button', { class: 'btn sm ghost', text: '‹ Back', onclick: () => store.setView('detail', conn.id) }),
+    el('button', { class: 'btn sm ghost', text: '‹ Dashboard', onclick: () => store.setView('dashboard') }),
     el('h1', { text: 'Encoder configuration' }),
     statusText,
     el('span', { class: 'spacer' }),

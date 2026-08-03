@@ -276,20 +276,31 @@ async function main() {
       })().catch(() => process.exit(1));
     `], { stdio: 'ignore' });
     try {
+      // The setter has to start Node and connect over CDP before it can apply
+      // anything, so this waits on the override actually landing rather than on
+      // a fixed budget — on a loaded machine that startup can take many
+      // seconds, and killing it early makes the *setup* fail while looking like
+      // the fix failed.
       let stuck = real;
-      for (let i = 0; i < 40 && stuck === real; i++) { await sleep(250); stuck = await evaluate('innerWidth'); }
-      setter.kill('SIGKILL');            // abandoned: never detaches, never clears
-      await sleep(1200);
+      for (let i = 0; i < 120 && stuck === real; i++) { await sleep(250); stuck = await evaluate('innerWidth'); }
+      if (stuck === real) {
+        check('the override could be applied at all', false,
+          'the setter never pinned the viewport — setup problem, not a regression');
+        setter.kill('SIGKILL');
+      } else {
+        setter.kill('SIGKILL');            // abandoned: never detaches, never clears
+        await sleep(1200);
 
-      const survived = await evaluate('innerWidth');
-      check('an abandoned override really does survive its client', survived === 420,
-        `${survived}px — the fix is only meaningful if this reproduces`);
+        const survived = await evaluate('innerWidth');
+        check('an abandoned override really does survive its client', survived === 420,
+          `${survived}px — the fix is only meaningful if this reproduces`);
 
-      const reloaded = await reloadAndWait();
-      check('the window actually reloads', reloaded, reloaded ? '' : 'never saw a fresh document');
-      const recovered = await evaluate('innerWidth');
-      check('a reload releases a viewport left emulated', recovered === real,
-        `${survived}px -> ${recovered}px (window is ${real}px)`);
+        const reloaded = await reloadAndWait();
+        check('the window actually reloads', reloaded, reloaded ? '' : 'never saw a fresh document');
+        const recovered = await evaluate('innerWidth');
+        check('a reload releases a viewport left emulated', recovered === real,
+          `${survived}px -> ${recovered}px (window is ${real}px)`);
+      }
     } finally {
       setter.kill('SIGKILL');
     }
@@ -374,6 +385,7 @@ async function main() {
     } finally {
       for (const p of sim) { try { p.kill('SIGKILL'); } catch { /* gone */ } }
     }
+
   } finally {
     if (clearMetrics) await clearMetrics();
     if (cdp) cdp.close();

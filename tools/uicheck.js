@@ -232,6 +232,11 @@ async function main() {
           }
           process.stdout.write(`  ${String(width).padStart(4)}px ${view}: ` +
             `${JSON.stringify(probe.result.value, null, 2)}\n`);
+          if (opts.shots) {
+            await sleep(250);
+            const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, sessionId);
+            fs.writeFileSync(path.join(opts.shots, `${view}-${width}-eval.png`), Buffer.from(data, 'base64'));
+          }
           continue;
         }
 

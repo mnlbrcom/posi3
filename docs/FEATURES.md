@@ -1762,3 +1762,48 @@ follow within a frame.
 
 **Verified:** on the rig, the bar tracks at ~70% for position 208 843 of 299 999. 149 tests, 18
 desktop checks, layout and font audit clean across seven views at six widths.
+
+## 2026-08-03 — Controls becomes a dialog, and the card gets Edit
+
+> "the controls button looks diffrent then the Start all and stop all buttons, Change the controls
+> button to look the same and also add a edit button that goes to the edit pop up. Also the controls
+> page should be a similar popup as edits and add connection."
+
+**Controls now uses `btn`, the same class as Start all and Stop all.** It was `btn sm ghost`, which
+read as a link rather than an action — and it is the same kind of thing as the buttons beside it.
+**Edit** sits next to it and opens `openEditor(conn)`, the same dialog the connections list uses;
+there is now one editor, reachable from either screen.
+
+**The controls page is a dialog.** It was a destination, which was always slightly wrong: nothing
+on it is worth navigating to and staying at, and returning from it needed a Back button that had to
+guess where you came from. As a dialog it matches Add and Edit, opens over whatever you were
+looking at, and its "go to" buttons close it before navigating rather than leaving a dialog
+stranded over a screen you just asked for.
+
+`detail` is no longer a view. The router entry is gone, along with the special case that mapped it
+onto the Connections nav item, and the Back buttons on Encoder config and disguise mapping now go
+to the Dashboard.
+
+`ui.js` grew `openModal` for this: a dialog whose controls act as they are used, so its footer only
+closes. Both it and `confirmModal` are built on one `modalShell`, which also fixed something latent
+— `confirmModal` resolved only through its buttons, so a promise left by a backdrop click or
+Escape was never settled. The shell now reports dismissal explicitly.
+
+Two smaller things: `.modal-wide` for dialogs holding controls rather than a form, because the
+segmented pickers wrap two-to-a-line at 560px; and `.modal-actions`, since `.row-inline` grows its
+children to equal widths, which suits form fields and makes a row of buttons look like a segmented
+control.
+
+### A flaky desktop check, hardened rather than shrugged at
+
+One run in five failed while a full test suite and a Chrome instance were running alongside it, and
+four subsequent runs were clean. Rather than leave it, the most plausible cause was removed: the
+step that pins the viewport spawns a child that must start Node and connect over CDP before it can
+apply anything, and it had a hard 10s budget. Under load that startup can overrun, and killing it
+early made the **setup** fail while looking like the fix had regressed. It now waits on the
+override actually landing, up to 30s, and reports a setup failure in its own words if it never
+does.
+
+**Verified:** Edit opens "Edit connection" from the card; the controls dialog opens from the card,
+the connection name and the connections list. 149 tests, 18 desktop checks, layout and font audit
+clean.

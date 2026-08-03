@@ -21,6 +21,8 @@ import { el, clear, pill, groupDigits, fixed, hz, micros, duration, setText, svg
 import { store } from '../store.js';
 import { Dial, TravelBar } from '../components/dial.js';
 import { inputSpan } from '../mapping-span.js';
+import { openEditor } from './connections.js';
+import { openControls } from './detail.js';
 
 /** Seconds of position history kept per encoder for the sparkline. */
 const TRACE_SECONDS = 12;
@@ -203,14 +205,14 @@ function buildCard(conn) {
       el('button', {
         class: 'card-name', text: conn.name,
         title: 'Open the controls for this connection',
-        onclick: () => store.setView('detail', conn.id)
+        onclick: () => openControls(conn)
       }),
       pillHolder,
       el('span', { class: 'spacer' }),
-      el('button', {
-        class: 'btn sm ghost', text: 'Controls',
-        onclick: () => store.setView('detail', conn.id)
-      })),
+      // Same class as Start all / Stop all: these are the same kind of thing,
+      // and a smaller ghost button read as a link rather than an action.
+      el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
+      el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) })),
     el('div', { class: 'card-target', title: targetTitle(conn) }, targetLine(conn)),
     detail,
     el('div', { class: 'encoder-cols' },
