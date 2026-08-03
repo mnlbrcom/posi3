@@ -26,9 +26,15 @@ function defaultSettings() {
     autoStartOnLaunch: false,
     startMinimized: false,
     launchAtLogin: false,
-    defaultLocalAddress: null,
-    defaultVelocityPolicy: 'zero',
-    logToFile: false
+    logToFile: false,
+    /**
+     * The web UI's own listener. Loopback by default — the desktop window and
+     * a browser on this machine reach it, nothing else does. Widening it turns
+     * on token authentication (see src/server/security.js), because these
+     * operations can write encoder flash and change a device's IP address.
+     */
+    webPort: 8710,
+    webBindHost: '127.0.0.1'
   };
 }
 

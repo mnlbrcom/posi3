@@ -110,7 +110,9 @@ async function startService(opts = {}) {
     url: http.url(),
     autoStarted,
     async stop() {
-      manager.stopAll();
+      // dispose(), not stopAll(): it also detaches listeners and stops the
+      // telemetry timer, which stopAll leaves running.
+      manager.dispose();
       store.flushNow();
       await http.close();
     }
