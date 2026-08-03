@@ -716,8 +716,14 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
    1fr: a flex/grid child defaults to min-width:auto and refuses to shrink below
    its content, which is what pushed the old connection form out of its panel. */
 .encoder-cols {
-  display: grid; grid-template-columns: 340px minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px; align-items: stretch; margin: 10px 0 0;
+  /* A real minimum on the figure columns, not minmax(0, …): below about 300px
+     the values collide with their labels. The breakpoints below are chosen so
+     that minimum is never actually reached — the layout changes shape before
+     the text gets into trouble, rather than when it already is. */
+  display: grid; grid-template-columns: 340px minmax(300px, 1fr) minmax(300px, 1fr);
+  /* start, not stretch: each pane is as tall as what it holds, rather than
+     every pane inheriting the dial's height and carrying dead space. */
+  gap: 10px; align-items: start; margin: 10px 0 0;
 }
 /* The dial and the two figure lists stay visually separate, as they were when
    they lived on different screens — the card is the envelope around them, not a
@@ -740,7 +746,8 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .encoder-dial .dial svg { width: 100%; height: auto; }
 .dial-legend { font-size: 10px; color: var(--text-faint); text-align: center; line-height: 1.4; }
 
-.encoder-trace { margin-top: 10px; }
+/* Sits under the stream figures, separated but inside the same pane. */
+.encoder-trace { margin-top: 14px; border-top: 1px solid var(--border-soft); padding-top: 10px; }
 
 .spark-wrap { flex: 1 1 auto; min-width: 0; }
 .spark { display: block; width: 100%; height: 44px; }
@@ -752,12 +759,17 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* The card's three columns give way in two stages rather than one. The dial is
    the first thing worth sacrificing width for, so the two figure columns merge
    before the dial drops below the text — losing the dial early would take the
-   at-a-glance reading with it. */
-@media (max-width: 1080px) {
-  .encoder-cols { grid-template-columns: 300px minmax(0, 1fr); }
+   at-a-glance reading with it.
+
+   Both breakpoints changed shape earlier than the arithmetic strictly demands.
+   Waiting until the columns hit their 300px minimum meant the jump happened at
+   the exact moment the text was already crowding, which reads as a fault rather
+   than a layout adapting. */
+@media (max-width: 1280px) {
+  .encoder-cols { grid-template-columns: 300px minmax(300px, 1fr); }
   .encoder-dial { grid-row: span 2; }
 }
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .encoder-cols { grid-template-columns: minmax(0, 1fr); }
   .encoder-dial { grid-row: auto; }
   /* Full width would make the dial the whole screen on a phone. */

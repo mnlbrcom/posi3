@@ -221,10 +221,13 @@ function buildCard(conn) {
       el('div', { class: 'encoder-pane encoder-col' },
         el('div', { class: 'col-label', text: 'Live values' }), live.node),
       el('div', { class: 'encoder-pane encoder-col' },
-        el('div', { class: 'col-label', text: 'Stream' }), stream.node)),
-    el('div', { class: 'encoder-pane encoder-trace' },
-      el('div', { class: 'col-label', text: `Position, last ${TRACE_SECONDS} s` }),
-      spark.node),
+        el('div', { class: 'col-label', text: 'Stream' }), stream.node,
+        // The trace belongs with the stream figures rather than in a strip of
+        // its own: it is the same question — is data still arriving — drawn
+        // instead of counted, and it fills the space the figures leave.
+        el('div', { class: 'encoder-trace' },
+          el('div', { class: 'col-label', text: `Position, last ${TRACE_SECONDS} s` }),
+          spark.node))),
     faultRow);
 
   const mapping = conn.mapping || { minInput: 0, maxInput: (store.info.constants.TOTAL_COUNTS || 1) - 1 };
