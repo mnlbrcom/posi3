@@ -443,7 +443,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
 /* Fixed label column + right-aligned values: the numbers grow leftwards inside
    a stable column instead of resizing it. */
-.readouts { display: grid; grid-template-columns: 132px 1fr; gap: 7px 16px; align-items: baseline; }
+/* minmax(0, 1fr), not 1fr: the value column must be allowed to shrink below its
+   content, or a wide figure pushes the whole list out of its panel. */
+.readouts { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 7px 16px; align-items: baseline; }
+/* Labels in a card are short and the column is narrow, so they do not need the
+   width the standalone lists get. */
+.encoder-card .readouts { grid-template-columns: 104px minmax(0, 1fr); gap: 6px 10px; }
 .readouts dt {
   font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px;
   color: var(--text-faint); font-weight: 600;
@@ -639,6 +644,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 }
 @media (max-width: 760px) { .summary { grid-template-columns: 1fr; } }
 
+
 .hero {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 14px 16px;
@@ -666,14 +672,21 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .stat-value.bad { color: var(--err-text); }
 .stat-caption { font-size: 11px; color: var(--text-dim); }
 
-/* Encoder cards. */
-.dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+/* Encoder cards.
+
+   One card per encoder, one per row, everything visible: dial, live values and
+   stream health side by side. Two narrower cards per row was tried first and is
+   the reason the dial used to live on its own page — at ~370px there is no room
+   for a dial and a column of figures, so the figures had to go somewhere else,
+   and the screen stopped being able to answer a question on its own. */
+.dash-list { display: grid; grid-template-columns: 1fr; gap: 16px; }
 
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 12px 14px 10px;
 }
 .card-head { display: flex; align-items: center; gap: 10px; }
+.card-head .spacer { flex: 1; }
 .card-name {
   font: inherit; font-weight: 600; font-size: 13.5px;
   background: none; border: none; padding: 0; cursor: pointer;
@@ -682,6 +695,13 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 }
 .card-name:hover { color: var(--accent-text); text-decoration: underline; }
 .card-head .pill-holder { margin-left: auto; flex: 0 0 auto; }
+.encoder-card .card-head .pill-holder { margin-left: 0; }
+.encoder-card .card { padding: 14px 16px 12px; }
+/* A label beside the view title, e.g. "Revolve  controls". */
+.view-head-sub {
+  font-size: 11px; color: var(--text-faint); text-transform: uppercase;
+  letter-spacing: .06em;
+}
 
 .card-target {
   font-family: var(--mono); font-size: 10.5px; color: var(--text-faint);
@@ -692,42 +712,61 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.card-body { display: flex; align-items: flex-end; gap: 12px; margin: 8px 0 10px; }
-.card-readout { flex: 0 0 auto; min-width: 0; }
-.card-pos {
-  font-size: 27px; font-weight: 600; line-height: 1.1;
-  font-variant-numeric: tabular-nums; color: var(--text);
+/* The three columns of a card. minmax(0, …) on the figure columns rather than
+   1fr: a flex/grid child defaults to min-width:auto and refuses to shrink below
+   its content, which is what pushed the old connection form out of its panel. */
+.encoder-cols {
+  display: grid; grid-template-columns: 340px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px; align-items: stretch; margin: 10px 0 0;
 }
-.card-derived {
-  font-size: 11px; color: var(--text-dim);
-  font-variant-numeric: tabular-nums; margin-top: 2px;
+/* The dial and the two figure lists stay visually separate, as they were when
+   they lived on different screens — the card is the envelope around them, not a
+   merge of them. Recessed rather than raised: the card is already a raised
+   surface, so an inset panel reads as "inside this encoder" instead of
+   competing with the card's own edge. */
+.encoder-pane {
+  background: var(--bg); border: 1px solid var(--border-soft);
+  border-radius: calc(var(--radius) - 2px); padding: 10px 12px; min-width: 0;
 }
+.encoder-col { min-width: 0; }
+.col-label {
+  font-size: 10px; color: var(--text-faint); text-transform: uppercase;
+  letter-spacing: .06em; margin-bottom: 6px;
+}
+.encoder-dial { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+/* The dial carries width/height attributes for the standalone case; inside a
+   card it scales to the column instead, which the viewBox makes lossless. */
+.encoder-dial .dial { width: 100%; }
+.encoder-dial .dial svg { width: 100%; height: auto; }
+.dial-legend { font-size: 10px; color: var(--text-faint); text-align: center; line-height: 1.4; }
+
+.encoder-trace { margin-top: 10px; }
 
 .spark-wrap { flex: 1 1 auto; min-width: 0; }
 .spark { display: block; width: 100%; height: 44px; }
 /* One series, so no legend — the card's own name identifies it. */
 .spark-line { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 
-.card-metrics {
-  /* Two columns, not four: at a card width of ~370px four columns left the
-     latency pair ("47 µs / 424 µs") ellipsised, which is the one metric you
-     open this screen to read. */
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px 12px;
-  border-top: 1px solid var(--border-soft); padding-top: 9px;
-}
-.metric { min-width: 0; }
-.metric-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; }
-.metric-value.bad { color: var(--err-text); }
-.metric-value {
-  font-family: var(--mono); font-size: 12px; color: var(--text);
-  font-variant-numeric: tabular-nums; margin-top: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.metric-caption { font-size: 9.5px; color: var(--text-faint); }
-
 .card-faults { font-size: 11px; color: var(--text-faint); min-height: 14px; margin-top: 8px; }
 .card-faults.has-faults { color: var(--warn); }
+/* The card's three columns give way in two stages rather than one. The dial is
+   the first thing worth sacrificing width for, so the two figure columns merge
+   before the dial drops below the text — losing the dial early would take the
+   at-a-glance reading with it. */
+@media (max-width: 1080px) {
+  .encoder-cols { grid-template-columns: 300px minmax(0, 1fr); }
+  .encoder-dial { grid-row: span 2; }
+}
+@media (max-width: 720px) {
+  .encoder-cols { grid-template-columns: minmax(0, 1fr); }
+  .encoder-dial { grid-row: auto; }
+  /* Full width would make the dial the whole screen on a phone. */
+  .encoder-dial .dial { max-width: 320px; }
+}
+@media (max-width: 520px) {
+  .encoder-card .readouts { grid-template-columns: 92px minmax(0, 1fr); }
+}
+
 
 
 /* --------------------------------------------------------- config target bar

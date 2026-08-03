@@ -1464,3 +1464,58 @@ negative control: `uptime advanced -10.3s over 1.3s wall — the clock restarted
 rx 2366 -> 311`, failing 2 checks.
 
 **144 tests pass; 18 desktop checks pass.**
+
+## 2026-08-03 — One dashboard, not two
+
+> "i feel like we have two dashboards, one real dashboard and one when you cklick on the
+> connection… move the ring, the Livevalues to the dashboard and make it one with the streaming
+> information for each encoder."
+
+Correct, and the split was worse than redundant: neither screen could answer a question on its own.
+The dashboard had position, rates and faults but no dial and no raw/sent velocity; the detail page
+had the dial and the full readouts but no fault summary and no view of the other encoders.
+
+**The dashboard is now one card per encoder, one per row, always expanded** — dial, live values and
+stream health side by side, nothing behind a click. Chosen over an expand-on-click card because
+this is a screen left open all show; a value you have to open a disclosure to see is a value you do
+not check.
+
+The old two-up card grid is why the dial lived elsewhere in the first place: at ~370px there is no
+room for a dial *and* a column of figures, so the figures had to go to another screen. One card per
+row removes that constraint.
+
+### Kept separate inside one envelope
+
+First attempt merged the three groups into a single flat area. Corrected on the spot — the dial and
+the readouts had been distinct panels and reading them as one block is worse. Each group is now its
+own recessed pane (`.encoder-pane`) inside the card: **recessed** rather than raised because the
+card is already a raised surface, so an inset panel reads as "inside this encoder" instead of
+competing with the card's own edge.
+
+The dial also came back at the size it had on its own page — the 340px column from `.grid-2`,
+not the 260px the first pass gave it.
+
+### The detail page is now a controls page
+
+What is left there is what you *do* to a connection: Zero/Preset, Run!, velocity policy, coalesce
+policy, and the links onward to encoder config, mapping and log. Keeping it separate keeps a
+flash-write button off the screen that is open all show. Its Back button now goes to the dashboard,
+and its Start/Stop button finally tracks the link state instead of showing whatever it was when the
+page opened.
+
+### Two CSS faults worth recording
+
+**Source order beat the media queries.** The responsive rules for `.encoder-cols` were written
+*above* the base rule, so at every width the base won and the card stayed three columns — measured
+as `grid-template-columns: 260px 22px 22px` at 390px. Same-specificity rules are decided by source
+order; the media queries now sit after the rule they override.
+
+**A fixed label column will not shrink.** `.readouts` used `132px 1fr`, and `1fr` still refuses to
+go below its content, so wide figures pushed the list out of its pane at 860px and below. Now
+`minmax(0, 1fr)` throughout, with a narrower label column inside cards.
+
+Also fixed: `.spacer` was only defined under `.view-head` and `.panel-head`, so the Controls button
+sat against the pill instead of the card's right edge.
+
+**Verified:** layout audit clean across 6 widths × 7 views against the live rig; 144 tests and 18
+desktop checks pass.
