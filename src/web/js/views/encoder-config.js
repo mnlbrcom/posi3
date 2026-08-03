@@ -12,27 +12,38 @@
  */
 
 import {
-  el, clear, toast, confirmModal, select, input, checkbox, banner, dismissBanner,
+  el, clear, pill, toast, confirmModal, select, input, checkbox, banner, dismissBanner,
   setText, groupDigits, fixed
 } from '../ui.js';
 import { store } from '../store.js';
 
 const GROUP_LABELS = {
-  output: 'Output and timing',
-  scaling: 'Scaling and zero point',
+  output: 'Output and Timing',
+  scaling: 'Scaling and Zero Point',
   network: 'Network',
   diagnostics: 'Diagnostics'
 };
 
 export function renderEncoderConfig(root) {
   clear(root);
-  const conn = store.selected;
   const view = el('div', { class: 'view' });
+  const conns = store.connections;
 
-  if (!conn) {
+  // One button for the whole screen and one on every card. Reading every
+  // encoder at once is the usual thing before a show; reading one is what you
+  // do after changing something on it.
+  const readAllBtn = el('button', { class: 'btn', text: 'Read Configs From All Encoders' });
+
+  view.appendChild(el('div', { class: 'panel page-head' },
+    el('div', { class: 'view-head' },
+      el('h1', { text: 'Encoder Config' }),
+      el('span', { class: 'spacer' }),
+      readAllBtn)));
+
+  if (!conns.length) {
     view.appendChild(el('div', { class: 'empty' },
-      el('h3', { text: 'No encoder selected' }),
-      el('p', { text: 'Choose one on the Connections screen, then come back here.' }),
+      el('h3', { text: 'No encoders configured' }),
+      el('p', { text: 'Add a connection first — this screen talks to each encoder over the same TCP session its data stream uses.' }),
       el('button', {
         class: 'btn primary', text: 'Go to Connections',
         onclick: () => store.setView('connections')
@@ -41,78 +52,68 @@ export function renderEncoderConfig(root) {
     return { refreshLive() {} };
   }
 
+  const cards = conns.map((c) => encoderCard(c));
+  for (const card of cards) view.appendChild(card.node);
+  root.appendChild(view);
+
+  readAllBtn.onclick = async () => {
+    readAllBtn.disabled = true;
+    try {
+      // Sequential on purpose. Every read is a burst of commands down a TCP
+      // session that is also carrying the data stream, and firing several
+      // encoders' worth at once is how you turn a config read into a visible
+      // gap in the position feed.
+      for (const card of cards) await card.readAll();
+    } finally {
+      readAllBtn.disabled = false;
+    }
+  };
+
+  return {
+    refreshLive() {
+      for (const card of cards) card.refreshLive();
+    }
+  };
+}
+
+/**
+ * One encoder: its own header, its own read/revert/apply, its own variables.
+ *
+ * This screen used to show a single encoder chosen by a picker, which meant the
+ * target was implied by whatever was last clicked elsewhere — and the thing
+ * being configured writes flash and can change an IP address. Every encoder is
+ * on the page now, each in a card that names the device it writes to and shows
+ * its live position, because POSITAL encoders carry no serial number, firmware
+ * version or any other identifier over the wire. The address is the only handle
+ * there is, and turning the shaft is the only way to be sure of the unit.
+ */
+function encoderCard(conn) {
   const vars = store.info.constants.ENCODER_VARS;
   const current = new Map(); // name -> value read from the device
-  const edited = new Map(); // name -> pending value
+  const edited = new Map();  // name -> pending value
   const controls = new Map();
   const currentCells = new Map();
   const rows = new Map();
 
   const applyBtn = el('button', { class: 'btn primary', text: 'Apply changes', disabled: true });
   const revertBtn = el('button', { class: 'btn', text: 'Revert', disabled: true });
-  const readBtn = el('button', { class: 'btn', text: 'Read all from encoder' });
+  const readBtn = el('button', { class: 'btn', text: 'Read' });
   const statusText = el('span', { class: 'faint meta' });
-
-  view.appendChild(el('div', { class: 'panel page-head' },
-    el('div', { class: 'view-head' },
-      el('h1', { text: 'Encoder Config' }),
-      statusText,
-      el('span', { class: 'spacer' }),
-      readBtn, revertBtn, applyBtn)));
-
-  // -- who am I about to write to? -----------------------------------------
-  //
-  // This screen writes the encoder's flash and can change its IP address, and
-  // the target used to be implied by whatever was last clicked elsewhere. With
-  // several encoders on a network that is not good enough, so the device is
-  // named here, switchable here, and confirmable by eye: POSITAL encoders carry
-  // no serial number, firmware version or any other identifier over the wire —
-  // the address is the only handle there is. The one reliable way to know you
-  // have the right physical unit is to turn the shaft and watch the live
-  // position below move.
-
+  const pillHolder = el('span', { class: 'pill-holder' }, pill(store.stateOf(conn.id)));
   const livePos = el('span', { class: 'target-pos', text: '—' });
-
-  const picker = store.connections.length > 1
-    ? select(
-      store.connections.map((c) => ({ value: c.id, label: `${c.name} — ${c.encoder.host}` })),
-      conn.id,
-      (id) => store.setView('encoder', id)
-    )
-    : null;
 
   const nic = conn.encoder.localAddress
     ? `via ${conn.encoder.localAddress}`
     : 'via the default route';
 
-  view.appendChild(el('div', { class: 'target-bar' },
-    el('div', { class: 'target-main' },
-      el('span', { class: 'target-label', text: 'Writing to' }),
-      picker || el('span', { class: 'target-name', text: conn.name })),
-    el('div', { class: 'target-addr' }, `${conn.encoder.host}:${conn.encoder.port} · ${nic}`),
-    el('div', { class: 'target-live' },
-      el('span', { class: 'target-live-label', text: 'Live position' }),
-      livePos,
-      el('span', { class: 'target-hint', text: 'turn the shaft to confirm this is the right encoder' }))));
+  // -- the variables, grouped and retractable --------------------------------
 
-  view.appendChild(el('div', { class: 'view-sub' },
-    'Reads and writes this encoder directly over its TCP command channel. ' +
-    'No Java runtime and no Internet Explorer required — the connection must simply be running.'));
-
-  // -- table ----------------------------------------------------------------
-
-  const table = el('table', { class: 'vartable' });
-  const dangerRows = [];
-
+  const groupNodes = [];
   for (const group of store.info.constants.VAR_GROUPS) {
     const groupVars = vars.filter((v) => v.group === group);
     if (!groupVars.length) continue;
 
-    const target = group === 'network' ? dangerRows : [];
-    if (group !== 'network') {
-      table.appendChild(el('tr', {}, el('td', { class: 'group-head', colspan: 4, text: GROUP_LABELS[group] || group })));
-    }
-
+    const table = el('table', { class: 'vartable' });
     for (const spec of groupVars) {
       const curCell = el('td', { class: 'cur', text: '—' });
       currentCells.set(spec.name, curCell);
@@ -135,29 +136,47 @@ export function renderEncoderConfig(root) {
         el('td', { class: 'help', text: spec.help || '' }));
 
       rows.set(spec.name, row);
-      if (group === 'network') target.push(row); else table.appendChild(row);
+      table.appendChild(row);
     }
+
+    // Network stays shut and stays marked: changing the IP drops the
+    // connection, and hardware switch 2 can make it look like nothing happened
+    // at all. Everything else opens, because it is what you came to read.
+    const danger = group === 'network';
+    groupNodes.push(el('details', {
+      class: `cfg-group${danger ? ' danger-zone' : ''}`,
+      open: danger ? undefined : true
+    },
+      el('summary', {
+        text: danger
+          ? 'Network — changing these will drop the connection'
+          : (GROUP_LABELS[group] || group)
+      }),
+      el('div', { class: 'cfg-body' },
+        danger
+          ? el('p', { class: 'help faint' },
+            'A new IP address only takes effect after the encoder is power-cycled. ' +
+            'If hardware switch 2 in the connection cap is ON, the encoder stays at ' +
+            `${store.info.constants.DEFAULT_ENCODER_IP} no matter what is programmed here — ` +
+            'that is the most common reason a changed address appears to do nothing.')
+          : null,
+        table)));
   }
 
-  view.appendChild(el('div', { class: 'panel' }, table));
+  const node = el('div', { class: 'card cfg-card' },
+    el('div', { class: 'card-head' },
+      el('span', { class: 'card-name', text: conn.name }),
+      pillHolder,
+      el('div', { class: 'card-actions' }, statusText, readBtn, revertBtn, applyBtn)),
+    el('div', { class: 'cfg-target' },
+      el('span', { class: 'target-addr' }, `${conn.encoder.host}:${conn.encoder.port} · ${nic}`),
+      el('span', { class: 'target-live' },
+        el('span', { class: 'target-live-label', text: 'Live position' }),
+        livePos,
+        el('span', { class: 'target-hint', text: 'turn the shaft to confirm this is the right encoder' }))),
+    ...groupNodes);
 
-  // Network settings sit behind a deliberate extra click: changing the IP drops
-  // the connection, and switch 2 can make it look like nothing happened at all.
-  const dzTable = el('table', { class: 'vartable' });
-  for (const r of dangerRows) dzTable.appendChild(r);
-  view.appendChild(el('details', { class: 'danger-zone' },
-    el('summary', { text: 'Network settings — changing these will drop the connection' }),
-    el('div', { class: 'dz-body' },
-      el('p', { class: 'help faint' },
-        'A new IP address only takes effect after the encoder is power-cycled. ' +
-        'If hardware switch 2 in the connection cap is ON, the encoder stays at ' +
-        `${store.info.constants.DEFAULT_ENCODER_IP} no matter what is programmed here — ` +
-        'that is the most common reason a changed address appears to do nothing.'),
-      dzTable)));
-
-  root.appendChild(view);
-
-  // -- behaviour ------------------------------------------------------------
+  // -- behaviour -------------------------------------------------------------
 
   function refreshDirty() {
     for (const [name, row] of rows) row.classList.toggle('dirty', edited.has(name));
@@ -168,14 +187,14 @@ export function renderEncoderConfig(root) {
 
   async function readAll() {
     if (store.stateOf(conn.id) === 'idle') {
-      toast('warn', 'Start the connection first — configuration uses the same TCP session as the data stream.');
+      statusText.textContent = 'connection is stopped';
       return;
     }
     readBtn.disabled = true;
     statusText.textContent = 'reading…';
     try {
       // Write-only variables answer with an ERROR; asking for them would put a
-      // spurious failure in front of the operator on every Read all.
+      // spurious failure in front of the operator on every read.
       const names = vars.filter((v) => !v.writeOnly).map((v) => v.name);
       const res = await window.d3d.encoder.readMany(conn.id, names);
       let ok = 0;
@@ -192,7 +211,7 @@ export function renderEncoderConfig(root) {
       refreshDirty();
       statusText.textContent = `read ${ok} of ${vars.length} variables`;
     } catch (err) {
-      toast('error', err.message);
+      toast('error', `${conn.name}: ${err.message}`);
       statusText.textContent = 'read failed';
     } finally {
       readBtn.disabled = false;
@@ -215,7 +234,7 @@ export function renderEncoderConfig(root) {
     if (!entries.length) return;
 
     const ok = await confirmModal({
-      title: `Write ${entries.length} setting${entries.length > 1 ? 's' : ''} to the encoder?`,
+      title: `Write ${entries.length} Setting${entries.length > 1 ? 's' : ''} To ${conn.name}?`,
       body: [
         el('div', { class: 'flash-warn' },
           el('strong', { text: 'Do not power off the encoder or unplug its network cable ' }),
@@ -241,7 +260,7 @@ export function renderEncoderConfig(root) {
       dismissBanner('flash');
       banner('error',
         `${conn.name}: write status unknown — the encoder did not confirm. ` +
-        'Use “Read all from encoder” to check before power-cycling it.', { key: 'flash-unknown' });
+        'Use “Read” on its card to check before power-cycling it.', { key: 'flash-unknown' });
     }, 30000);
     pendingFlash.set(conn.id, timeout);
 
@@ -272,11 +291,20 @@ export function renderEncoderConfig(root) {
   if (store.stateOf(conn.id) !== 'idle') readAll();
   else statusText.textContent = 'connection is stopped';
 
+  let lastState = null;
+
   return {
+    node,
+    readAll,
     refreshLive() {
+      const state = store.stateOf(conn.id);
+      if (state !== lastState) {
+        clear(pillHolder).appendChild(pill(state));
+        lastState = state;
+      }
       const t = store.telemetryOf(conn.id);
       if (!t) {
-        setText(livePos, store.stateOf(conn.id) === 'idle' ? 'not running' : '—');
+        setText(livePos, state === 'idle' ? 'not running' : '—');
         return;
       }
       // Separated: run together, the count and the angle read as one number.

@@ -1910,3 +1910,33 @@ articles read badly that way: `Zero Encoder?` and `Preset Already Zero`.
 
 A failing run printed `1 of 18 checks failed` and nothing more in a `tail`, which cost a re-run to
 find out what. The summary lists the failures by name and detail now.
+
+## 2026-08-03 — Encoder Config: one card per encoder, groups that fold away
+
+> "Give each encoder its on card with a nice header as we already have it, Then tile the configs as
+> they are in Output and Timing and network, make both retractable." / "each encoder config gets its
+> own button for read from encoder. But have one in the header for Read configs from all encoders" /
+> "remove the text Reads and writes this encoder directly over its TCP command channel…"
+
+**Every encoder is on the page now.** The screen used to show one, chosen by a picker, which meant
+the target was implied by whatever was last clicked elsewhere — on a screen that writes flash and
+can change an IP address. Each card names the device it writes to, shows its address and NIC, and
+carries its live position, because POSITAL encoders expose no serial number or firmware version
+over the wire: the address is the only handle there is, and turning the shaft is the only way to be
+certain of the unit.
+
+**Groups are `<details>`**: Output and Timing, Scaling and Zero Point, Diagnostics open; Network
+shut and marked, since changing an IP drops the connection. `details` rather than a hand-rolled
+toggle because it opens without JavaScript, is keyboard-operable for free, and behaves identically
+in Blink, WebKit and Gecko — which `popover` or an anchored panel would not. The caret is drawn in
+CSS, so it needs no font and no asset.
+
+**Read is now two things.** Each card has its own `Read`; the page header has `Read Configs From
+All Encoders`, which walks the cards **sequentially** — every read is a burst of commands down a
+TCP session that is also carrying the data stream, and firing several encoders at once turns a
+config read into a visible gap in the position feed.
+
+The standing blurb about Java and Internet Explorer is gone.
+
+**Verified with two encoders** on a simulated rig: two cards, two independent Read buttons, both
+reporting `read 13 of 14 variables`. 147 tests, 18 desktop checks, layout and font audit clean.
