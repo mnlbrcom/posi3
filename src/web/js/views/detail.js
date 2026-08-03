@@ -11,6 +11,27 @@ import {
 import { store } from '../store.js';
 import { Dial, TravelBar } from '../components/dial.js';
 
+/**
+ * Explain the chosen policy in terms of what reaches disguise.
+ *
+ * The packet shape never varies — it is always `id:pos,vel;` — so the only
+ * question is what occupies the velocity slot. Saying that plainly matters
+ * because "From encoder" reads like it might send nothing when the encoder is
+ * not configured to report velocity, and it does not: it sends 0.
+ */
+function velocityHint(conn) {
+  if (conn.velocityPolicy === 'passthrough') {
+    return 'Sends the encoder\'s own value when OutputMode includes Velocity, and 0 when it ' +
+      'does not. The packet keeps the same shape either way, so disguise never sees it change.';
+  }
+  if (conn.velocityPolicy === 'derived') {
+    return 'Computed here from position deltas, so it works even when the encoder is not ' +
+      'reporting velocity. Smoothed over ~200 ms, so it lags a sudden stop.';
+  }
+  return 'The original behaviour: disguise derives velocity from position itself via the axis ' +
+    'velocitycalcmode. Byte-identical to d3driver.exe.';
+}
+
 export function renderDetail(root) {
   const dialCaption = el('span', { text: '' });
   clear(root);
@@ -103,11 +124,15 @@ export function renderDetail(root) {
     el('div', { class: 'field' },
       el('label', { text: 'Velocity sent to disguise' }),
       segmented([
-        { value: 'zero', label: 'Zero', title: 'Byte-identical to the original d3driver.exe' },
-        { value: 'passthrough', label: 'From encoder', title: "Forward the encoder's signed steps/s" },
-        { value: 'derived', label: 'Derived', title: 'Compute from position deltas' }
+        { value: 'zero', label: 'Always zero', title: 'Byte-identical to the original d3driver.exe' },
+        {
+          value: 'passthrough',
+          label: 'From encoder',
+          title: "The encoder's own signed steps/s when it sends them, 0 when it does not"
+        },
+        { value: 'derived', label: 'Derived here', title: 'Computed from position deltas, wrap-aware' }
       ], conn.velocityPolicy, (v) => saveField(conn, { velocityPolicy: v })),
-      el('div', { class: 'hint', text: 'Zero is the original behaviour: disguise derives velocity from position via the axis velocitycalcmode.' })),
+      el('div', { class: 'hint' }, velocityHint(conn))),
     el('div', { class: 'field' },
       el('label', { text: 'When records arrive coalesced' }),
       segmented([

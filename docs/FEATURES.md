@@ -992,3 +992,37 @@ whatever the policy; only what is transmitted changes. The reference connection 
 `passthrough` currently has nothing to pass through: with `OutputMode=POSITION` the encoder no
 longer sends a velocity field. Comparing the encoder's own velocity against our derived one needs
 Velocity switched back on.
+
+## 2026-08-03 — Velocity should follow the encoder
+
+Requirement, in the user's words: *"if i turn velocity off, the string to disguise should not
+change, but should send 0. If i turn velocity on from the encoder i want that the string to
+disguise also includes the velocity value."*
+
+Both halves already held; neither was discoverable.
+
+- **The string never changes shape.** `writePacket` always emits `id:pos,vel;` — the velocity
+  field is never omitted, whatever occupies it. That is structural, not a policy decision.
+- **`passthrough` already follows the encoder**: `r.vel === null ? 0 : r.vel`. When `OutputMode`
+  omits Velocity the parser yields null and we send 0; when it includes Velocity we send the
+  device's own signed steps/s.
+
+What was missing was any way to know that. The control read "From encoder" with the tooltip
+"Forward the encoder's signed steps/s", which reasonably suggests it might send *nothing* when
+the encoder is not reporting velocity. It now explains itself in terms of what reaches disguise,
+and the hint changes with the selection rather than describing only the default.
+
+The reference connection is switched to `passthrough`. **`zero` remains the default** for new
+connections: existing disguise projects derive velocity themselves via the axis
+`velocitycalcmode`, and changing that silently would alter shows that currently work.
+
+### Verified
+
+On hardware, with the encoder on `OutputMode=POSITION` (velocity off), the datagrams reaching a
+disguise stand-in are `1:52515,0;` — the shape unchanged, zero in the slot. The other half, the
+encoder's own value being forwarded, is covered by tests but **not yet seen on hardware**: it
+needs Velocity switched back on at the encoder, which is a flash write.
+
+Six tests pin both halves, including the packet grammar under extreme values and the encoder
+gaining or losing its velocity field mid-run — which needs no reconfiguration here, since the
+live-reconfiguration handling added earlier re-derives the field map on the broadcast.
