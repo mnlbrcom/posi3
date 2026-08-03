@@ -149,7 +149,13 @@ const ENCODER_VARS = [
   {
     name: 'Preset', group: 'scaling', type: 'int', min: 0, max: 4294967295,
     label: 'Preset',
-    help: 'Sets the position value the encoder should read at its current physical position. Writes to flash.'
+    // Write-only on the firmware tested here: `read Preset` answers
+    // "ERROR: Preset is an unknown variable." The value it produces shows up in
+    // Offset instead, which is readable. Reading it anyway would put a spurious
+    // error in front of the operator on every "Read all".
+    writeOnly: true,
+    help: 'Sets the position value the encoder should read at its current physical position. ' +
+      'Writes to flash. Cannot be read back — the resulting Offset can.'
   },
   {
     name: 'Offset', group: 'scaling', type: 'int', min: 0, max: 4294967295,

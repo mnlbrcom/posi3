@@ -576,6 +576,39 @@ class EncoderLink extends EventEmitter {
   // -------------------------------------------------------------------------
 
   /**
+   * Take the encoder's own scaling rather than the type label's.
+   *
+   * `TotalScaledRes` and `UsedScopeOfPhysRes` are programmable, and a
+   * commissioned encoder is often nothing like the 33,554,432 of its
+   * nameplate — the unit on the bench here reports 300,000. Deriving degrees
+   * and revolutions from the label instead of the device produces confidently
+   * wrong readouts, so ask.
+   *
+   * Scaled counts per revolution = physical counts/rev x (scaled / physical
+   * scope), which collapses to the physical figure when the two are equal.
+   */
+  async _readScaling() {
+    try {
+      const total = Number((await this.read('TotalScaledRes')).value);
+      const scope = Number((await this.read('UsedScopeOfPhysRes')).value);
+      if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(scope) || scope <= 0) return;
+
+      const perRev = Math.round(COUNTS_PER_REV * (total / scope));
+      const meta = this.config.encoderMeta;
+      if (meta.totalCounts === total && meta.countsPerRev === perRev) return;
+
+      meta.totalCounts = total;
+      if (perRev > 0) meta.countsPerRev = perRev;
+      this.emit('encoderMeta', { id: this.id, totalCounts: total, countsPerRev: meta.countsPerRev, usedScope: scope });
+      this._log('info', 'rx',
+        `scaling from encoder: ${total} counts total, ${meta.countsPerRev}/rev ` +
+        `(${(total / meta.countsPerRev).toFixed(2)} revolutions of travel)`);
+    } catch (err) {
+      this._log('warn', 'rx', `could not read scaling (${err.message}); using configured values`);
+    }
+  }
+
+  /**
    * A two-number ASCII_SHORT line is ambiguous: `pos vel` or `pos ts`. Ask the
    * encoder rather than guess, because guessing wrong sends a microsecond
    * timestamp to disguise as a velocity.
@@ -597,6 +630,8 @@ class EncoderLink extends EventEmitter {
       } else {
         this._inferFieldLayout(`OutputMode=${mode.value} not understood`);
       }
+
+      await this._readScaling();
     } catch (err) {
       this._inferFieldLayout(err.message);
     }
@@ -754,11 +789,27 @@ class EncoderLink extends EventEmitter {
 
     // Read rather than trust the cache: another client may have moved it, and
     // guessing wrong here either wastes a cycle or silently does nothing.
+    //
+    // On the firmware tested here `read Preset` answers "Preset is an unknown
+    // variable" — it is write-only. When that happens the duplicate cannot be
+    // detected in advance, so the write is attempted and the encoder's own
+    // refusal is surfaced instead. Better an honest "it declined" than a
+    // confident guess.
     let current = null;
+    let readable = true;
     try {
       current = Number((await this.read('Preset')).value);
+      if (!Number.isFinite(current)) { current = null; readable = false; }
     } catch {
-      current = null; // unreadable — fall through and just write it
+      current = null;
+      readable = false;
+    }
+
+    if (!readable && !force) {
+      this.beginWriteBatch();
+      const r = await this.write('Preset', String(target));
+      this._armFlash();
+      return { written: target, cycles: 1, previous: null, verified: false, reply: r && r.value };
     }
 
     if (current === target) {
@@ -880,6 +931,9 @@ class EncoderLink extends EventEmitter {
       latencyUs: percentiles(this._latencyUs, this._latencyCount),
       gapMs: percentiles(this._gapMs, this._gapCount),
       uptimeMs: this.counters.startedAtMs ? Date.now() - this.counters.startedAtMs : 0,
+      // As read from the device, not as configured — see _readScaling().
+      totalCounts: meta.totalCounts,
+      countsPerRev: meta.countsPerRev,
       // Per destination, so the UI can show which disguise machine is not
       // receiving rather than only that something is wrong.
       destinations: this._sinks.map((s) => ({

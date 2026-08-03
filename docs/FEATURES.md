@@ -743,3 +743,74 @@ POSITAL themselves present the command line as the remedy for the applet: *"This
 useful in case of Java related issues, e.g. when the message 'Exception while opening stream with
 IP…' is displayed."* That is the same failure the screenshots in this folder show, and the reason
 this project exists.
+
+## 2026-08-03 — Hardware validation, against a real encoder and a real disguise server
+
+Test rig: encoder at **10.10.10.10**, disguise at **10.10.10.5**, this machine on `en3` at
+10.10.10.2/24. The user confirmed the old `d3driver.exe` works on the same rig.
+
+### The line terminator, settled at last
+
+The one thing no manual, datasheet or vendor document states. Captured raw off the socket:
+
+```
+32 34 33 20 30 20 0a    "243 0 \n"
+```
+
+**Bare LF (0x0a). 111 lines in 2 s, zero CR anywhere** — and note the *trailing space* before the
+terminator. Not CRLF, which is what the vendor's own Java client sends in the other direction.
+The line assembler handled it with zero unparsed lines, as did the parser's handling of the
+trailing space. The permissiveness was right, and is now evidenced rather than assumed.
+
+### It works
+
+`streaming`, **rx = tx, zero unparsed, zero errors**, 55 Hz, arrival gap p50 **18.11 ms** against
+the encoder's reported `CycleTime=18`. Bridge latency p50 118 µs, p99 298 µs. The datagrams
+reaching a disguise stand-in are `1:298575,0;\n` — asserted **byte-identical** to what
+`d3driver.c`'s `snprintf` would have produced from the same sample.
+
+### The per-destination error counters earned their keep
+
+disguise's port was unknown. Rather than guess, both candidates were added as destinations:
+
+| destination | result |
+|---|---|
+| 10.10.10.5:**6000** | clean |
+| 10.10.10.5:8000 | `ECONNREFUSED` ×7 |
+
+The connected UDP socket surfaces ICMP unreachable, so the right port was identified without
+touching the disguise machine. This is exactly why the socket is connected rather than using
+`sendto`, and why the counters are per destination rather than per link.
+
+### Three things the hardware contradicted
+
+1. **`OutputMode` returns `POSITION_VELOCITY`** — uppercase, single underscore — not the
+   manual's `Position_Velocity_`. `parseOutputMode` already tokenised case-insensitively on
+   non-alphabetic boundaries, so it happened to cope. Luck, but confirmed luck. `TimeMode`
+   likewise answers `CYCLIC`, not `Cyclic`.
+
+2. **`read Preset` answers `ERROR: Preset is an unknown variable.`** Preset is **write-only** on
+   this firmware; the value it produces appears in `Offset`, which reads fine (43156). This made
+   the duplicate-Preset guard inoperative, and put a spurious error in front of the operator on
+   every "Read all". Preset is now marked `writeOnly`: it is skipped when reading everything, and
+   `setPreset` detects the unreadable case and surfaces the encoder's own refusal rather than
+   guessing.
+
+3. **The encoder is scaled to 300 000 counts, not 33 554 432.** `TotalScaledRes` and
+   `UsedScopeOfPhysRes` both read 300 000 — a commissioned unit is nothing like its nameplate.
+   Every derived figure in the UI was computed from the type label, so the dial's "revolutions
+   used of 4 096" was wrong by two orders of magnitude. The link now reads both on connect and
+   derives `countsPerRev = physical/rev x (scaled / physical scope)`; telemetry carries the
+   device's own values and the UI uses them. It now reads **36.62 revolutions of travel**, which
+   is correct.
+
+### Not yet done
+
+- **Counts per revolution is unverified.** The shaft was stationary throughout (position held at
+  298 575). Turning it exactly one revolution should advance the count by 8192 — the one check
+  that proves the scaling end to end.
+- **The disguise end is unconfirmed.** Packets arrive at 10.10.10.5:6000 with no ICMP errors, so
+  something is listening, but whether a Navigator driver is bound to it and an axis is moving has
+  not been seen.
+- **No flash write has been attempted.** Nothing has been written to the encoder — every
+  interaction so far has been read-only.

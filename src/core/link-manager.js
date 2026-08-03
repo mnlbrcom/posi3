@@ -48,6 +48,7 @@ class LinkManager extends EventEmitter {
     });
     link.on('encoderEvent', (e) => this.emit('encoderEvent', e));
     link.on('fieldLayout', (e) => this.emit('fieldLayout', e));
+    link.on('encoderMeta', (e) => this.emit('encoderMeta', e));
     link.on('log', (e) => this.logger.push(e));
 
     this._links.set(config.id, link);

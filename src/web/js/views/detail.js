@@ -12,6 +12,7 @@ import { store } from '../store.js';
 import { Dial, TravelBar } from '../components/dial.js';
 
 export function renderDetail(root) {
+  const dialCaption = el('span', { text: '' });
   clear(root);
   const conn = store.selected;
   if (!conn) {
@@ -50,9 +51,7 @@ export function renderDetail(root) {
       el('div', { class: 'dial-wrap' },
         dial.node,
         travel.node,
-        el('div', { class: 'dial-caption' },
-          'Outer ring: angle within one revolution. Inner ring: revolutions used of ' +
-          `${constants.REVOLUTIONS.toLocaleString()}. Bar: position within the mapped range.`))));
+        el('div', { class: 'dial-caption' }, dialCaption))));
 
   // -- right column: readouts ----------------------------------------------
 
@@ -155,7 +154,17 @@ export function renderDetail(root) {
       }
 
       const t = store.telemetryOf(conn.id);
-      dial.update(t, constants.REVOLUTIONS);
+      // Revolutions of travel as the *encoder* reports its scaling, not as the
+      // type label implies. A commissioned unit is often nothing like its
+      // nameplate — the reference encoder reports 300 000 counts, 36.62
+      // revolutions, against a nameplate 33 554 432 and 4 096.
+      const revsAvailable = t && t.totalCounts && t.countsPerRev
+        ? t.totalCounts / t.countsPerRev
+        : constants.REVOLUTIONS;
+      setText(dialCaption,
+        'Outer ring: angle within one revolution. Inner ring: revolutions used of ' +
+        `${fixed(revsAvailable, revsAvailable < 100 ? 2 : 0)}. Bar: position within the mapped range.`);
+      dial.update(t, revsAvailable);
       if (t) travel.update(t.pos, mapping.minInput, mapping.maxInput);
 
       if (!t) {
@@ -166,7 +175,7 @@ export function renderDetail(root) {
 
       setText(dd.pos, groupDigits(t.pos));
       setText(dd.angle, `${fixed(t.angleDeg, 2)}°`);
-      setText(dd.rev, `${groupDigits(t.revs)} / ${groupDigits(constants.REVOLUTIONS)}`);
+      setText(dd.rev, `${groupDigits(t.revs)} / ${fixed(revsAvailable, revsAvailable < 100 ? 2 : 0)}`);
       setText(dd.rpm, `${fixed(t.rpm, 1)} rpm`);
       setText(dd.rawvel, t.rawVel === null || t.rawVel === undefined
         ? 'not sent' : `${groupDigits(t.rawVel)} steps/s`);
