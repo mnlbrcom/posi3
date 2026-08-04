@@ -87,7 +87,15 @@ test('coming back is news too', async (t) => {
   await new Promise((r) => back.bind(port, '127.0.0.1', r));
   t.after(() => { try { back.close(); } catch { /* already closed */ } });
 
+  // Sends have to keep landing for a while before this counts as recovery. A
+  // host that is off still passes the odd datagram between ARP retries, and
+  // announcing on the first success reset the warning backoff every time —
+  // 440 false recoveries from one disguise machine left off for three hours.
   for (let i = 0; i < 40; i++) { link._forward(i, 0); await sleep(10); }
+  assert.ok(!events.includes('destinationUp'),
+    'half a second of success is not yet recovery');
+
+  for (let i = 0; i < 40; i++) { link._forward(i, 0); await sleep(90); }
   await until(() => events.includes('destinationUp'), 4000, 'the recovery notice');
   assert.ok(events.includes('destinationUp'));
 });
