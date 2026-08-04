@@ -120,6 +120,46 @@ export function duration(ms) {
 }
 
 /**
+ * A number that stops twitching, without lying about it.
+ *
+ * The rate is a one-second average, which is steady enough — but it is
+ * recomputed on every telemetry tick, and each recomputation slides the window
+ * by one sample. With integer counters that moves the result a packet or two
+ * either way, so a whole-number readout flickered 98 / 99 / 100 thirty times a
+ * second. The measurement was never the problem; painting it thirty times a
+ * second was. (Rounding to the nearest ten used to hide this.)
+ *
+ * Two gates, both on the display only:
+ *   everyMs   how often the shown figure may change at all
+ *   deadband  how far the real value must move before it is worth changing
+ *
+ * A slow drift still gets through: the comparison is against what is shown, so
+ * successive small moves accumulate until they clear the band.
+ *
+ * @param {{everyMs?: number, deadband?: number}} [opts]
+ * @returns {(value: number) => number}
+ */
+export function steady({ everyMs = 500, deadband = 2 } = {}) {
+  let shown = null;
+  let lastAt = -Infinity;
+  return (value) => {
+    if (!Number.isFinite(value)) return value;
+    const now = performance.now();
+    // First reading, and any move to or from nothing, land at once: "it
+    // stopped" is the one change nobody should wait half a second to see.
+    if (shown === null || value === 0 || shown === 0) {
+      shown = value;
+      lastAt = now;
+      return shown;
+    }
+    if (now - lastAt < everyMs) return shown;
+    lastAt = now;
+    if (Math.abs(value - shown) >= deadband) shown = value;
+    return shown;
+  };
+}
+
+/**
  * Throughput, as a whole number.
  *
  * The figure behind it is a one-second average, which is steady enough to read

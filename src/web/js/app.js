@@ -15,7 +15,7 @@
 // already provided it. Imported first so it exists before boot() runs.
 import './api.js';
 
-import { el, clear, hz, toast, banner, dismissBanner } from './ui.js';
+import { el, clear, hz, toast, banner, dismissBanner, steady } from './ui.js';
 import { store } from './store.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderConnections } from './views/connections.js';
@@ -273,6 +273,9 @@ function tick() {
   requestAnimationFrame(tick);
 }
 
+/** The footer's packet rate, held steady like every other rate readout. */
+const steadyTotal = steady();
+
 function updateAggregate() {
   let running = 0;
   let pkts = 0;
@@ -284,7 +287,7 @@ function updateAggregate() {
     if (t) pkts += t.txHz || 0;
   }
   aggregate.textContent = running
-    ? `${running} link${running > 1 ? 's' : ''} · ${hz(pkts)} pkt/s`
+    ? `${running} link${running > 1 ? 's' : ''} · ${hz(steadyTotal(pkts))} pkt/s`
     : `${store.connections.length} configured · idle`;
 }
 

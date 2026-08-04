@@ -17,7 +17,7 @@
  * write when the string is unchanged. A 500 Hz link never triggers a re-render.
  */
 
-import { el, clear, pill, groupDigits, fixed, hz, micros, microsToClock, duration, setText, svgEl } from '../ui.js';
+import { el, clear, pill, groupDigits, fixed, hz, steady, micros, microsToClock, duration, setText, svgEl } from '../ui.js';
 import { store } from '../store.js';
 import { Dial, TravelBar } from '../components/dial.js';
 import { inputSpan } from '../mapping-span.js';
@@ -69,6 +69,10 @@ export function renderDashboard(root) {
     inRate: statTile('Samples in', 'per second'),
     faults: statTile('Faults', 'none')
   };
+
+  // One per figure: each holds its own last-shown value.
+  const steadyOut = steady();
+  const steadyIn = steady();
 
   view.appendChild(el('div', { class: 'panel page-head' },
     el('div', { class: 'view-head dash-head' },
@@ -144,10 +148,10 @@ export function renderDashboard(root) {
       }
       const faults = sendFails + encoderErrors + unparsed;
 
-      setText(summaryStats.out.value, hz(out));
+      setText(summaryStats.out.value, hz(steadyOut(out)));
       setText(summaryStats.out.caption, out > 0 ? 'to disguise' : 'nothing being sent');
       setText(summaryStats.streaming.value, String(streaming));
-      setText(summaryStats.inRate.value, hz(inRate));
+      setText(summaryStats.inRate.value, hz(steadyIn(inRate)));
       setText(summaryStats.faults.value, groupDigits(faults));
       summaryStats.faults.value.classList.toggle('bad', faults > 0);
       // Name the dominant cause. Sending is listed first because an
@@ -199,6 +203,8 @@ function buildCard(conn) {
   const travel = new TravelBar();
   const spark = sparkline();
   const basis = readingBasis();
+  const steadyRx = steady();
+  const steadyTx = steady();
 
   const destPills = el('span', { class: 'dest-pills' });
   let lastHealth = '';
@@ -374,7 +380,7 @@ function buildCard(conn) {
       live.cells.ts.title = t.ts === null || t.ts === undefined
         ? '' : `${groupDigits(t.ts)} µs since the encoder started`;
 
-      setText(stream.cells.rate, `${hz(t.rxHz || 0)} / ${hz(t.txHz || 0)} Hz`);
+      setText(stream.cells.rate, `${hz(steadyRx(t.rxHz || 0))} / ${hz(steadyTx(t.txHz || 0))} Hz`);
       setText(stream.cells.lat,
         t.latencyUs ? `${micros(t.latencyUs.p50)} · ${micros(t.latencyUs.p99)}` : '—');
       setText(stream.cells.gap, t.gapMs ? `${fixed(t.gapMs.p50, 2)} ms` : '—');
