@@ -191,9 +191,22 @@ const ENCODER_VARS = [
       'sends only when the position or velocity changed, checked every 5 ms.'
   },
   {
+    /**
+     * Three sources, and they disagree:
+     *
+     *   manual §5.6.2          1 – 999,999 ms
+     *   the encoder's own page  5 – 100,000 ms  (firmware 4.50)
+     *   this hardware           1 ms runs
+     *
+     * The narrower figure was briefly enforced here on the reasoning that the
+     * device is the authority — and it would have refused a value that has been
+     * used successfully on this very encoder. So the range stays as documented
+     * and the tighter claim is *shown* rather than imposed: a limit that blocks
+     * something known to work is worse than a limit nobody enforces.
+     */
     name: 'CycleTime', group: 'output', type: 'int', min: 1, max: 999999, unit: 'ms',
     label: 'Cycle time',
-    range: '1 – 999,999 ms',
+    range: '1 – 999,999 ms · the encoder\'s own page says 5 – 100,000',
     help: 'States the time in ms for the cyclic time mode.'
   },
 

@@ -40,11 +40,15 @@ test('only known variables are addressable', () => {
 
 test('integers must be integers, and within the range the manual gives', () => {
   assert.deepEqual(checkVarWrite('CycleTime', '8'), { variable: 'CycleTime', value: '8' });
-  assert.deepEqual(checkVarWrite('CycleTime', 999999).value, '999999');
   rejects('CycleTime', 'abc', 'not a number');
   rejects('CycleTime', '8.5', 'not a whole number');
-  rejects('CycleTime', '0', 'below the documented minimum of 1 ms');
-  rejects('CycleTime', '1000000', 'above the documented maximum of 999,999 ms');
+  // The encoder's own page claims 5 to 100,000, but 1 ms runs on this
+  // hardware, so the documented range is what is enforced. A validator that
+  // blocks a value known to work is worse than one that lets the device answer.
+  assert.equal(checkVarWrite('CycleTime', '1').value, '1', '1 ms is used in practice');
+  assert.equal(checkVarWrite('CycleTime', 999999).value, '999999');
+  rejects('CycleTime', '0', 'zero is not an interval');
+  rejects('CycleTime', '1000000', 'above the documented maximum');
   rejects('CycleTime', '1e6', 'exponent notation is not a whole number');
   rejects('UsedScopeOfPhysRes', '-1', 'negative resolution');
   rejects('TotalScaledRes', '1073741825', 'beyond the 30-bit maximum');

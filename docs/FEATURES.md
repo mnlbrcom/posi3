@@ -2355,3 +2355,41 @@ hours field is kept rather than dropped because the counter is 32-bit and wraps 
 **01:11:34.967**, which is also why a jump backwards there is the counter and not a fault.
 
 **177 tests pass.**
+
+## 2026-08-04 — Three sources for CycleTime's range, and why the device does not win
+
+> "could this be the reason ❯ CycleTime … Can have values between 5 ms and 100000 ms" / "cylcle time
+> work with 1ms tho" / "could this be the reason ❯ ASCII …" / "or ASCII_SHORT …"
+
+**The range was briefly changed to 5 – 100,000 and changed straight back.** The reasoning for
+narrowing it was that the encoder's own interface is the authority on what it accepts — which is
+sound until it contradicts the hardware. It does:
+
+| source | range |
+|---|---|
+| manual §5.6.2 | 1 – 999,999 ms |
+| the encoder's own page, firmware 4.50 | 5 – 100,000 ms |
+| **this hardware** | **1 ms runs** |
+
+Enforcing the narrower figure would have refused a value that has been used successfully on this
+very encoder. So the documented range stands and the tighter claim is *shown* rather than imposed —
+the field reads `1 – 999,999 ms · the encoder's own page says 5 – 100,000`. A limit that blocks
+something known to work is worse than a limit nobody enforces.
+
+Worth recording as a rule: **a documented limit narrower than observed behaviour is a note, not a
+constraint.** The place to be strict is the shape of a value, where a wrong guess sends nonsense
+down a shared command channel; the place to be permissive is its magnitude, where the device is
+about to answer anyway.
+
+### The two ASCII forms are not the reason for anything
+
+Both parse, checked against the exact strings from the encoder's page:
+
+    "215797 0 2938146297"                              → pos 215797  vel 0    ts 2938146297
+    "215797 -12 2938146297"                            → pos 215797  vel -12  ts 2938146297
+    "POSITION=215797 VELOCITY=0 TIMESTAMP=2938146297"  → pos 215797  vel 0    ts 2938146297
+
+The rig is streaming ASCII_SHORT with three fields and **0 unparsed lines**. Neither form explains
+the OutputMode refusal, which was the value spelling and is fixed.
+
+**177 tests pass.**
