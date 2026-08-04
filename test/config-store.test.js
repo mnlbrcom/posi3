@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { ConfigStore } = require('../src/core/config-store');
+const { ConfigStore, SCHEMA_VERSION } = require('../src/core/config-store');
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'posi3-cfg-'));
@@ -28,7 +28,7 @@ function loaded(dir) {
 
 test('a fresh directory yields usable defaults', () => {
   const s = loaded(tmpDir());
-  assert.equal(s.profile.version, 2);
+  assert.equal(s.profile.version, SCHEMA_VERSION);
   assert.deepEqual(s.profile.connections, []);
   assert.equal(s.settings.webPort, 8710);
   assert.equal(s.settings.webBindHost, '127.0.0.1');
@@ -64,7 +64,7 @@ test('a schema-1 profile on disk is upgraded on load', () => {
   }));
 
   const s = loaded(dir);
-  assert.equal(s.profile.version, 2);
+  assert.equal(s.profile.version, SCHEMA_VERSION);
   const c = s.profile.connections[0];
   assert.equal(c.destinations.length, 1, 'the lone d3 becomes the first destination');
   assert.equal(c.destinations[0].devid, 7);

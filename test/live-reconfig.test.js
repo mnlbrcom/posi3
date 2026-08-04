@@ -108,3 +108,76 @@ test('garbage in a broadcast does not disturb the current layout', () => {
   l._onLine('OutputMode=NONSENSE');
   assert.deepEqual(l._parser.fieldMap, [0, 1], 'an unreadable value must be ignored, not applied');
 });
+
+// ---------------------------------------------------------------------------
+// What counts as a change
+// ---------------------------------------------------------------------------
+
+/** A link that has never spoken to an encoder knows nothing about one. */
+function freshLink() {
+  const l = new EncoderLink({
+    id: 'test', name: 'test',
+    encoder: { host: '127.0.0.1', port: 6000 },
+    destinations: [{ host: '127.0.0.1', port: 6001, devid: 1 }]
+  });
+  const socket = new EventEmitter();
+  socket.destroyed = false;
+  socket.write = () => true;
+  l._socket = socket;
+  const logs = [];
+  l.on('log', (e) => logs.push(e.text));
+  return { l, logs };
+}
+
+test('the first value an encoder reports is state, not a change', () => {
+  // The profile used to be seeded with nameplate figures -- 8192/rev,
+  // 33,554,432 counts, 10 ms -- so the first read of a commissioned encoder
+  // differed from them and was announced as a change on every single connect.
+  // Nothing had changed: we simply had not asked before.
+  const { l, logs } = freshLink();
+
+  l._onLine('OutputMode=POSITION_VELOCITY');
+  l._onLine('CycleTime=18');
+  l._onLine('UsedScopeOfPhysRes=300000');
+  l._onLine('TotalScaledRes=300000');
+
+  assert.deepEqual(logs.filter((t) => /changed on the encoder/.test(t)), [],
+    'a first observation must not be reported as a change');
+
+  // Observed, kept, and usable -- the point of asking.
+  assert.equal(l.config.encoderMeta.cycleTimeMs, 18);
+  assert.equal(l.config.encoderMeta.totalCounts, 300000);
+  assert.deepEqual(l._parser.fieldMap, [0, 1]);
+});
+
+test('a value that really changes is reported as one', () => {
+  const { l, logs } = freshLink();
+
+  l._onLine('CycleTime=18');
+  l._onLine('OutputMode=POSITION_VELOCITY');
+  l._onLine('UsedScopeOfPhysRes=300000');
+  l._onLine('TotalScaledRes=300000');
+  logs.length = 0;
+
+  // Somebody reconfigures the device from another client.
+  l._onLine('CycleTime=8');
+  l._onLine('OutputMode=POSITION');
+  l._onLine('TotalScaledRes=150000');
+
+  const changes = logs.filter((t) => /changed on the encoder/.test(t));
+  assert.equal(changes.length, 3, `expected three changes, got: ${JSON.stringify(changes)}`);
+  assert.ok(changes.some((t) => /cycle time changed on the encoder: 8 ms/.test(t)));
+  assert.ok(changes.some((t) => /field layout changed on the encoder: POSITION/.test(t)));
+  assert.ok(changes.some((t) => /scaling changed on the encoder: 150000/.test(t)));
+});
+
+test('the same value reported twice is not a change', () => {
+  const { l, logs } = freshLink();
+  l._onLine('CycleTime=18');
+  logs.length = 0;
+
+  // Every reconnect re-reads the same variables; a reread is not an event.
+  l._onLine('CycleTime=18');
+  l._onLine('CycleTime=18');
+  assert.deepEqual(logs.filter((t) => /changed on the encoder/.test(t)), []);
+});

@@ -398,7 +398,9 @@ export async function openEditor(existing) {
       velocityPolicy: 'zero',
       udpSendPolicy: 'every',
       autoStart: false,
-      encoderMeta: { countsPerRev: info.constants.COUNTS_PER_REV, totalCounts: info.constants.TOTAL_COUNTS, cycleTimeMs: 10 }
+      // Unknown until the encoder is asked. A new connection has not spoken to
+      // a device yet, so it has nothing to say about one.
+      encoderMeta: { countsPerRev: null, totalCounts: null, cycleTimeMs: null }
     };
 
   // A profile written before destinations existed still arrives d3-shaped.

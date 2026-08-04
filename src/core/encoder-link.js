@@ -34,7 +34,7 @@ const {
   wrapDelta, angleDeg, revolution, stepsPerSecToRpm
 } = require('./protocol');
 const {
-  STATE, TIMEOUTS, RECONNECT, COUNTS_PER_REV, TOTAL_COUNTS
+  STATE, TIMEOUTS, RECONNECT, COUNTS_PER_REV
 } = require('../shared/constants');
 
 /** Ring of send buffers: dgram may hold one until the write completes. */
@@ -715,6 +715,9 @@ class EncoderLink extends EventEmitter {
   _checkStall() {
     if (this._state !== STATE.STREAMING && this._state !== STATE.STALLED) return;
 
+    // A timer needs a number before the encoder has told us its cycle. This is
+    // a starting point for the watchdog, not a claim about the device, and it
+    // is replaced by the real value the moment CycleTime is read.
     const cycle = Number(this.config.encoderMeta.cycleTimeMs) || 10;
     const limit = Math.max(3 * cycle, 1000);
     const since = performance.now() - this.latest.tRxMs;
@@ -770,6 +773,11 @@ class EncoderLink extends EventEmitter {
    *
    * Observed on the reference rig: `OutputMode` went `POSITION_VELOCITY` ->
    * `POSITION` and `CycleTime` 18 -> 8 mid-session, and nothing noticed.
+   *
+   * A first answer is not a change. Before the encoder has spoken we hold no
+   * value for these, so the first one is simply what the device is set to — it
+   * is logged as an observation and kept. Only a value that differs from one we
+   * already had is a change, because only then did something actually change.
    */
   _applyLiveVar(name, value) {
     switch (name) {
@@ -780,7 +788,10 @@ class EncoderLink extends EventEmitter {
         if (before && before.length === map.length && before.every((f, i) => f === map[i])) return;
         this._parser.setFieldMap(map);
         this.emit('fieldLayout', { id: this.id, fields: map, inferred: false });
-        this._log('warn', 'rx', `field layout changed on the encoder: ${value}`);
+        // Only a warning when a layout we were already parsing with was
+        // replaced: that is the case where samples were being read wrongly
+        // until this moment. Learning it on connect is routine.
+        if (before) this._log('warn', 'rx', `field layout changed on the encoder: ${value}`);
         break;
       }
       case 'OutputType':
@@ -794,9 +805,11 @@ class EncoderLink extends EventEmitter {
         // would otherwise look like a stall, and vice versa.
         const ms = Number(value);
         if (!Number.isFinite(ms) || ms <= 0) return;
-        if (this.config.encoderMeta.cycleTimeMs === ms) return;
+        const known = this.config.encoderMeta.cycleTimeMs;
+        if (known === ms) return;
         this.config.encoderMeta.cycleTimeMs = ms;
-        this._log('info', 'rx', `cycle time changed on the encoder: ${ms} ms`);
+        this.emit('encoderMeta', { id: this.id, cycleTimeMs: ms });
+        if (known != null) this._log('info', 'rx', `cycle time changed on the encoder: ${ms} ms`);
         break;
       }
       case 'TotalScaledRes':
@@ -807,10 +820,13 @@ class EncoderLink extends EventEmitter {
         const perRev = Math.round(COUNTS_PER_REV * (total / scope));
         const meta = this.config.encoderMeta;
         if (meta.totalCounts === total && meta.countsPerRev === perRev) return;
+        const knew = meta.totalCounts != null;
         meta.totalCounts = total;
         if (perRev > 0) meta.countsPerRev = perRev;
         this.emit('encoderMeta', { id: this.id, totalCounts: total, countsPerRev: meta.countsPerRev, usedScope: scope });
-        this._log('info', 'rx', `scaling changed on the encoder: ${total} counts, ${meta.countsPerRev}/rev`);
+        if (knew) {
+          this._log('info', 'rx', `scaling changed on the encoder: ${total} counts, ${meta.countsPerRev}/rev`);
+        }
         break;
       }
       default:
@@ -1197,6 +1213,11 @@ class EncoderLink extends EventEmitter {
     const meta = this.config.encoderMeta;
     const pos = this.latest.pos;
     const derived = this._derivedVel;
+    // Degrees and revolutions need a divisor before the encoder has answered.
+    // The nameplate figure is the honest guess for the arithmetic; what is
+    // *reported* below stays null until the device says otherwise, so nothing
+    // downstream mistakes the guess for a reading.
+    const perRev = meta.countsPerRev || COUNTS_PER_REV;
     return {
       id: this.id,
       state: this._state,
@@ -1207,9 +1228,9 @@ class EncoderLink extends EventEmitter {
       rawVel: this.latest.rawVel,
       outVel: this.latest.outVel,
       ts: this.latest.ts,
-      angleDeg: angleDeg(pos, meta.countsPerRev),
-      revs: revolution(pos, meta.countsPerRev),
-      rpm: stepsPerSecToRpm(derived, meta.countsPerRev),
+      angleDeg: angleDeg(pos, perRev),
+      revs: revolution(pos, perRev),
+      rpm: stepsPerSecToRpm(derived, perRev),
       derivedVel: derived,
       rxTotal: this.counters.rx,
       txTotal: this.counters.tx,
@@ -1400,10 +1421,12 @@ function normaliseConfig(c) {
       autoDetect: c.parser ? c.parser.autoDetect !== false : true,
       fields: (c.parser && c.parser.fields) || null
     },
+    // Null until the encoder has answered. Filling these in here would recreate
+    // the fabricated baseline that made every first read look like a change.
     encoderMeta: {
-      countsPerRev: meta.countsPerRev || COUNTS_PER_REV,
-      totalCounts: meta.totalCounts || TOTAL_COUNTS,
-      cycleTimeMs: meta.cycleTimeMs || 10
+      countsPerRev: meta.countsPerRev || null,
+      totalCounts: meta.totalCounts || null,
+      cycleTimeMs: meta.cycleTimeMs || null
     },
     reconnect: {
       enabled: c.reconnect ? c.reconnect.enabled !== false : true,
