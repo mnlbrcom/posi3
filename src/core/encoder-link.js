@@ -39,6 +39,15 @@ const {
 /** Ring of send buffers: dgram may hold one until the write completes. */
 const POOL_SIZE = 8;
 /** Recent arrival→send measurements, in microseconds. */
+/**
+ * How long sends must keep landing before a destination counts as recovered.
+ *
+ * Long enough that a lone datagram slipping through a down host does not
+ * qualify, short enough that a genuine recovery is announced while it still
+ * matters.
+ */
+const RECOVERY_QUIET_MS = 3000;
+
 const LATENCY_WINDOW = 256;
 
 class EncoderLink extends EventEmitter {
@@ -216,6 +225,7 @@ class EncoderLink extends EventEmitter {
         // has not changed — which buries anything that has.
         nextWarnAt: 0,
         warnBackoffMs: 0,
+        lastErrorAt: 0,
         onError: (err) => {
           if (!err) return;
           sink.txErrors++;
@@ -226,6 +236,7 @@ class EncoderLink extends EventEmitter {
           sink.recovered = false;
 
           const now = Date.now();
+          sink.lastErrorAt = now;
           if (now < sink.nextWarnAt) return;
           // 0s, 15s, 60s, 240s, then every 15 minutes.
           sink.warnBackoffMs = sink.warnBackoffMs
@@ -240,6 +251,16 @@ class EncoderLink extends EventEmitter {
           // Recovery is news too. Without this a destination that came back
           // leaves its last warning as the most recent thing anyone was told.
           if (!sink.txErrors || sink.recovered) return;
+
+          // But one successful send is not recovery. A host that is off flaps:
+          // the odd datagram gets through between ARP retries, and treating
+          // that as "back" reset the backoff every time. Measured on a disguise
+          // machine that was switched off for three hours — 1,294 log lines and
+          // 440 recovery claims, where the backoff was designed to produce
+          // about fifteen. Recovery means the sends have been landing for a
+          // while, not that one did.
+          if (Date.now() - sink.lastErrorAt < RECOVERY_QUIET_MS) return;
+
           sink.recovered = true;
           const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
           this._log('info', 'tx', `${where} is reachable again after ${sink.txErrors} lost packets`);

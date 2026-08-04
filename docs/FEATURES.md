@@ -2522,3 +2522,34 @@ of `net.connect` against port 6000, which is what the tools in `tools/` already 
 the ability to do it by accident, or for anyone with the web UI open to do it at all.
 
 **179 tests pass**; audits clean on Log, Dashboard, Connections and Encoder Config.
+
+## 2026-08-04 — A dead disguise machine should not shout
+
+> "i stopped the connection, because the disguise was off and the conecction produced 1000errors"
+
+The right call, and the app made it noisier than it needed to be. Measured from the log of that
+outage — a disguise machine off from 10:59 to 13:57:
+
+    send-failure log lines:      1294
+    "reachable again" claims:     440
+
+The backoff was designed to say it once, then at 15s, 60s, 240s and every 15 minutes after —
+**about fifteen lines in three hours.** It never got past the first step.
+
+**A host that is off does not fail cleanly.** The odd datagram slips through between ARP retries, so
+the sink sees a stream of errors with the occasional success scattered through it. Recovery was
+declared on *any* success, which reset `warnBackoffMs` to zero — so the next error warned
+immediately and the backoff never grew. 440 times.
+
+Recovery now requires the sends to have been landing for **three seconds**: long enough that a lone
+datagram slipping through does not qualify, short enough that a real recovery is announced while it
+still matters. Same outage, same policy, now fifteen lines rather than 1,294.
+
+The packet count in the message stays — `827,300 packets lost so far` is the number that says how
+long this has been going on, and it is the one thing in that line worth reading twice.
+
+Three tests cover it: a lone success between failures is not recovery, the backoff survives the
+flapping, and a destination that genuinely comes back is still announced. An existing test asserted
+the old behaviour — recovery on the first success — and now asserts the new rule and says why.
+
+**183 tests pass.**
