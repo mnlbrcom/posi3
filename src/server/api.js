@@ -104,6 +104,18 @@ function createApi(ctx) {
     manager.logger.push({ id: id || null, level, dir: 'user', text, ts: Date.now() });
 
   /**
+   * The app reporting on itself: a failure, a risk, a state it has entered.
+   *
+   * The rule this serves: **anything worth a banner is worth a log line.** A
+   * banner is drawn in one browser and dismissed in seconds; the log is the
+   * record and is what Export produces. It has to be written here rather than
+   * where the banner is raised, because a line logged in a browser exists only
+   * in that browser.
+   */
+  const appLog = (id, text, level = 'info') =>
+    manager.logger.push({ id: id || null, level, dir: 'app', text, ts: Date.now() });
+
+  /**
    * Read from an encoder that is not connected, over a socket of its own.
    *
    * Throws `EUNREACHABLE` when the device does not answer at all — which is the
@@ -138,10 +150,7 @@ function createApi(ctx) {
     updated.encoder.host = conn.encoder.pendingHost;
     delete updated.encoder.pendingHost;
     store.upsertConnection(updated);
-    manager.logger.push({
-      id: conn.id, level: 'info', dir: null, ts: Date.now(),
-      text: `now answering at ${usedHost} — address change applied`
-    });
+    appLog(conn.id, `now answering at ${usedHost} — address change applied`);
     ctx.syncLink(updated);
     changed();
   };
@@ -161,8 +170,13 @@ function createApi(ctx) {
         return out;
       } catch (err) { last = err; }
     }
-    const e = new Error(
-      `${conn.name} is unreachable at ${addressesFor(conn).join(' or ')}:${conn.encoder.port}`);
+    const where = `${addressesFor(conn).join(' or ')}:${conn.encoder.port}`;
+    // The operator gets a banner; the record gets a line. A banner is drawn in
+    // one browser and gone in five seconds — if it was worth interrupting
+    // somebody for, it was worth keeping.
+    appLog(conn.id, `read failed — no answer at ${where}` +
+      (last ? ` (${last.message})` : ''), 'error');
+    const e = new Error(`${conn.name} is unreachable at ${where}`);
     e.code = 'EUNREACHABLE';
     e.cause = last;
     throw e;
@@ -179,6 +193,14 @@ function createApi(ctx) {
     const conn = store.find(checkId(id));
     if (!conn) fail('ENOENT', 'No such connection');
     flashBudget.claim(conn.id);
+
+    // The risk window, on the record. This is the one moment where losing
+    // power damages the device's configuration, and until now it existed only
+    // as a banner in whichever browser happened to press the button — an
+    // exported log showed the `set` going out and nothing about the danger.
+    const what = checked.map((c) => `${c.variable}=${c.value}`).join(', ');
+    appLog(conn.id, `flash write started — do not power off — ${what}`, 'warn');
+
     let last = null;
     for (const host of addressesFor(conn)) {
       try {
@@ -188,11 +210,19 @@ function createApi(ctx) {
           onLog: offlineLogger(conn.id)
         });
         promoteIfAnswered(conn, host);
+        const bad = results.filter((r) => !r.verified);
+        appLog(conn.id, bad.length
+          ? `flash write finished — ${results.length - bad.length} of ${results.length} verified, ` +
+            `not confirmed: ${bad.map((r) => r.variable).join(', ')}`
+          : `flash write confirmed — ${what}`,
+        bad.length ? 'warn' : 'info');
         return results;
       } catch (err) { last = err; }
     }
-    const e = new Error(
-      `${conn.name} is unreachable at ${addressesFor(conn).join(' or ')}:${conn.encoder.port}`);
+    const where = `${addressesFor(conn).join(' or ')}:${conn.encoder.port}`;
+    appLog(conn.id, `flash write status unknown — no answer at ${where}; ` +
+      'read the encoder before power-cycling it', 'error');
+    const e = new Error(`${conn.name} is unreachable at ${where}`);
     e.code = 'EUNREACHABLE';
     e.cause = last;
     throw e;

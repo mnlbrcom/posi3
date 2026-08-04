@@ -91,7 +91,20 @@ async function startService(opts = {}) {
     store.upsertConnection({ id: e.id, encoderMeta: next });
     announceConfigChange();
   });
-  if (store.loadWarning) logFile.note(store.loadWarning, 'warn');
+  // Both places, deliberately. The file is for diagnosing a start-up that never
+  // reached a UI; the ring is what the Log screen and Export show. This was
+  // file-only, so a profile that failed to load raised a banner in the browser
+  // and left nothing in the log the operator would be asked to send.
+  if (store.loadWarning) {
+    logFile.note(store.loadWarning, 'warn');
+    logger.push({ level: 'warn', dir: 'app', text: store.loadWarning });
+  }
+  if (store.readOnly) {
+    logger.push({
+      level: 'warn', dir: 'app',
+      text: 'This profile was written by a newer build and is loaded read-only — changes will not be saved'
+    });
+  }
 
   // Reaching beyond loopback exposes flash writes and the encoder's IP
   // settings to the whole LAN, so it is never token-less.

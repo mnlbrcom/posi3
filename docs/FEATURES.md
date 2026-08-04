@@ -2985,3 +2985,54 @@ Profile` in Settings said the same thing and were corrected with it. `Delete con
 noted, not touched.
 
 **204 tests pass.**
+
+---
+
+## 2026-08-04 — Every banner is a log entry
+
+> "do all banner notification also write a log entry now?" / "yes we want that banner = log entry"
+
+They did not. Three of nine did, and those three only by accident of where they originated — the
+event happened to come from `encoder-link.js`, which logs. The five raised by the client left no
+trace at all:
+
+| banner | before |
+|---|---|
+| encoder unreachable on read | nothing |
+| **FLASH WRITE IN PROGRESS — do not power off** | nothing |
+| **write status unknown — the encoder did not confirm** | nothing |
+| profile load warning | log *file* only, never the ring the Log screen and Export read |
+| profile is read-only | nothing |
+
+The flash pair is the serious one. It is the single moment where losing power damages the device's
+configuration, and it existed only as a banner in whichever browser pressed the button — an exported
+log showed the `set` going out and nothing about the risk window.
+
+**A banner cannot log its own line.** It is drawn in one browser, and a line logged there exists only
+in that browser and never reaches Export. So each is answered on the server, where the operation
+actually happens:
+
+    user  added connection "Ghost" — encoder 10.10.10.99:6000, to 127.0.0.1:6000 id 99
+    app   flash write started — do not power off — CycleTime=25
+    app   flash write status unknown — no answer at 10.10.10.99:6000; read the encoder
+          before power-cycling it
+    user  deleted connection "Ghost" — was encoder 10.10.10.99:6000
+
+Measured against a host that does not exist, so no encoder flash was touched. A successful write logs
+`flash write confirmed`, and a partial one names the variables that were not verified.
+
+`promoteIfAnswered` also stopped pushing `dir: null` and is `app` like every other line the app writes
+about itself.
+
+### Keeping it true
+
+`test/banner-log-parity.test.js` holds the inventory: every `banner()` call site in the web sources
+mapped to where its log line is written. **Adding a banner fails the test** until its line exists and
+is recorded — verified by adding one, which fails, and by rewording the flash-risk line away, which
+also fails. One honest exception is written down as such: `Could not start: …` fires when the client
+cannot reach the server, so there is nothing to log to.
+
+Live testing caught a defect in this very change — `flash write started … undefined=25`, because
+`checkVarWrite` returns `variable`, not `name`.
+
+**206 tests pass.**
