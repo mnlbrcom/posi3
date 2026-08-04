@@ -18,7 +18,10 @@ const {
   fail, checkId, checkHost, checkPort, checkVariable, checkValue, checkVarWrite,
   sanitiseConnection, listInterfaces
 } = require('./validate');
-const { scanSubnet, scannableInterfaces, readVariablesOnce } = require('../core/discover');
+const {
+  scanSubnet, scannableInterfaces, readVariablesOnce, writeVariablesOnce
+} = require('../core/discover');
+const flashBudget = require('../core/flash-budget');
 
 /**
  * @param {object} ctx
@@ -45,13 +48,18 @@ function createApi(ctx) {
    * case worth telling the operator about by name, since it means the encoder
    * has gone from the network rather than merely being stopped here.
    */
+  /** Everything a one-shot session says goes in the log, tagged like any other. */
+  const offlineLogger = (id) => (level, dir, text) =>
+    manager.logger.push({ id, level, dir, text, ts: Date.now() });
+
   const readOffline = async (id, names) => {
     const conn = store.find(checkId(id));
     if (!conn) fail('ENOENT', 'No such connection');
     try {
       return await readVariablesOnce(conn.encoder.host, names, {
         port: conn.encoder.port,
-        localAddress: conn.encoder.localAddress || null
+        localAddress: conn.encoder.localAddress || null,
+        onLog: offlineLogger(conn.id)
       });
     } catch (err) {
       const e = new Error(`${conn.name} is unreachable at ${conn.encoder.host}:${conn.encoder.port}`);
@@ -59,6 +67,57 @@ function createApi(ctx) {
       e.cause = err;
       throw e;
     }
+  };
+
+  /**
+   * Write to a stopped connection over a socket of its own.
+   *
+   * Held open until the flash commit arrives, because the encoder acknowledges
+   * a `set` at once and only commits seconds later — closing on the
+   * acknowledgement would report "status unknown" for a write that worked.
+   */
+  const writeOffline = async (id, checked) => {
+    const conn = store.find(checkId(id));
+    if (!conn) fail('ENOENT', 'No such connection');
+    flashBudget.claim(conn.id);
+    try {
+      const { results } = await writeVariablesOnce(conn.encoder.host, checked, {
+        port: conn.encoder.port,
+        localAddress: conn.encoder.localAddress || null,
+        onLog: offlineLogger(conn.id)
+      });
+      return results;
+    } catch (err) {
+      const e = new Error(`${conn.name} is unreachable at ${conn.encoder.host}:${conn.encoder.port}`);
+      e.code = 'EUNREACHABLE';
+      throw e;
+    }
+  };
+
+  /**
+   * Follow the encoder to its new address once it has accepted one.
+   *
+   * The device keeps answering on its current address until it is power-cycled,
+   * so the live session is untouched and the link is deliberately *not*
+   * reconfigured — restarting it here would send it at an address that is not
+   * live yet. Only the saved connection moves, so the next start finds it.
+   */
+  const adoptNewAddress = async (id, results) => {
+    const written = results.find((r) => r.ok && r.variable === 'IP');
+    if (!written) return;
+    const conn = store.find(checkId(id));
+    if (!conn || conn.encoder.host === written.value) return;
+
+    const from = conn.encoder.host;
+    const updated = JSON.parse(JSON.stringify(conn));
+    updated.encoder.host = written.value;
+    store.upsertConnection(updated);
+    manager.logger.push({
+      id: conn.id, level: 'warn', dir: null, ts: Date.now(),
+      text: `saved address changed ${from} -> ${written.value}. The encoder keeps answering on ` +
+        `${from} until it is power-cycled.`
+    });
+    changed();
   };
 
   const requireLink = (id) => {
@@ -256,12 +315,19 @@ function createApi(ctx) {
       return requireLink(id).write(w.variable, w.value);
     },
 
-    encoderWriteMany: ({ id, entries }) => {
-      const link = requireLink(id);
+    encoderWriteMany: async ({ id, entries }) => {
       if (!Array.isArray(entries) || !entries.length) fail('EINVAL', 'Nothing to write');
-      // Rate limiting and the flash-commit window live in EncoderLink, so every
-      // transport shares one budget for the device's ~100,000 write cycles.
-      return link.writeMany(entries.map((e) => checkVarWrite(e.variable, e.value)));
+      const checked = entries.map((e) => checkVarWrite(e.variable, e.value));
+      const link = manager.get(checkId(id));
+
+      // Rate limiting is shared between both paths, so the device's ~100,000
+      // write cycles are counted once however they are spent.
+      const results = (link && link.running)
+        ? await link.writeMany(checked)
+        : await writeOffline(id, checked);
+
+      await adoptNewAddress(id, results);
+      return results;
     },
 
     encoderPreset: ({ id, value, force }) => {

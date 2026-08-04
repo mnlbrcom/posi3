@@ -284,7 +284,8 @@ async function scanSubnet(opts) {
  * @returns {Promise<Object<string, {ok: boolean, value?: string, error?: string}>>}
  */
 function readVariablesOnce(host, names, { port = ENCODER_PORT, localAddress = null,
-  connectTimeoutMs = 2000, perReadMs = 1200 } = {}) {
+  connectTimeoutMs = 2000, perReadMs = 1200, onLog = null } = {}) {
+  const log = onLog || (() => {});
   return new Promise((resolve, reject) => {
     const out = {};
     let queue = names.slice();
@@ -315,14 +316,21 @@ function readVariablesOnce(host, names, { port = ENCODER_PORT, localAddress = nu
         out[current] = { ok: false, error: 'no answer' };
         next();
       }, perReadMs);
+      log('info', 'tx', `read ${current}`);
       try { socket.write(`read ${current}\r\n`); } catch (e) { finish(e); }
     };
 
     timer = setTimeout(() => finish(Object.assign(new Error(
       `${host}:${port} did not answer`), { code: 'EUNREACHABLE' })), connectTimeoutMs);
 
-    socket.on('error', (err) => finish(Object.assign(err, { code: err.code || 'EUNREACHABLE' })));
-    socket.on('connect', next);
+    socket.on('error', (err) => {
+      log('error', 'tx', `${host}:${port} — ${err.message}`);
+      finish(Object.assign(err, { code: err.code || 'EUNREACHABLE' }));
+    });
+    socket.on('connect', () => {
+      log('info', 'tx', `opened a one-shot session to ${host}:${port} (connection is stopped)`);
+      next();
+    });
     socket.on('data', (chunk) => {
       buf += chunk.toString('latin1');
       let i;
@@ -332,8 +340,140 @@ function readVariablesOnce(host, names, { port = ENCODER_PORT, localAddress = nu
         if (!current || !line) continue;
         // `Var=Value`, or the encoder's refusal for a variable it does not know.
         const m = new RegExp(`^${current}\\s*=\\s*(.*)$`, 'i').exec(line);
-        if (m) { out[current] = { ok: true, value: m[1].trim() }; next(); continue; }
-        if (/^ERROR/i.test(line)) { out[current] = { ok: false, error: line }; next(); }
+        if (m) {
+          out[current] = { ok: true, value: m[1].trim() };
+          log('info', 'rx', `${current}=${m[1].trim()}`);
+          next();
+          continue;
+        }
+        if (/^ERROR/i.test(line)) {
+          out[current] = { ok: false, error: line };
+          log('error', 'rx', line);
+          next();
+        }
+      }
+      if (buf.length > 8192) buf = buf.slice(-8192);
+    });
+  });
+}
+
+/**
+ * Write variables to an encoder that is not connected.
+ *
+ * Shaped by one fact about the device: it acknowledges a `set` immediately with
+ * `<Variable>=<Value>`, and only *commits to flash* some seconds later,
+ * announcing `Parameters successfully written!` to every client. A socket that
+ * closed when the write returned would miss that, and the operator would be
+ * told the status was unknown for a write that had in fact succeeded — so the
+ * session is held open until the commit arrives or the wait runs out.
+ *
+ * The acknowledgement is matched by *value*, not just by name: a refusal looks
+ * identical apart from carrying the old value back.
+ *
+ * @returns {Promise<{results: Array, committed: boolean}>}
+ */
+function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress = null,
+  connectTimeoutMs = 2000, perWriteMs = 2000, commitMs = 30000, onLog = null } = {}) {
+  const log = onLog || (() => {});
+  const fold = (v) => String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
+
+  return new Promise((resolve, reject) => {
+    const results = [];
+    const queue = entries.slice();
+    let current = null;
+    let usedBare = false;
+    let buf = '';
+    let timer = null;
+    let settled = false;
+    let committed = false;
+
+    const opts = { host, port };
+    if (localAddress) opts.localAddress = localAddress;
+    const socket = net.connect(opts);
+    socket.setNoDelay(true);
+
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.removeAllListeners();
+      socket.destroy();
+      if (err) reject(err); else resolve({ results, committed });
+    };
+
+    /** Nothing left to write: wait for the flash commit, then let go. */
+    const awaitCommit = () => {
+      clearTimeout(timer);
+      current = null;
+      if (!results.some((r) => r.ok)) return finish(null);
+      log('info', 'tx', 'waiting for the encoder to confirm the flash write…');
+      timer = setTimeout(() => finish(null), commitMs);
+    };
+
+    const send = (line) => { log('info', 'tx', line); socket.write(`${line}\r\n`); };
+
+    const next = () => {
+      clearTimeout(timer);
+      if (!queue.length) return awaitCommit();
+      current = queue.shift();
+      usedBare = false;
+      timer = setTimeout(() => {
+        results.push({ variable: current.variable, value: current.value, ok: false, error: 'no answer' });
+        next();
+      }, perWriteMs);
+      send(`set ${current.variable}=${current.value}`);
+    };
+
+    timer = setTimeout(() => finish(Object.assign(new Error(
+      `${host}:${port} did not answer`), { code: 'EUNREACHABLE' })), connectTimeoutMs);
+
+    socket.on('error', (err) => {
+      log('error', 'tx', `${host}:${port} — ${err.message}`);
+      finish(Object.assign(err, { code: err.code || 'EUNREACHABLE' }));
+    });
+    socket.on('connect', () => {
+      log('info', 'tx', `opened a one-shot session to ${host}:${port} (connection is stopped)`);
+      next();
+    });
+    socket.on('data', (chunk) => {
+      buf += chunk.toString('latin1');
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).replace(/\r$/, '').trim();
+        buf = buf.slice(i + 1);
+        if (!line) continue;
+
+        if (/^parameters\s+successfully\s+written/i.test(line)) {
+          log('info', 'rx', 'Parameters successfully written!');
+          committed = true;
+          if (!current) return finish(null);
+          continue;
+        }
+        if (!current) continue;
+
+        const m = new RegExp(`^${current.variable}\\s*=\\s*(.*)$`, 'i').exec(line);
+        if (m) {
+          const got = m[1].trim();
+          log('info', 'rx', `${current.variable}=${got}`);
+          const ok = fold(got) === fold(current.value);
+          results.push(ok
+            ? { variable: current.variable, value: current.value, ok: true }
+            : { variable: current.variable, value: current.value, ok: false,
+              error: `refused — the encoder still reports ${got}` });
+          next();
+          continue;
+        }
+        if (/^ERROR/i.test(line)) {
+          log('error', 'rx', line);
+          // The bare dialect is tried once, exactly as the live link does.
+          if (!usedBare) {
+            usedBare = true;
+            send(`${current.variable}=${current.value}`);
+            continue;
+          }
+          results.push({ variable: current.variable, value: current.value, ok: false, error: line });
+          next();
+        }
       }
       if (buf.length > 8192) buf = buf.slice(-8192);
     });
@@ -341,6 +481,6 @@ function readVariablesOnce(host, names, { port = ENCODER_PORT, localAddress = nu
 }
 
 module.exports = {
-  scanSubnet, scannableInterfaces, probe, readVariablesOnce, hostsInSubnet, subnetSize, maskBits,
+  scanSubnet, scannableInterfaces, probe, readVariablesOnce, writeVariablesOnce, hostsInSubnet, subnetSize, maskBits,
   ipToInt, intToIp, normaliseMac, arpNeighbours, ENCODER_PORT, MAX_HOSTS, ENCODER_OUIS
 };
