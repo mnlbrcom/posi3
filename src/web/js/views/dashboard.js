@@ -199,11 +199,6 @@ function buildCard(conn) {
   const travel = new TravelBar();
   const spark = sparkline();
   const basis = readingBasis();
-  // Firmware builds differ in ways that matter — this one refuses the manual's
-  // spelling of OutputMode — so the version belongs where the encoder is named,
-  // not buried in a config screen.
-  const versionTag = el('span', { class: 'fw-tag', text: '' });
-  let lastVersion = null;
 
   const destPills = el('span', { class: 'dest-pills' });
   let lastHealth = '';
@@ -234,23 +229,26 @@ function buildCard(conn) {
 
   const node = el('div', { class: 'card encoder-card' },
     el('div', { class: 'card-head' },
-      el('button', {
-        class: 'card-name', text: conn.name,
-        title: 'Open the controls for this connection',
-        onclick: () => openControls(conn)
+      // The encoder's name, its address and its state are one fact and read as
+      // one: which device, where, and what it is doing.
+      el('span', { class: 'card-name', text: conn.name }),
+      el('span', {
+        class: 'card-addr',
+        text: `${conn.encoder.host}:${conn.encoder.port}`,
+        title: conn.encoder.pendingHost
+          ? `${conn.encoder.pendingHost} is stored on the encoder and takes effect after a power cycle`
+          : undefined
       }),
       pillHolder,
       // One per destination, beside the encoder's own state. A fan-out has
       // several places the data has to arrive, and "the encoder is streaming"
       // says nothing about whether any of them received it.
       destPills,
-      versionTag,
       // Same class as Start All / Stop All: these are the same kind of thing,
       // and a smaller ghost button read as a link rather than an action.
       el('div', { class: 'card-actions' },
         el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
         el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) }))),
-    el('div', { class: 'card-target', title: targetTitle(conn) }, targetLine(conn)),
     detail,
     el('div', { class: 'encoder-cols' },
       el('div', { class: 'encoder-pane encoder-dial' },
@@ -302,26 +300,28 @@ function buildCard(conn) {
         lastHealth = key;
         clear(destPills);
         for (const d of dests) {
-          const where = d.name || `${d.host}:${d.port}`;
+          // The address, always — a destination's name is the operator's word
+          // for it, and what identifies the machine that is or is not receiving
+          // is where the packets are going.
+          const where = `${d.host}:${d.port}`;
           const p = pill(d.health);
           p.classList.add('dest-pill');
-          p.title = `${where} · id ${d.devid}` +
+          p.title = `${d.name ? `${d.name} · ` : ''}${where} · id ${d.devid}` +
             (d.health === 'refused'
               ? ' — the machine is reachable but nothing is listening on that port, so disguise is probably not running'
               : d.health === 'offline'
                 ? ' — no answer from the machine at all'
                 : '');
           // The state alone is meaningless with several destinations; say which.
-          p.insertBefore(el('span', { class: 'dest-pill-name', text: where }), p.lastChild);
+          // The device id rides along because it is what disguise matches on,
+          // and this pill is now the only place the destination is described.
+          p.insertBefore(
+            el('span', { class: 'dest-pill-name', text: `${where} · id ${d.devid}` }),
+            p.lastChild);
           destPills.appendChild(p);
         }
       }
 
-      if (t && t.version !== lastVersion) {
-        lastVersion = t.version;
-        setText(versionTag, t.version ? `fw ${t.version}` : '');
-        versionTag.title = t.version ? `Encoder firmware version ${t.version}` : '';
-      }
 
       const detailText = s && s.detail && state !== 'streaming' ? s.detail : '';
       if (detailText !== lastDetailText) {
@@ -482,27 +482,6 @@ function readouts(rows) {
     node.appendChild(cells[key]);
   }
   return { node, cells };
-}
-
-/** "encoder → first destination (+N more)". Full list on hover. */
-function destsOf(conn) {
-  return (conn.destinations && conn.destinations.length ? conn.destinations : [conn.d3])
-    .filter(Boolean);
-}
-
-function targetLine(conn) {
-  const on = destsOf(conn).filter((d) => d.enabled !== false);
-  const first = on[0];
-  const extra = on.length - 1;
-  if (!first) return `${conn.encoder.host}:${conn.encoder.port} → nowhere`;
-  return `${conn.encoder.host}:${conn.encoder.port} → ${first.host}:${first.port}` +
-    ` · id ${first.devid}${extra > 0 ? `  +${extra} more` : ''}`;
-}
-
-function targetTitle(conn) {
-  return destsOf(conn)
-    .map((d) => `${d.host}:${d.port} · id ${d.devid}${d.enabled === false ? ' (disabled)' : ''}`)
-    .join('\n');
 }
 
 /**
