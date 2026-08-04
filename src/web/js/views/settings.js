@@ -41,7 +41,7 @@ export function renderSettings(root) {
   view.appendChild(panel('Profile', [
     el('div', { class: 'row-inline' },
       el('button', {
-        class: 'btn', text: 'Export profile…',
+        class: 'btn', text: 'Export Profile',
         onclick: async () => {
           try {
             const r = await window.d3d.config.exportFile();
@@ -52,7 +52,7 @@ export function renderSettings(root) {
         }
       }),
       el('button', {
-        class: 'btn', text: 'Import profile…',
+        class: 'btn', text: 'Import Profile',
         onclick: async () => {
           try {
             const r = await window.d3d.config.importFile();

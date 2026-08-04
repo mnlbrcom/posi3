@@ -2956,3 +2956,32 @@ were never lost — they are in the ring buffer that Export reads.
 The log's controls moved into the page header card, as on every other screen.
 
 **199 tests pass.**
+
+---
+
+## 2026-08-04 — The dropped-lines note, and an ellipsis that promised a dialog
+
+> "whats that text? 36 lines dropped (rate limited)" / "it ended up next to the button below the
+> header area" / "nothing should print there, either its a banner notification or it goes in the
+> log" / "also move all button into the log header and not below, following our conistent layout on
+> all other pages." / "also remove the "..." from Export button. Looks stupid."
+
+The note is gone from beside the buttons. A gap in the log is now **a line in the log** — where it is
+read, and where Export preserves it, which the note never was. Verified: the log header ends at
+Export with nothing after it, and the view holds no reference to `dropped` at all.
+
+`test/log-sources.test.js` owns this now — a two-encoder config sweep arrives complete (56 of 56), a
+cap that does bite is announced once as an `app` warning on the following tick and never talks about
+itself again, the ring buffer keeps every line Export reads, and a link state change is marked `app`
+rather than claiming to come off the wire. Verified by restoring the old cap of 25 and by removing
+the notice, each of which fails it.
+
+The log's controls sit in the page header card, matching every other screen.
+
+**The ellipsis is gone from Export.** It is the convention for "this opens a dialog", and since these
+became Blob downloads there is no dialog — the promise was false. `Export Profile` and `Import
+Profile` in Settings said the same thing and were corrected with it. `Delete connection…` in
+`detail.js` keeps its ellipsis: it does open a confirmation. That file is **imported by nothing** —
+noted, not touched.
+
+**204 tests pass.**

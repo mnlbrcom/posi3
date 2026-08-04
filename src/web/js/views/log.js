@@ -55,7 +55,7 @@ export function renderLog(root) {
     pauseBtn,
     el('button', { class: 'btn', text: 'Clear', onclick: () => { buffer = []; repaint(); } }),
     el('button', {
-      class: 'btn', text: 'Export…',
+      class: 'btn', text: 'Export',
       onclick: async () => {
         try {
           const r = await window.d3d.log.export();
