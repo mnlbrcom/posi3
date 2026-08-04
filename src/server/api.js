@@ -112,9 +112,9 @@ function createApi(ctx) {
    * stopped. Moving around the UI is not an event — nothing happened to the
    * show — and none of it reaches this layer anyway.
    */
-  const userLog = (id, text, level = 'info') =>
+  const userLog = (id, text, level = 'info', name = null) =>
     manager.logger.push({
-      id: id || null, name: nameOf(id), level, dir: 'user', text, ts: Date.now()
+      id: id || null, name: name || nameOf(id), level, dir: 'user', text, ts: Date.now()
     });
 
   /**
@@ -406,8 +406,12 @@ function createApi(ctx) {
       manager.remove(key);
       const ok = store.deleteConnection(key);
       if (ok && gone) {
-        userLog(null, `deleted connection "${gone.name}" — was encoder ` +
-          `${gone.encoder.host}:${gone.encoder.port}`);
+        // Named explicitly: the connection is already out of the store, so
+        // nameOf() cannot find it — and this is the line whose name matters
+        // most, being the last one that connection will ever have.
+        userLog(key, `deleted — was encoder ${gone.encoder.host}:${gone.encoder.port}` +
+          `, to ${gone.destinations.map((d) => `${d.host}:${d.port} id ${d.devid}`).join(', ')}`,
+        'warn', gone.name);
       }
       return announce(ok);
     },
@@ -465,6 +469,10 @@ function createApi(ctx) {
 
     linkStop: ({ id }) => {
       const key = checkId(id);
+      // Checked before it is logged, so the record never claims a stop that
+      // could not happen; logged before it is done, so the log reads as cause
+      // then effect — the operator pressed Stop, and here is what followed.
+      if (!manager.has(key)) fail('ENOENT', 'No such connection');
       userLog(key, 'stop');
       return manager.stop(key).snapshot();
     },

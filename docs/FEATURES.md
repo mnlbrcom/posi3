@@ -2981,8 +2981,11 @@ The log's controls sit in the page header card, matching every other screen.
 **The ellipsis is gone from Export.** It is the convention for "this opens a dialog", and since these
 became Blob downloads there is no dialog — the promise was false. `Export Profile` and `Import
 Profile` in Settings said the same thing and were corrected with it. `Delete connection…` in
-`detail.js` keeps its ellipsis: it does open a confirmation. That file is **imported by nothing** —
-noted, not touched.
+`detail.js` keeps its ellipsis: it does open a confirmation.
+
+*(Corrected below: `detail.js` is not dead. It exports `openControls`, which both `connections.js`
+and `dashboard.js` import — it is the Controls popup. The grep that said otherwise searched for
+`views/detail` and the imports read `./detail.js`.)*
 
 **204 tests pass.**
 
@@ -3112,3 +3115,38 @@ Export follows, with the direction padded into a column of its own:
     2026-08-04T20:53:15.067Z [info] app  Revolve firmware 4.50
 
 **207 tests pass.**
+
+---
+
+## 2026-08-04 — Delete and stop, and a line written before the thing happened
+
+> "we delete connections under control, thats an action that should 100% log" / "same with stoping a
+> connection"
+
+Both already logged. Two things were wrong with how.
+
+**A deleted connection lost its name.** The line was written with no id, so the source column was
+blank while every other line named its connection — and the name only survived inside the sentence.
+It is named explicitly now, because by the time the line is written the connection is out of the
+store and cannot be looked up. That is the one line whose name matters most: the last that connection
+will ever have. It carries where it was sending, too, and is a `warn` — deleting is not routine.
+
+    user  Trap Lift   deleted — was encoder 10.10.10.99:6000, to 127.0.0.1:6000 id 9
+
+**`linkStop` logged before it checked.** A connection the manager had never heard of produced a
+`stop` in the record and then an error to the caller — an action written down as having happened when
+it could not. It is checked, then logged, then done: never a false record, and still cause before
+effect, so the log reads as the operator pressing Stop and the link responding.
+
+Four tests cover the operator's actions against a real store and manager rather than a stub: start
+and stop are logged and named, a stop that cannot happen logs nothing, a delete keeps its name, and
+an edit records both values.
+
+### Correction
+
+An earlier entry called `detail.js` dead code, twice. **It is not.** It exports `openControls`, which
+`connections.js` and `dashboard.js` both import — it is the Controls popup, and the only place a
+connection can be deleted from. The grep that said otherwise searched for `views/detail` while the
+imports read `./detail.js`.
+
+**211 tests pass.**
