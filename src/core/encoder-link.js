@@ -28,6 +28,7 @@ const { EventEmitter } = require('node:events');
 
 const { LineAssembler } = require('./line-assembler');
 const { CommandQueue, matchVariable, matchSample } = require('./command-queue');
+const flashBudget = require('./flash-budget');
 const {
   KIND, Parser, parseOutputMode, writePacket, MAX_PACKET_BYTES,
   wrapDelta, angleDeg, revolution, stepsPerSecToRpm
@@ -159,7 +160,6 @@ class EncoderLink extends EventEmitter {
     // transport would have got its own uncoordinated limit, or none at all.
     // The encoder's flash is rated ~100,000 writes; the policy belongs to the
     // device, so it lives with the device.
-    this._lastWriteBatchMs = -Infinity;
     this._flashPending = null; // { sinceMs, timer }
 
     /** Which `set` syntax this encoder answered to. See write(). */
@@ -1041,18 +1041,9 @@ class EncoderLink extends EventEmitter {
    * batch was too recent, so an impatient double-click cannot cost two cycles.
    */
   beginWriteBatch() {
-    const now = Date.now();
-    const since = now - this._lastWriteBatchMs;
-    if (since < TIMEOUTS.WRITE_RATE_LIMIT_MS) {
-      const wait = Math.ceil((TIMEOUTS.WRITE_RATE_LIMIT_MS - since) / 1000);
-      const err = new Error(
-        `Please wait ${wait}s before writing to the encoder again (each write uses a flash cycle)`
-      );
-      err.code = 'ERATELIMIT';
-      err.retryAfterMs = TIMEOUTS.WRITE_RATE_LIMIT_MS - since;
-      throw err;
-    }
-    this._lastWriteBatchMs = now;
+    // Shared with the one-shot writer used when this connection is stopped, so
+    // the device's ~100,000 cycles are counted once however they are spent.
+    flashBudget.claim(this.id);
   }
 
   /** Write several variables in one rate-limited batch. Never throws per entry. */

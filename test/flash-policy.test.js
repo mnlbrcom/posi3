@@ -15,6 +15,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 
 const { EncoderLink } = require('../src/core/encoder-link');
+const flashBudget = require('../src/core/flash-budget');
 const { TIMEOUTS } = require('../src/shared/constants');
 
 /**
@@ -24,6 +25,12 @@ const { TIMEOUTS } = require('../src/shared/constants');
  * responder answers asynchronously, as the real device does.
  */
 function fakeLink(vars = {}, dialect = 'both') {
+  // The flash budget is shared per connection id and outlives any one link
+  // object — which is what makes it correct in production, where a link is
+  // rebuilt on every reconfigure and must not get a fresh allowance for it.
+  // Here it means each test has to start from a clean one.
+  flashBudget.forget('test');
+
   const link = new EncoderLink({
     id: 'test',
     name: 'test',
