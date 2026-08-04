@@ -2773,3 +2773,40 @@ removed, verified by removing each half in turn.
 
 **196 tests pass**, and every view is clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and
 expanded.
+
+---
+
+## 2026-08-04 — Each name carries its own address
+
+> "dashboard tiles changes, make the name non clickable, we dont need a link here to controls,
+> already have the button. Connect the ip to each name and status indicator. Status indicator for
+> disguise should be receiving not sending. remove the firmeware from the dashbaord."
+
+**The name is a label again.** It was a button opening the controls, duplicating the Controls button
+two inches to its right. `.card-name` keeps the typography; only `button.card-name` gets the pointer
+and the hover underline, so a name that does nothing no longer promises a click. Connections still
+has a clickable name and was left alone.
+
+**Every name now sits with its address.** The encoder's, beside its own pill; each destination's, on
+the pill that reports it. A card with two destinations reads:
+
+    Revolve  10.10.10.10:6000  [streaming]   [10.10.10.5:6000 · id 1  receiving]
+
+**`sending` became `receiving`,** renamed in `destinationHealth` rather than translated in the view,
+so the word means the same thing from the core to the screen. It also now reads consistently with
+the pill beside it: one says a device is streaming, the other that a machine is receiving.
+
+**The firmware tag is gone from the dashboard.** It remains available per encoder in the config
+screen.
+
+### What was removed with it
+
+The `card-target` line — `10.10.10.10:6000 → 10.10.10.5:6000 · id 1  +1 more` — said nothing the
+header did not now say, except the disguise device id, which moved onto the pill. Keeping it would
+have printed every address on the card twice. `targetLine`, `targetTitle` and `destsOf` had no other
+callers and went with it, as did the `.fw-tag` and `.card-target` rules.
+
+**196 tests pass**, dashboard clean at 1440 / 900 / 390.
+
+**The pill wording needs the server restarted** — `destinationHealth` runs in the bridge process, so
+a running instance keeps saying `sending` until it is restarted.

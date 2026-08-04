@@ -1320,7 +1320,10 @@ function sameValue(a, b) {
 /**
  * What to tell the operator about one destination.
  *
- *   sending   packets are leaving and nothing has objected
+ *   receiving  packets are arriving there and nothing has objected. Named for
+ *              what the destination is doing, so it reads the same way as the
+ *              encoder's own pill beside it: one says a device is streaming,
+ *              the other that a machine is receiving
  *   refused   the machine answered ICMP port-unreachable — it is on the
  *             network, but nothing is bound to that port. For disguise that
  *             means Designer is closed, or the Navigator driver has not been
@@ -1334,7 +1337,7 @@ function sameValue(a, b) {
  */
 function destinationHealth(sink, running) {
   if (!running) return 'idle';
-  if (!sink.offline) return 'sending';
+  if (!sink.offline) return 'receiving';
   return sink.lastErrorCode === 'ECONNREFUSED' ? 'refused' : 'offline';
 }
 

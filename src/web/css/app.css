@@ -412,7 +412,7 @@ button.btn.sm { padding: 4px 9px; font-size: var(--fs-label); }
 .pill.error        { color: var(--err-text); background: var(--err-wash); }
 .pill.stopping     { color: var(--text-faint); }
 /* Destination health, shown per endpoint beside the encoder's own state. */
-.pill.sending      { color: var(--ok-text); background: var(--ok-wash); }
+.pill.receiving    { color: var(--ok-text); background: var(--ok-wash); }
 .pill.refused      { color: var(--warn); background: var(--warn-wash); }
 .pill.offline      { color: var(--err-text); background: var(--err-wash); }
 .pill.connecting .dot,
@@ -750,10 +750,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .dest-pill { min-width: 0; padding: 2px 8px; font-size: var(--fs-label); }
 .dest-pill-name { color: var(--text-dim); margin-right: 5px; }
 
-.fw-tag {
-  flex: 0 0 auto; font-size: var(--fs-label); color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
 /* `margin-left: auto` puts the group at the right of whatever line it lands on,
    and `justify-content: flex-end` keeps its own buttons right-aligned if the
    group itself has to wrap. A spacer element cannot do this: it only pushes on
@@ -762,13 +758,24 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   margin-left: auto; display: flex; align-items: center; gap: 8px;
   flex-wrap: wrap; justify-content: flex-end;
 }
+/* A name is a label. Only where it is genuinely a button does it get the
+   affordances — a span with `cursor: pointer` and a hover underline promises a
+   click that does not happen. */
 .card-name {
   font: inherit; font-weight: 600; font-size: var(--fs-head);
-  background: none; border: none; padding: 0; cursor: pointer;
+  background: none; border: none; padding: 0;
   color: var(--text); text-align: left;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.card-name:hover { color: var(--accent-text); text-decoration: underline; }
+button.card-name { cursor: pointer; }
+button.card-name:hover { color: var(--accent-text); text-decoration: underline; }
+
+/* The encoder's address, set with its name: which device and where are one
+   fact. Quieter than the name so the name still leads. */
+.card-addr {
+  flex: 0 0 auto; font-size: var(--fs-label); color: var(--text-faint);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 .card-head .pill-holder { margin-left: auto; flex: 0 0 auto; }
 .encoder-card .card-head .pill-holder { margin-left: 0; }
 .encoder-card .card { padding: 14px 16px 12px; }
@@ -778,10 +785,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   letter-spacing: .06em;
 }
 
-.card-target {
-  font-size: var(--fs-label); color: var(--text-faint); font-variant-numeric: tabular-nums;
-  margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 .card-detail {
   font-size: var(--fs-label); color: var(--text-dim); min-height: 15px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
