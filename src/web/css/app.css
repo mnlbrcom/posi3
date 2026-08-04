@@ -572,22 +572,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   color: var(--text-faint); font-weight: 700;
   padding: 14px 10px 6px !important;
 }
-.danger-zone { border: 1px solid #5e2626; border-radius: var(--radius); margin-top: 14px; }
-.danger-zone > summary {
-  padding: 9px 12px; cursor: pointer; color: var(--err-text);
-  font-weight: 600; font-size: var(--fs-body); list-style: none;
-}
-.danger-zone > summary::-webkit-details-marker { display: none; }
-.danger-zone > summary::before { content: '\25B8  '; }
-.danger-zone[open] > summary::before { content: '\25BE  '; }
-.danger-zone .dz-body {
-  padding: 0 12px 12px;
-  /* This holds a .vartable, which has a min-width. Without its own scroll
-     container the table pushed straight through .content — the danger zone is
-     not inside a .panel, so nothing else was going to contain it. */
-  overflow-x: auto;
-}
-
 /* --------------------------------------------------------------- d3 fields */
 
 .d3card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -903,6 +887,10 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .cfg-group[open] > summary::before { transform: rotate(90deg); }
 .cfg-group > summary:hover { color: var(--text); }
 .cfg-group .cfg-body { padding-bottom: 10px; overflow-x: auto; }
+/* Marked by colour alone. The box it used to sit in was a leftover from the
+   standalone danger zone this replaced, and a red frame around one collapsed
+   row read as an error rather than a caution — the group is shut and labelled,
+   which is the warning. */
 .cfg-group.danger-zone > summary { color: var(--warn); }
 
 /* Connection cards.
