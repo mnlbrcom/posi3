@@ -203,8 +203,7 @@ if (!window.d3d) {
       write: (id, variable, value) => call('encoderWrite', { id, variable, value }),
       writeMany: (id, entries) => call('encoderWriteMany', { id, entries }),
       preset: (id, value, force) => call('encoderPreset', { id, value, force }),
-      run: (id) => call('encoderRun', { id }),
-      raw: (id, line) => call('encoderRaw', { id, line })
+      run: (id) => call('encoderRun', { id })
     },
 
     mapping: {

@@ -236,13 +236,6 @@ function createApi(ctx) {
 
     encoderRun: ({ id }) => requireLink(id).run(),
 
-    // Deliberately only line-break-checked: this exists to send what the
-    // variable table does not cover, so validating it against the table would
-    // defeat its purpose. It is the one route that reaches the device with an
-    // arbitrary command, which is why it is not reachable without the token
-    // when bound off localhost.
-    encoderRaw: ({ id, line }) => requireLink(id).raw(checkValue(line)),
-
     // -- log ----------------------------------------------------------------
 
     logTail: (opts) => manager.logger.tail(opts || {}),

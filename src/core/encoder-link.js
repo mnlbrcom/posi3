@@ -1073,15 +1073,6 @@ class EncoderLink extends EventEmitter {
     });
   }
 
-  raw(line) {
-    assertSafeValue(line);
-    return this._commands.submit(line, {
-      match: (r) => r.kind === KIND.REPLY || r.kind === KIND.STATUS,
-      timeoutMs: TIMEOUTS.READ_MS,
-      label: line
-    });
-  }
-
   // -------------------------------------------------------------------------
   // Reporting
   // -------------------------------------------------------------------------
