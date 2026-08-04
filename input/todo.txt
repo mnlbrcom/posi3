@@ -12,6 +12,7 @@ OPEN
 - Pop Layouts optimieren
 - Dashboard stats rethink
 - App and Web have different min width
+- HZ back to one sec 
 Nn
 
 

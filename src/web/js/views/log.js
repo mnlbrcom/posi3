@@ -13,8 +13,23 @@ import { store } from '../store.js';
 const MAX_RENDERED = 2000;
 
 let buffer = [];
-let paused = false;
+/**
+ * The line the window is frozen at, or null when it is live.
+ *
+ * Pause is a point in the stream, not a flag consulted at paint time. The view
+ * rebuilds itself for reasons of its own — a link changing state re-renders the
+ * whole screen — and every rebuild ends in a repaint, so a boolean checked only
+ * by the live loop let new lines through the moment anything else happened.
+ *
+ * Held as a sequence number rather than a length because the buffer is trimmed
+ * from the front, which would slide an index onto the wrong line.
+ */
+let pausedAtSeq = null;
 let filters = { id: '', level: '', dir: '' };
+
+/** Per client, deliberately: one operator freezing their window to read it must
+ *  not freeze anyone else's. This is view state in one page, and never leaves it. */
+const isPaused = () => pausedAtSeq !== null;
 
 /**
  * Called from app.js for every batch, regardless of which view is showing.
@@ -40,8 +55,14 @@ export function renderLog(root) {
     store.connections.map((c) => ({ value: c.id, label: c.name })));
 
   const pauseBtn = el('button', {
-    class: 'btn', text: paused ? 'Resume' : 'Pause',
-    onclick: (e) => { paused = !paused; e.target.textContent = paused ? 'Resume' : 'Pause'; }
+    class: 'btn', text: isPaused() ? 'Resume' : 'Pause',
+    onclick: (e) => {
+      // Freeze at the newest line held, so everything after it is what Resume
+      // reveals — including whatever arrived while another client was working.
+      pausedAtSeq = isPaused() ? null : (buffer.length ? buffer[buffer.length - 1].seq : 0);
+      e.target.textContent = isPaused() ? 'Resume' : 'Pause';
+      repaint();
+    }
   });
 
   const controls = [
@@ -86,6 +107,9 @@ export function renderLog(root) {
 
   function visible() {
     return buffer.filter((l) =>
+      // Everything up to the freeze point, whoever caused it and whenever this
+      // happens to be called. Anything after it is what Resume reveals.
+      (pausedAtSeq === null || l.seq <= pausedAtSeq) &&
       (!filters.id || l.id === filters.id) &&
       (!filters.level || l.level === filters.level) &&
       (!filters.dir || l.dir === filters.dir));
@@ -127,7 +151,7 @@ export function renderLog(root) {
 
   return {
     refreshLive() {
-      if (paused || buffer.length === lastCount) return;
+      if (isPaused() || buffer.length === lastCount) return;
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
       repaint();
       if (!atBottom) box.scrollTop = box.scrollHeight - box.clientHeight - 41;

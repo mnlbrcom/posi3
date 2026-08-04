@@ -3220,3 +3220,36 @@ The 2,000-line render cap still applies, so a very long pause loses the oldest l
 The server's ring buffer holds 5,000 and Export reads that.
 
 **215 tests pass.**
+
+---
+
+## 2026-08-05 — Pause, with another client working
+
+> "i click stop on my client, Another client on the webinterface does stuff, I click resume on my
+> client, nothing shows up. Only when i cmd+r" / "i want that every client can control der own log,
+> but it needs to catch up properly after resume"
+
+Two defects, found in that order.
+
+**The first was mine from an hour earlier**: the running app still served the JS from before the
+Pause fix, because that landed after the last restart. Restarting was half the answer.
+
+**The second was real, and the reverse of the reported symptom.** Pause had become a boolean the live
+loop consulted — but the view re-renders for reasons of its own, and a link changing state
+re-renders the whole screen. Every rebuild ends in a repaint, so the moment another client started or
+stopped anything, new lines appeared *through* the pause. Measured: 47 lines, paused, another client
+ran stop-all and start-all — the window grew to 50 while it was supposed to be frozen.
+
+**Pause is now a point in the stream rather than a flag.** `visible()` bounds what is shown by the
+sequence number of the newest line held when Pause was pressed, so the freeze holds however the
+repaint was reached. A sequence number rather than an index, because the buffer is trimmed from the
+front and an index would slide onto the wrong line.
+
+Measured again, with a separate client stopping and starting every connection during the pause:
+
+    before 81 · while paused 81 · after resume 115
+
+**Pause is per client and stays that way.** It is view state in one page and never leaves it, so one
+operator freezing their window to read something does not freeze anyone else's.
+
+**215 tests pass.**

@@ -259,23 +259,31 @@ test('an idle rig does not hold a timer open for nothing', () => {
   assert.equal(manager._timer, null, 'and it goes back to sleep once delivered');
 });
 
-test('pausing the log window does not stop it recording', () => {
-  // The view is a browser module, so this reads its source: `ingestLog` must
-  // not gate on `paused`. It used to return early there, so lines arriving
-  // during a pause were discarded and Resume showed nothing that had happened —
-  // they reappeared only on a reload, which re-reads the server's ring buffer.
-  // Pausing to read something and losing what arrived meanwhile is the opposite
-  // of what the button is for.
+test('pause freezes the window at a point, and keeps recording past it', () => {
+  // The view is a browser module, so this reads its source. Two defects, found
+  // in that order:
+  //
+  //   1. `ingestLog` returned early while paused, so lines arriving during a
+  //      pause were discarded and Resume showed nothing that had happened.
+  //   2. Pause was then a boolean the live loop consulted — but the view
+  //      re-renders for reasons of its own (a link changing state re-renders
+  //      the screen) and every rebuild ends in a repaint, so new lines appeared
+  //      anyway the moment another client did something.
+  //
+  // The fix for the second is that pause is a point in the stream: `visible()`
+  // decides what is shown, so it holds however the repaint was reached.
   const src = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'log.js'), 'utf8');
 
   const ingest = src.slice(src.indexOf('export function ingestLog'));
-  const body = ingest.slice(0, ingest.indexOf('\n}'));
-  assert.doesNotMatch(body, /\bpaused\b/,
+  assert.doesNotMatch(ingest.slice(0, ingest.indexOf('\n}')), /\bpaused/i,
     'ingestLog must keep recording while the window is paused');
 
-  // And the pause must still freeze the window, which is refreshLive's job.
-  const refresh = src.slice(src.indexOf('refreshLive()'));
-  assert.match(refresh.slice(0, refresh.indexOf('\n    }')), /if \(paused/,
-    'refreshLive is what pause stops');
+  const visible = src.slice(src.indexOf('function visible()'));
+  assert.match(visible.slice(0, visible.indexOf('\n  }')), /pausedAtSeq === null \|\| l\.seq <= pausedAtSeq/,
+    'what is shown must be bounded by the freeze point, not by who called repaint');
+
+  // A sequence number, not an index: the buffer is trimmed from the front.
+  assert.match(src, /pausedAtSeq = isPaused\(\) \? null : \(buffer\.length \? buffer\[buffer\.length - 1\]\.seq : 0\)/,
+    'the freeze point is the newest line held at the moment Pause was pressed');
 });
