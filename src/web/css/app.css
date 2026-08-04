@@ -741,6 +741,11 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   border-radius: var(--radius); padding: 12px 14px 10px;
 }
 .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* Sits with the encoder's name, because it explains its behaviour. */
+.fw-tag {
+  flex: 0 0 auto; font-size: var(--fs-label); color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
 /* `margin-left: auto` puts the group at the right of whatever line it lands on,
    and `justify-content: flex-end` keeps its own buttons right-aligned if the
    group itself has to wrap. A spacer element cannot do this: it only pushes on

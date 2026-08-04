@@ -126,6 +126,7 @@ class EncoderLink extends EventEmitter {
 
     /** Which `set` syntax this encoder answered to. See write(). */
     this._setDialect = null;
+    this._version = null;
   }
 
   // -------------------------------------------------------------------------
@@ -750,6 +751,12 @@ class EncoderLink extends EventEmitter {
       }
 
       await this._readScaling();
+      // Best effort and last: older builds may not know the command, and not
+      // knowing the version must never stop a link from streaming.
+      try {
+        await this.version();
+        this._log('info', 'rx', `firmware ${this._version}`);
+      } catch { /* an encoder that will not say is still an encoder */ }
     } catch (err) {
       this._inferFieldLayout(err.message);
     }
@@ -771,6 +778,28 @@ class EncoderLink extends EventEmitter {
     // has always been fed.
     this._socket.write(line + '\r\n');
     this._log('info', 'tx', line);
+  }
+
+  /**
+   * The encoder's firmware version, e.g. `4.50`.
+   *
+   * `Version` is a bare command, not a variable: `read Version` is not
+   * understood. It is undocumented — found because the encoder's own web page
+   * has a CheckVersion button — and it matters more than a nameplate would,
+   * because behaviour differs between builds. This unit refuses the manual's
+   * `Position_Velocity_Timestamp_` and accepts only its own
+   * `POSITION_VELOCITY_TIMESTAMP`, which is exactly the sort of difference a
+   * version number explains.
+   */
+  async version() {
+    const r = await this._commands.submit('Version', {
+      match: matchVariable('Version'),
+      timeoutMs: TIMEOUTS.READ_MS,
+      label: 'Version'
+    });
+    this._version = r.value;
+    this.emit('encoderMeta', { id: this.id, version: this._version });
+    return this._version;
   }
 
   read(variable) {
@@ -817,6 +846,19 @@ class EncoderLink extends EventEmitter {
           timeoutMs: TIMEOUTS.WRITE_MS,
           label: forms[i]
         });
+        // The encoder answers a refusal the same way it answers a success:
+        // `<Variable>=<Value>`. On refusal the value is the *old* one — "using
+        // previous value" — so matching the variable name alone reads a
+        // rejection as a write. That is what recorded a bare-form success
+        // against an OutputMode the device had just refused, flipped the
+        // remembered dialect, and armed a flash banner for a commit that was
+        // never going to come.
+        if (r && r.value !== undefined && !sameValue(r.value, value)) {
+          const err = new Error(
+            `${variable} was refused: the encoder still reports ${r.value}`);
+          err.code = 'EENCODER';
+          throw err;
+        }
         const dialect = forms[i] === withSet ? 'set' : 'bare';
         if (dialect !== this._setDialect) {
           this._log('info', 'tx', `write dialect for this encoder: "${dialect === 'set' ? 'set Var=Value' : 'Var=Value'}"`);
@@ -1067,6 +1109,7 @@ class EncoderLink extends EventEmitter {
       txTotal: this.counters.tx,
       errors: this.counters.errors,
       commandErrors: this.counters.commandErrors,
+      version: this._version,
       txErrors: this.counters.txErrors,
       wraps: this.counters.wraps,
       reconnects: this.counters.reconnects,
@@ -1154,6 +1197,17 @@ function truncate(s, n = 120) {
  * A value containing CR or LF would become an additional command on the shared
  * TCP channel. Refuse it at the boundary.
  */
+/**
+ * Is the device's echo the value we asked for?
+ *
+ * Case and separators are ignored: the encoder answers `CYCLIC` where the
+ * manual writes `Cyclic`, and that is agreement, not a refusal.
+ */
+function sameValue(a, b) {
+  const fold = (v) => String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
+  return fold(a) === fold(b);
+}
+
 function assertSafeValue(value) {
   const s = String(value);
   if (/[\r\n]/.test(s)) {

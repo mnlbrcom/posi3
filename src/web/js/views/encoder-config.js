@@ -406,15 +406,31 @@ function buildControl(spec, onChange) {
   }
 
   if (spec.type === 'flags') {
-    // OutputMode is a concatenation of tokens, e.g. Position_Velocity_Timestamp_
+    // OutputMode is a concatenation of tokens. The manual writes them as
+    // `Position_Velocity_Timestamp_`; this firmware reports and accepts
+    // `POSITION_VELOCITY` and refuses the manual's form outright — "is not a
+    // valid value for OutputMode. Using previous value."
+    //
+    // Rather than pick a side, write it back the way the device said it. The
+    // style is taken from whatever the last read returned, so a unit that does
+    // use the manual's spelling keeps getting it.
     const state = new Set();
     const wrap = el('div', {});
     const boxes = [];
+    let style = { upper: false, trailing: true };
+
+    const compose = () => {
+      const picked = spec.flags.filter((f) => state.has(f)).map((f) => f.replace(/_$/, ''));
+      if (!picked.length) return '';
+      const joined = picked.join('_') + (style.trailing ? '_' : '');
+      return style.upper ? joined.toUpperCase() : joined;
+    };
+
     for (const flag of spec.flags) {
       const label = flag.replace(/_$/, '');
       const box = checkbox(label, false, (checked) => {
         if (checked) state.add(flag); else state.delete(flag);
-        onChange(spec.flags.filter((f) => state.has(f)).join(''));
+        onChange(compose());
       });
       boxes.push({ flag, input: box.querySelector('input') });
       wrap.appendChild(box);
@@ -422,14 +438,20 @@ function buildControl(spec, onChange) {
     return {
       node: wrap,
       set: (v) => {
+        const raw = String(v || '');
+        if (raw) {
+          style = { upper: raw === raw.toUpperCase() && /[A-Z]/.test(raw), trailing: /_$/.test(raw) };
+        }
         state.clear();
-        const s = String(v || '').toLowerCase();
+        const s = raw.toLowerCase();
         for (const b of boxes) {
           const on = s.includes(b.flag.replace(/_$/, '').toLowerCase());
           b.input.checked = on;
           if (on) state.add(b.flag);
         }
-      }
+      },
+      /** The canonical spelling, for comparing against an edit. */
+      normalise: (v) => String(v).toLowerCase().replace(/[\s_-]/g, '')
     };
   }
 

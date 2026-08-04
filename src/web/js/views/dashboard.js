@@ -17,7 +17,7 @@
  * write when the string is unchanged. A 500 Hz link never triggers a re-render.
  */
 
-import { el, clear, pill, groupDigits, fixed, hz, micros, duration, setText, svgEl } from '../ui.js';
+import { el, clear, pill, groupDigits, fixed, hz, micros, microsToClock, duration, setText, svgEl } from '../ui.js';
 import { store } from '../store.js';
 import { Dial, TravelBar } from '../components/dial.js';
 import { inputSpan } from '../mapping-span.js';
@@ -199,6 +199,11 @@ function buildCard(conn) {
   const travel = new TravelBar();
   const spark = sparkline();
   const basis = readingBasis();
+  // Firmware builds differ in ways that matter — this one refuses the manual's
+  // spelling of OutputMode — so the version belongs where the encoder is named,
+  // not buried in a config screen.
+  const versionTag = el('span', { class: 'fw-tag', text: '' });
+  let lastVersion = null;
 
   // Two columns of figures, deliberately split by the question they answer.
   // "Live values" is what the encoder is doing; "Stream" is whether the bridge
@@ -232,6 +237,7 @@ function buildCard(conn) {
         onclick: () => openControls(conn)
       }),
       pillHolder,
+      versionTag,
       // Same class as Start All / Stop All: these are the same kind of thing,
       // and a smaller ghost button read as a link rather than an action.
       el('div', { class: 'card-actions' },
@@ -280,6 +286,12 @@ function buildCard(conn) {
       // already on the line above — so it is shown only for the states where it
       // carries something the card does not already say: which interface is
       // being tried, how long until the next retry, why a connection failed.
+      if (t && t.version !== lastVersion) {
+        lastVersion = t.version;
+        setText(versionTag, t.version ? `fw ${t.version}` : '');
+        versionTag.title = t.version ? `Encoder firmware version ${t.version}` : '';
+      }
+
       const detailText = s && s.detail && state !== 'streaming' ? s.detail : '';
       if (detailText !== lastDetailText) {
         setText(detail, detailText);
@@ -323,7 +335,11 @@ function buildCard(conn) {
       setText(live.cells.rawvel, t.rawVel === null || t.rawVel === undefined
         ? 'not sent' : `${groupDigits(t.rawVel)} steps/s`);
       setText(live.cells.outvel, `${groupDigits(t.outVel)} steps/s`);
-      setText(live.cells.ts, t.ts === null || t.ts === undefined ? '—' : `${groupDigits(t.ts)} µs`);
+      // Shown as time since the encoder powered up; the raw counter is on hover
+      // for anyone correlating against a capture.
+      setText(live.cells.ts, microsToClock(t.ts));
+      live.cells.ts.title = t.ts === null || t.ts === undefined
+        ? '' : `${groupDigits(t.ts)} µs since the encoder started`;
 
       setText(stream.cells.rate, `${hz(t.rxHz || 0)} / ${hz(t.txHz || 0)} Hz`);
       setText(stream.cells.lat,

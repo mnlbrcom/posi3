@@ -2285,3 +2285,73 @@ gives `errors 0, commandErrors 1`, a Faults tile reading **0**, and `1 rejected 
 card. Four faulting connections on a simulated rig produce the counted caption above.
 
 **174 tests pass.**
+
+## 2026-08-04 — OutputMode solved, and the encoder's firmware version
+
+> "you go into listing mode and i will do the changes over the UI" / "it worked" / "can we add a
+> check for each encoders version?" / "the website does it here CheckVersion" / "Convert the raw
+> microsecond value into a standard Hours : Minutes : Seconds . Milliseconds string"
+
+Watching a real attempt with the log capturing everything produced the encoder's own words for the
+first time — the piece missing through the whole investigation:
+
+    "set OutputMode=Position_Velocity_Timestamp_" refused:
+      Position_Velocity_Timestamp_ is not a valid value for OutputMode. Using previous value.
+
+**The manual's spelling is not this firmware's.** The device reports `POSITION_VELOCITY` — upper
+case, no trailing underscore — and refuses anything else. It understood the command perfectly; the
+`ERROR: unknown command` seen earlier was the bare-form *retry*, a red herring throughout.
+
+### The bug that hid it: a refusal that looks like a success
+
+The encoder answers a refusal exactly as it answers a write — `<Variable>=<Value>` — with the
+**old** value. Matching on the variable name alone therefore read a rejection as a completed write:
+
+    tx  OutputMode=Position_Velocity_Timestamp_
+    tx  write dialect for this encoder: "Var=Value"     ← recorded a SUCCESS
+    rx  ERROR: unknown command
+
+That false success is what flipped the remembered dialect to bare — **the same event that silently
+broke a CycleTime write earlier in the session** — and what armed a flash banner for a commit that
+was never coming. A write now counts only if the echoed value matches what was sent, compared
+case- and separator-insensitively so `Cyclic`/`CYCLIC` still agrees.
+
+Two supporting changes: flag values are written in **the spelling the device itself reports**, taken
+from the last read, so a unit using the manual's form still gets it; and `checkVarWrite` no longer
+rewrites a flag value into the canonical spelling, which would have undone that.
+
+**Applied on the rig, by the operator, through the UI:**
+
+    tx  set OutputMode=POSITION_VELOCITY_TIMESTAMP
+    rx  field layout changed on the encoder: POSITION_VELOCITY_TIMESTAMP
+    rx  Parameters successfully written!
+
+and the check that all the timestamp work existed for, now against real hardware:
+
+    pos 215797   rawVel 0   outVel(sent) 0   ts 2392637065   errors 0  unknown 0
+
+A 2.4-billion microsecond counter live on the wire, and **0** in the velocity slot going to
+disguise. `rx == tx`, `reconnects 0`, gap p50 10.12 ms.
+
+### Firmware version
+
+Undocumented: the manual's variable table has no version entry and `read Version` is not
+understood. The operator found the encoder's own web page has a **CheckVersion** button, and the
+applet behind it uses the same TCP channel. The bare command `Version` answers
+`Software Version 4.50` — prose, not `Var=Value`, so it was arriving as an unparsed line and
+**counting as a stream fault**: asking the encoder what it was registered as the data path
+misbehaving.
+
+It is a real reply now, read once on connect (best effort — not knowing must never stop a link
+streaming), and shown beside the encoder's name as `fw 4.50`. That number is worth having where the
+device is named: this build's refusal of the manual's OutputMode spelling is exactly the kind of
+difference a version explains.
+
+### The timestamp as a clock
+
+`2 938 146 297 µs` is ten digits of nothing usable. Shown as **`00:48:58.146`** — time since the
+encoder powered up — with the raw counter on hover for anyone correlating against a capture. The
+hours field is kept rather than dropped because the counter is 32-bit and wraps at
+**01:11:34.967**, which is also why a jump backwards there is the counter and not a fault.
+
+**177 tests pass.**

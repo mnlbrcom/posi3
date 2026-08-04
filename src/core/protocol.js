@@ -73,6 +73,16 @@ const MAX_DIGITS = 15;
 
 const RE_STATUS = /^(ERROR|WARNING)\b[:\s]*(.*)$/i;
 const RE_PARAMS_WRITTEN = /^parameters\s+successfully\s+written\s*!?$/i;
+/**
+ * The answer to the bare `Version` command: `Software Version 4.50`.
+ *
+ * Undocumented — the manual's variable table has no version entry and `read
+ * Version` is not understood. The encoder's own web page has a CheckVersion
+ * button, and the applet behind it sends this on the same TCP channel. Without
+ * a rule here the reply is an unparsed line, which counts as a fault: asking
+ * the encoder what it is would have registered as the data path misbehaving.
+ */
+const RE_VERSION = /^software\s+version\s+(.+)$/i;
 const RE_REPLY = /^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*)$/;
 const RE_ASCII_FIELD = /(POSITION|VELOCITY|TIMESTAMP)\s*=\s*(-?\d+)/gi;
 
@@ -162,7 +172,17 @@ class Parser {
       return r;
     }
 
-    // 3. ERROR: / WARNING:
+    // 3. The version reply, which is prose rather than `Var=Value`. Reported as
+    //    a reply to `Version` so the command queue can match it like any other.
+    const ver = RE_VERSION.exec(line);
+    if (ver) {
+      r.kind = KIND.REPLY;
+      r.variable = 'Version';
+      r.value = ver[1].trim();
+      return r;
+    }
+
+    // 4. ERROR: / WARNING:
     const st = RE_STATUS.exec(line);
     if (st) {
       r.kind = KIND.STATUS;
@@ -171,7 +191,7 @@ class Parser {
       return r;
     }
 
-    // 4. The unsolicited flash-commit broadcast. Never a reply to anything —
+    // 5. The unsolicited flash-commit broadcast. Never a reply to anything —
     //    the encoder sends it to every connected TCP client.
     if (RE_PARAMS_WRITTEN.test(line)) {
       r.kind = KIND.EVENT;
