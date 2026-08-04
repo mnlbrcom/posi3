@@ -219,7 +219,8 @@ function sanitiseConnection(raw) {
 
   if (raw.parser) {
     out.parser = {
-      outputType: String(raw.parser.outputType || 'ASCII_SHORT'),
+      // Unknown stays unknown, as with encoderMeta — this describes the device.
+      outputType: raw.parser.outputType ? String(raw.parser.outputType) : null,
       autoDetect: raw.parser.autoDetect !== false,
       fields: Array.isArray(raw.parser.fields)
         ? raw.parser.fields.filter((f) => f === 0 || f === 1 || f === 2)

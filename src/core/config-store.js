@@ -13,7 +13,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const {
-  COUNTS_PER_REV, TOTAL_COUNTS, DEFAULT_ENCODER_IP, DEFAULT_ENCODER_PORT,
+  DEFAULT_ENCODER_IP, DEFAULT_ENCODER_PORT,
   DEFAULT_D3_PORT, DEFAULT_TELEMETRY_HZ
 } = require('../shared/constants');
 
@@ -69,7 +69,13 @@ function defaultConnection(overrides = {}) {
     velocityPolicy: 'zero',
     udpSendPolicy: 'every',
     maxSendHz: 0,
-    parser: { outputType: 'ASCII_SHORT', fields: null, autoDetect: true },
+    /* `outputType` is null for the same reason as everything in encoderMeta: it
+       describes the device, and until the device says so we do not know it. It
+       said ASCII_SHORT on every new connection whatever the encoder was set to.
+       Nothing reads it — the parser recognises both formats from the line
+       itself — so it is a claim with no purpose; kept as a field only because
+       removing it is a schema change. */
+    parser: { outputType: null, fields: null, autoDetect: true },
     /* Null, not a nameplate figure: before the encoder has answered we do not
        know these, and pretending we do is what made every first read look like
        a change. They are filled in from the device and kept. */
@@ -78,7 +84,13 @@ function defaultConnection(overrides = {}) {
     mapping: {
       mode: 'full',
       minInput: 0,
-      maxInput: TOTAL_COUNTS - 1,
+      /* Only used by mode 'capture', which means "the span the operator
+         recorded" — and nothing has been recorded yet. This held the nameplate
+         33,554,431, a figure belonging to no encoder on this rig: the one
+         reporting 300,000 would have started a capture 111 times too wide. In
+         'full' and 'revolutions' the span is derived from what the device
+         reported, so this value is not consulted at all. */
+      maxInput: 0,
       minOutput: 0,
       maxOutput: 1,
       wrapInput: true,

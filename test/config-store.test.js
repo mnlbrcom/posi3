@@ -35,6 +35,28 @@ test('a fresh directory yields usable defaults', () => {
   assert.equal(s.readOnly, false);
 });
 
+test('a new connection claims nothing about a device it has not spoken to', () => {
+  // Three states, and only three: unknown until the encoder answers, what the
+  // encoder actually said, and what has been programmed but is not in effect
+  // yet. A fourth — a plausible-looking figure nobody measured — is what made
+  // every first read report itself as a change, put a 33,554,431 travel span on
+  // an encoder with 300,000 steps, and claimed ASCII_SHORT on devices that were
+  // never asked.
+  const s = loaded(tmpDir());
+  const c = s.upsertConnection({ name: 'Fresh' });
+
+  for (const key of ['countsPerRev', 'totalCounts', 'cycleTimeMs']) {
+    assert.equal(c.encoderMeta[key], null, `encoderMeta.${key} must start unknown`);
+  }
+  assert.equal(c.parser.outputType, null, 'the output format is the device\'s to state');
+  assert.equal(c.parser.fields, null, 'the field layout is read, never assumed');
+  assert.equal(c.mapping.maxInput, 0, 'no span has been captured yet');
+
+  // And nothing is pretending to be a future value either.
+  assert.equal(c.encoder.pendingHost, undefined,
+    'pendingHost exists only once an address has actually been programmed');
+});
+
 test('a saved profile round-trips', () => {
   const dir = tmpDir();
   const a = loaded(dir);
