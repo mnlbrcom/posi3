@@ -2393,3 +2393,36 @@ The rig is streaming ASCII_SHORT with three fields and **0 unparsed lines**. Nei
 the OutputMode refusal, which was the value spelling and is fixed.
 
 **177 tests pass.**
+
+## 2026-08-04 — Verbose ASCII, tested at last, and why it stays selectable
+
+> "so did we checked if i can change from ascii short to ascii, should this be an option?"
+
+**No, it had never been run.** The parser had a rule for each form and a unit test for each line,
+but nothing had taken the verbose form through the link to a datagram — and the simulator could
+*produce* `POSITION=… VELOCITY=… TIMESTAMP=…` while having no way to be asked for it, exactly the
+gap that let the OutputMode test pass against the wrong mode. `--output-type` now exists alongside
+`--output-mode`.
+
+Run end to end, both forms, three seconds each:
+
+    ASCII_SHORT  600 packets  sample "1:6774,8192;\n"  vel [8192]  unparsed 0  parse p50 64.5µs
+    ASCII        600 packets  sample "1:6691,8192;\n"  vel [8192]  unparsed 0  parse p50 61.1µs
+
+Same packet count, same packet shape, same velocity, no unparsed lines, and no measurable
+difference in parse time — the extra bytes are absorbed by the same hot path.
+
+### It should stay an option, for a reason worth stating
+
+The instinct was that verbose ASCII is harmless but pointless: twice the bytes for the same
+information. That is half wrong. **TCP 6000 accepts several clients**, which is the premise the
+whole fan-out design rests on — a venue may have another system reading the same encoder that needs
+the verbose form. Setting the encoder to ASCII_SHORT for our convenience would break it, and posi3
+copes with either. The setting exists so the encoder can suit somebody else.
+
+BINARY remains listed and unselectable: that one this app genuinely cannot stream.
+
+Two regression tests hold it: verbose ASCII produces correct packets, and the two forms produce the
+same values at disguise.
+
+**179 tests pass.**
