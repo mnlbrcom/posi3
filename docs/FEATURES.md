@@ -3253,3 +3253,43 @@ Measured again, with a separate client stopping and starting every connection du
 operator freezing their window to read something does not freeze anyone else's.
 
 **215 tests pass.**
+
+---
+
+## 2026-08-05 — A one-second average, shown as a whole number
+
+> "lets fix HZ, we set it to 10 sec avg, change that to 1sec, Change the next 10th to the next full
+> number instead." / "yes <1"
+
+`RATE_WINDOW_MS` is 1000. At ten seconds the figure was steady but slow to admit anything had
+changed — a connection that stopped delivering kept reading near its old rate for several seconds.
+One second still averages about a hundred samples at a normal cycle time, so it holds still without
+lying about the present.
+
+`hz()` shows the whole number. Rounding to the nearest ten turned 98 Hz into 100 and hid the
+difference between a link at 96 and one at 104. Something that rounds to zero still says `<1`,
+because "nothing is arriving" and "a trickle is arriving" call for opposite responses and a bare 0
+claims the first.
+
+### Shortening the window broke the rate, and nothing failed
+
+The guard against too little history was `if (span >= 1)` — a fixed second, written when the window
+was ten. Shortening the window to one capped the span at exactly that, so it sat on the threshold and
+mostly fell under: **every link read 0 Hz while delivering a hundred packets a second.** Caught by
+looking at the running app, not by the suite.
+
+Two fixes. The oldest sample is dropped only while the *next* one is still beyond the window, so the
+retained span covers the window instead of falling short of it; and the minimum is a proportion of
+the window rather than a fixed second, so the two cannot drift apart again.
+
+**The test that was missing now exists**: a link fed a known 100 packets/s must report about 100 Hz.
+Its cadence matters — the first version ticked at exactly 100 ms, landed the span on 1000 ms, and
+passed against the broken code. At the real telemetry rate of ~33 ms it lands just under, which is
+exactly why the rig showed 0 while a tidier clock saw nothing wrong.
+
+Measured on hardware after the fix, three samples two seconds apart:
+
+    Revolve    99.1 / 99.7 / 98.2 Hz     (10 ms cycle)
+    Encoder 2  rx 55.4 Hz, tx 110.8 Hz   (18 ms cycle, two destinations)
+
+**217 tests pass.**

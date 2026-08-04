@@ -120,22 +120,23 @@ export function duration(ms) {
 }
 
 /**
- * Throughput, to the nearest ten.
+ * Throughput, as a whole number.
  *
- * The underlying figure is a ten-second average, and showing it to the unit
- * invited reading a difference of three packets a second as meaningful when it
- * is jitter. Rounding to ten makes the number stable enough to compare at a
- * glance and to say out loud.
- *
- * A rate that rounds to zero but is not zero shows as `<10` rather than `0`,
- * because "nothing is arriving" and "a trickle is arriving" call for opposite
- * responses.
+ * The figure behind it is a one-second average, which is steady enough to read
+ * without rounding it further — a second at a normal cycle time is about a
+ * hundred samples.
  */
 export function hz(n) {
   if (!Number.isFinite(n)) return '—';
   if (n <= 0) return '0';
-  const rounded = Math.round(n / 10) * 10;
-  return rounded === 0 ? '<10' : String(rounded);
+  // The whole number, not the nearest ten: rounding to tens turned 98 Hz into
+  // 100 and hid the difference between a link at 96 and one at 104.
+  //
+  // Something that rounds to zero still says so as `<1`, because "nothing is
+  // arriving" and "a trickle is arriving" call for opposite responses and a
+  // bare 0 claims the first.
+  const rounded = Math.round(n);
+  return rounded === 0 ? '<1' : String(rounded);
 }
 
 /**
