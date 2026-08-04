@@ -19,7 +19,8 @@
  *     ECONNREFUSED / EHOSTUNREACH instead of silently dropping
  *   - no allocation per sample: digits are written into pooled buffers and the
  *     parse result object is reused
- *   - no logging on this path unless the user explicitly asks for raw lines
+ *   - no logging on this path at all: samples arrive at ~100/s and would bury
+ *     every other line. Everything else the encoder says is logged verbatim.
  */
 
 const net = require('node:net');
@@ -146,7 +147,6 @@ class EncoderLink extends EventEmitter {
     this._lastSendMs = -Infinity;
 
     this._onLineBound = (line) => this._onLine(line);
-    this._logRaw = !!this.config.logRaw;
 
     // -- encoder variable cache ---------------------------------------------
     // Every reply lands here, whether or not a command of ours was waiting for
@@ -213,7 +213,6 @@ class EncoderLink extends EventEmitter {
     const wasRunning = this.running;
     if (wasRunning) this.stop();
     this.config = normaliseConfig(Object.assign({}, this.config, config));
-    this._logRaw = !!this.config.logRaw;
     this._minSendGapMs = this.config.maxSendHz > 0 ? 1000 / this.config.maxSendHz : 0;
     if (wasRunning) this.start();
   }
@@ -287,7 +286,7 @@ class EncoderLink extends EventEmitter {
             sink.offline = true;
             sink.nextProbeAt = now + OFFLINE_RETRY_MS;
             const place = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-            this._log('warn', 'tx',
+            this._log('warn', 'app',
               `${place} is not answering — pausing sends, retrying every ${OFFLINE_RETRY_MS / 1000}s. ` +
               'The encoder connection stays up.');
             this.emit('encoderEvent', {
@@ -405,7 +404,7 @@ class EncoderLink extends EventEmitter {
     socket.on('data', (chunk) => this._onData(chunk));
     socket.on('error', (err) => this._handleDisconnect(err));
     socket.on('close', () => this._handleDisconnect(this._lastError || new Error('connection closed')));
-    socket.on('end', () => this._log('info', 'rx', 'encoder closed the connection (FIN)'));
+    socket.on('end', () => this._log('info', 'app', 'encoder closed the connection (FIN)'));
 
     socket.connect({
       host: encoder.host,
@@ -479,7 +478,13 @@ class EncoderLink extends EventEmitter {
     }
 
     // Everything below is cold: replies, errors, events. Safe to allocate.
-    if (this._logRaw) this._log('info', 'rx', line);
+    //
+    // Verbatim, always. This is what the encoder actually said, and it is the
+    // record. Anything this app concludes from it is logged separately as `app`
+    // and never in place of it — the reason `read CycleTime` used to be followed
+    // by "cycle time changed on the encoder: 18 ms" with the device's own
+    // `CycleTime=18` appearing nowhere at all.
+    this._log(rxLevel(r), 'rx', truncate(line));
 
     const consumed = this._commands.handleParsed(r);
 
@@ -493,7 +498,6 @@ class EncoderLink extends EventEmitter {
       case KIND.EVENT:
         this._resolveFlash('confirmed');
         this.emit('encoderEvent', { id: this.id, kind: 'paramsWritten', text: 'Parameters successfully written!' });
-        this._log('info', 'rx', 'Parameters successfully written!');
         break;
       case KIND.STATUS:
         // A rejection of something we asked for is not a fault in the stream.
@@ -506,17 +510,15 @@ class EncoderLink extends EventEmitter {
           if (consumed) this.counters.commandErrors++;
           else this.counters.errors++;
         }
-        if (!consumed) {
-          this.emit('encoderEvent', { id: this.id, kind: r.severity, text: r.text });
-          this._log(r.severity === 'error' ? 'error' : 'warn', 'rx', `${r.severity.toUpperCase()}: ${r.text}`);
-        }
+        // The line itself is already in the log, at its own severity.
+        if (!consumed) this.emit('encoderEvent', { id: this.id, kind: r.severity, text: r.text });
         break;
       case KIND.REPLY:
         if (!consumed) this.emit('encoderEvent', { id: this.id, kind: 'unsolicited', text: `${r.variable}=${r.value}` });
         break;
       default:
+        // Logged verbatim above, at warn level, so there is nothing to add.
         this.counters.unknownLines++;
-        if (!this._logRaw) this._log('warn', 'rx', `unparsed: ${truncate(line)}`);
         break;
     }
   }
@@ -626,7 +628,7 @@ class EncoderLink extends EventEmitter {
     if (sink.recovered) return;
     sink.recovered = true;
     const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-    this._log('info', 'tx', `${where} is reachable again after ${sink.txErrors} lost packets`);
+    this._log('info', 'app', `${where} is reachable again after ${sink.txErrors} lost packets`);
     this.emit('encoderEvent', {
       id: this.id, kind: 'destinationUp',
       text: `${where} is reachable again`
@@ -791,7 +793,7 @@ class EncoderLink extends EventEmitter {
         // Only a warning when a layout we were already parsing with was
         // replaced: that is the case where samples were being read wrongly
         // until this moment. Learning it on connect is routine.
-        if (before) this._log('warn', 'rx', `field layout changed on the encoder: ${value}`);
+        if (before) this._log('warn', 'app', `field layout changed on the encoder: ${value}`);
         break;
       }
       case 'OutputType':
@@ -809,7 +811,11 @@ class EncoderLink extends EventEmitter {
         if (known === ms) return;
         this.config.encoderMeta.cycleTimeMs = ms;
         this.emit('encoderMeta', { id: this.id, cycleTimeMs: ms });
-        if (known != null) this._log('info', 'rx', `cycle time changed on the encoder: ${ms} ms`);
+        // "from encoder" for what it is set to, "changed on the encoder" for
+        // something that moved. Both are worth a line; only one is an event.
+        this._log('info', 'app', known == null
+          ? `cycle time from encoder: ${ms} ms`
+          : `cycle time changed on the encoder: ${known} ms → ${ms} ms`);
         break;
       }
       case 'TotalScaledRes':
@@ -824,9 +830,10 @@ class EncoderLink extends EventEmitter {
         meta.totalCounts = total;
         if (perRev > 0) meta.countsPerRev = perRev;
         this.emit('encoderMeta', { id: this.id, totalCounts: total, countsPerRev: meta.countsPerRev, usedScope: scope });
-        if (knew) {
-          this._log('info', 'rx', `scaling changed on the encoder: ${total} counts, ${meta.countsPerRev}/rev`);
-        }
+        this._log('info', 'app',
+          `${knew ? 'scaling changed on the encoder' : 'scaling from encoder'}: ` +
+          `${total} steps total, ${meta.countsPerRev}/turn ` +
+          `(${(total / meta.countsPerRev).toFixed(2)} turns of travel)`);
         break;
       }
       default:
@@ -859,11 +866,11 @@ class EncoderLink extends EventEmitter {
       meta.totalCounts = total;
       if (perRev > 0) meta.countsPerRev = perRev;
       this.emit('encoderMeta', { id: this.id, totalCounts: total, countsPerRev: meta.countsPerRev, usedScope: scope });
-      this._log('info', 'rx',
-        `scaling from encoder: ${total} counts total, ${meta.countsPerRev}/rev ` +
-        `(${(total / meta.countsPerRev).toFixed(2)} revolutions of travel)`);
+      this._log('info', 'app',
+        `scaling from encoder: ${total} steps total, ${meta.countsPerRev}/turn ` +
+        `(${(total / meta.countsPerRev).toFixed(2)} turns of travel)`);
     } catch (err) {
-      this._log('warn', 'rx', `could not read scaling (${err.message}); using configured values`);
+      this._log('warn', 'app', `could not read scaling (${err.message}); using configured values`);
     }
   }
 
@@ -885,7 +892,7 @@ class EncoderLink extends EventEmitter {
       if (map) {
         this._parser.setFieldMap(map);
         this.emit('fieldLayout', { id: this.id, fields: map, inferred: false, outputType: type.value });
-        this._log('info', 'rx', `field layout from encoder: ${mode.value}`);
+        this._log('info', 'app', `field layout from encoder: ${mode.value}`);
       } else {
         this._inferFieldLayout(`OutputMode=${mode.value} not understood`);
       }
@@ -895,7 +902,7 @@ class EncoderLink extends EventEmitter {
       // knowing the version must never stop a link from streaming.
       try {
         await this.version();
-        this._log('info', 'rx', `firmware ${this._version}`);
+        this._log('info', 'app', `firmware ${this._version}`);
       } catch { /* an encoder that will not say is still an encoder */ }
     } catch (err) {
       this._inferFieldLayout(err.message);
@@ -1001,7 +1008,7 @@ class EncoderLink extends EventEmitter {
         }
         const dialect = forms[i] === withSet ? 'set' : 'bare';
         if (dialect !== this._setDialect) {
-          this._log('info', 'tx', `write dialect for this encoder: "${dialect === 'set' ? 'set Var=Value' : 'Var=Value'}"`);
+          this._log('info', 'app', `write dialect for this encoder: "${dialect === 'set' ? 'set Var=Value' : 'Var=Value'}"`);
           this._setDialect = dialect;
         }
         return r;
@@ -1015,15 +1022,15 @@ class EncoderLink extends EventEmitter {
         // a retry with no reason for it, and the first form's error was
         // invisible — which is most of why the OutputMode failure took so long
         // to pin down.
-        this._log('warn', 'tx', `"${forms[i]}" refused: ${err.message}`);
+        this._log('warn', 'app', `"${forms[i]}" refused: ${err.message}`);
         if (err.code !== 'EENCODER') throw err;
         if (i + 1 < forms.length) {
-          this._log('info', 'tx', `retrying as "${forms[i + 1]}"`);
+          this._log('info', 'app', `retrying as "${forms[i + 1]}"`);
         } else if (this._setDialect) {
           // Both forms refused, so what was remembered is no longer trusted —
           // the next write starts from the documented form again instead of
           // inheriting a guess that has just been disproved.
-          this._log('warn', 'tx', 'both write forms were refused; forgetting the remembered dialect');
+          this._log('warn', 'app', 'both write forms were refused; forgetting the remembered dialect');
           this._setDialect = null;
         }
       }
@@ -1185,7 +1192,7 @@ class EncoderLink extends EventEmitter {
         kind: 'flashTimeout',
         text: 'No flash-write confirmation after 30s. Verify the value before power-cycling the encoder.'
       });
-      this._log('warn', 'rx', 'flash commit not confirmed within 30s');
+      this._log('warn', 'app', 'flash commit not confirmed within 30s');
     }
   }
 
@@ -1312,7 +1319,7 @@ class EncoderLink extends EventEmitter {
   }
 
   _warn(text) {
-    this._log('warn', 'rx', text);
+    this._log('warn', 'app', text);
     this.emit('encoderEvent', { id: this.id, kind: 'warning', text });
   }
 }
@@ -1321,6 +1328,20 @@ class EncoderLink extends EventEmitter {
 
 function truncate(s, n = 120) {
   return s.length > n ? `${s.slice(0, n)}…` : s;
+}
+
+/**
+ * What severity to log an encoder line at.
+ *
+ * The device's own words carry the level, so `ERROR: unknown command` arrives
+ * in the log as an error rather than as an info line with the word ERROR in it.
+ * A line nothing could parse is a warning: it is either a firmware we do not
+ * know or a stream that has gone wrong, and both are worth seeing.
+ */
+function rxLevel(r) {
+  if (r.kind === KIND.STATUS) return r.severity === 'error' ? 'error' : 'warn';
+  if (r.kind !== KIND.REPLY && r.kind !== KIND.EVENT) return 'warn';
+  return 'info';
 }
 
 /**

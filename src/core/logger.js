@@ -9,7 +9,23 @@
  */
 
 const DEFAULT_CAPACITY = 5000;
-const DEFAULT_MAX_PER_FLUSH = 25;
+
+/**
+ * Lines forwarded to clients per telemetry tick.
+ *
+ * 25 was sized for a raw-sample firehose that no longer exists — samples are
+ * never logged, because at ~100/s per link they would bury everything else. The
+ * real bursts are command sweeps: reading the config of two encoders is 14
+ * variables each, sent and answered, and lands as ~56 lines inside a few
+ * milliseconds. That is a single tick, so 31 of them were counted as dropped
+ * and never reached the log window — the log quietly became incomplete exactly
+ * when it was busiest, which is when it matters.
+ *
+ * 400 covers ten encoders read at once and still bounds the stream (30 ticks a
+ * second). The counter stays, because a cap that cannot be reported is a cap
+ * that lies.
+ */
+const DEFAULT_MAX_PER_FLUSH = 400;
 
 class Logger {
   constructor(opts = {}) {

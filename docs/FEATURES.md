@@ -2889,3 +2889,70 @@ is reported as one, and the same value twice is not an event. Verified by restor
 unconditional logging, which fails them.
 
 **199 tests pass.**
+
+---
+
+## 2026-08-04 — The log says what actually happened
+
+> "we need the real thing in the log, we need to know when our app is writing in the log, when cli
+> encoder communication happens, we need more pure information in the log. Dont swallow thing up and
+> redesign outputs in the log" / "traffic between encoder should be rx tx, we should have make sure
+> that app/system log entries are marked diffrently and are recognisable" / "most events like adding
+> a connection edits like ports/ ips interface picks changing Velocity from zero to From encoder, all
+> this should print in log input and output" / "navigating the menu needs no log entry, But
+> siginficant actions should have a log entry"
+
+`rx` and `tx` had been handed out to anything vaguely encoder-related, and an interpretation was
+logged **instead of** the line it came from:
+
+    tx  read CycleTime
+    rx  cycle time changed on the encoder: 18 ms      ← the app talking, marked as the device
+
+The encoder's own `CycleTime=18` appeared nowhere. Now:
+
+    tx  read CycleTime
+    rx  CycleTime=18
+    app cycle time from encoder: 18 ms
+
+### Four sources, and only two of them are the wire
+
+| | |
+|---|---|
+| `rx` | a line the encoder sent, verbatim, at its own severity — `ERROR: unknown command` arrives as an error, not as an info line containing the word |
+| `tx` | a line written to the encoder, verbatim |
+| `app` | what this app concluded, decided or did: state changes, interpretations, the watchdog |
+| `user` | an operator action |
+
+Every non-sample line the encoder sends is now logged. Samples are not, and never were: at ~100/s
+per link they would bury everything else. `logRaw` — settable only by hand-editing a profile, and
+with no reader left after this change — is gone.
+
+The source and the level are separate columns. One column showed the source for info lines and the
+level for the rest, so a warning **from** the encoder was indistinguishable from a warning **about**
+it.
+
+### Operator actions, with both values
+
+    user  added connection "Encoder 2" — encoder 10.10.10.30:6000, to 10.10.10.5:6000 id 10
+    user  edited "Encoder 2": velocityPolicy zero → passthrough
+    user  start
+    app   [connecting] connecting to 10.10.10.30:6000
+
+Before and after, always: "what was it before" is the question asked after a show, and a log with
+only the new value cannot answer it. The diff walks the whole connection, so a port, an IP, an
+interface pick or a destination change is caught without anyone listing the fields. Navigation is
+not logged — it never reaches this layer, and nothing happened to the show.
+
+### The log was dropping lines
+
+`maxPerFlush` was 25, sized for a raw-sample firehose that does not exist. Reading two encoders'
+config is ~56 lines inside a few milliseconds — one tick — so 31 were dropped and the log became
+incomplete exactly when it was busiest. It is 400 now.
+
+When it does bite, it says so **as a log line** rather than as a note beside the toolbar: a gap in
+the log belongs in the log, where it is read and where Export preserves it. The lines themselves
+were never lost — they are in the ring buffer that Export reads.
+
+The log's controls moved into the page header card, as on every other screen.
+
+**199 tests pass.**

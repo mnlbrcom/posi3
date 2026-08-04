@@ -24,6 +24,58 @@ const {
 const flashBudget = require('../core/flash-budget');
 
 /**
+ * Paths that say nothing an operator changed.
+ *
+ * `id` is a UUID, `d3` is a mirror of the first destination kept for older
+ * screens, and `encoderMeta` is what the device reported about itself — that is
+ * the encoder's state, logged when the encoder says it, not an edit.
+ */
+const NOT_AN_EDIT = new Set(['id', 'd3', 'encoderMeta']);
+
+const shown = (v) => {
+  if (v === undefined) return '—';
+  if (v === null) return 'none';
+  if (v === '') return '""';
+  return String(v);
+};
+
+/** Every leaf of an object as `a.b[0].c` -> value. */
+function flatten(value, prefix = '', out = {}) {
+  for (const [k, v] of Object.entries(value || {})) {
+    if (NOT_AN_EDIT.has(k)) continue;
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (Array.isArray(v)) {
+      v.forEach((item, i) => (item && typeof item === 'object'
+        ? flatten(item, `${path}[${i}]`, out)
+        : (out[`${path}[${i}]`] = item)));
+    } else if (v && typeof v === 'object') {
+      flatten(v, path, out);
+    } else {
+      out[path] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * What actually changed, as `field: before → after`.
+ *
+ * Both sides, always: "who changed that, and what was it before" is the
+ * question asked after a show, and a log saying only the new value cannot
+ * answer it.
+ */
+function describeEdit(before, after) {
+  const a = flatten(before);
+  const b = flatten(after);
+  const parts = [];
+  for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+    if (a[key] === b[key]) continue;
+    parts.push(`${key} ${shown(a[key])} → ${shown(b[key])}`);
+  }
+  return parts;
+}
+
+/**
  * @param {object} ctx
  * @param {import('../core/link-manager').LinkManager} ctx.manager
  * @param {import('../core/config-store').ConfigStore} ctx.store
@@ -40,6 +92,16 @@ function createApi(ctx) {
     changed();
     return value;
   };
+
+  /**
+   * An operator did something that changes how the rig behaves.
+   *
+   * Only significant actions: what was added, edited, deleted, started or
+   * stopped. Moving around the UI is not an event — nothing happened to the
+   * show — and none of it reaches this layer anyway.
+   */
+  const userLog = (id, text, level = 'info') =>
+    manager.logger.push({ id: id || null, level, dir: 'user', text, ts: Date.now() });
 
   /**
    * Read from an encoder that is not connected, over a socket of its own.
@@ -270,15 +332,38 @@ function createApi(ctx) {
     configGet: () => store.profile,
 
     configSaveConnection: (payload) => {
-      const saved = store.upsertConnection(sanitiseConnection(payload));
+      const clean = sanitiseConnection(payload);
+      // Snapshot before the store mutates in place, or the diff compares the
+      // saved object with itself and every edit looks like nothing happened.
+      const was = clean.id && store.find(clean.id)
+        ? JSON.parse(JSON.stringify(store.find(clean.id)))
+        : null;
+
+      const saved = store.upsertConnection(clean);
+
+      if (!was) {
+        userLog(saved.id, `added connection "${saved.name}" — encoder ` +
+          `${saved.encoder.host}:${saved.encoder.port}, to ` +
+          saved.destinations.map((d) => `${d.host}:${d.port} id ${d.devid}`).join(', '));
+      } else {
+        const edits = describeEdit(was, saved);
+        if (edits.length) userLog(saved.id, `edited "${saved.name}": ${edits.join(' · ')}`);
+      }
+
       ctx.syncLink(saved);
       return announce(saved);
     },
 
     configDeleteConnection: ({ id }) => {
       const key = checkId(id);
+      const gone = store.find(key);
       manager.remove(key);
-      return announce(store.deleteConnection(key));
+      const ok = store.deleteConnection(key);
+      if (ok && gone) {
+        userLog(null, `deleted connection "${gone.name}" — was encoder ` +
+          `${gone.encoder.host}:${gone.encoder.port}`);
+      }
+      return announce(ok);
     },
 
     configReorder: ({ ids }) => {
@@ -288,7 +373,10 @@ function createApi(ctx) {
     },
 
     configSetSettings: (partial) => {
+      const was = JSON.parse(JSON.stringify(store.settings));
       const s = store.setSettings(partial || {});
+      const edits = describeEdit(was, s);
+      if (edits.length) userLog(null, `changed settings: ${edits.join(' · ')}`);
       manager.setTelemetryHz(s.telemetryHz);
       if (ctx.onSettings) ctx.onSettings(s);
       return announce(s);
@@ -303,10 +391,13 @@ function createApi(ctx) {
 
     configImport: (data) => {
       if (!data || !Array.isArray(data.connections)) fail('EINVAL', 'That file is not a posi3 profile');
+      const had = store.connections.length;
       manager.stopAll();
       for (const id of manager.ids()) manager.remove(id);
       const profile = store.replaceProfile(data);
       for (const conn of profile.connections) ctx.syncLink(conn);
+      userLog(null, `imported a profile — replaced ${had} connection(s) with ` +
+        `${profile.connections.length}: ${profile.connections.map((c) => c.name).join(', ')}`, 'warn');
       return announce({ imported: true, profile });
     },
 
@@ -320,18 +411,27 @@ function createApi(ctx) {
         if (!conn) fail('ENOENT', 'No such connection');
         ctx.syncLink(conn);
       }
+      // Before the state lines, so the log reads as cause then effect: somebody
+      // pressed Start, and here is what the link then did about it.
+      userLog(key, 'start');
       return manager.start(key).snapshot();
     },
 
-    linkStop: ({ id }) => manager.stop(checkId(id)).snapshot(),
+    linkStop: ({ id }) => {
+      const key = checkId(id);
+      userLog(key, 'stop');
+      return manager.stop(key).snapshot();
+    },
 
     linkStartAll: () => {
       for (const conn of store.connections) ctx.syncLink(conn);
+      userLog(null, `start all (${store.connections.length} connections)`);
       manager.startAll();
       return manager.ids();
     },
 
     linkStopAll: () => {
+      userLog(null, `stop all (${manager.ids().length} connections)`);
       manager.stopAll();
       return manager.ids();
     },

@@ -322,6 +322,9 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
 }
 .view-head h1 { font-size: var(--fs-title); font-weight: 600; margin: 0; }
 .view-head .spacer { flex: 1; }
+/* A select in a page header is a control beside the buttons, not a form field:
+   it takes its own width instead of the full-width block a field gets. */
+.view-head select, .view-head input { width: auto; }
 /* Live status text changes length constantly; clip it rather than letting it
    reflow the header. */
 .view-head .status-detail {
@@ -592,8 +595,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
 /* --------------------------------------------------------------------- log */
 
-.log-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-.log-toolbar select, .log-toolbar input { width: auto; }
 .logbox {
   /* dvh follows the *small* viewport, so the box does not sit under a mobile
      browser's collapsing URL bar. The vh line first, as a fallback for engines
@@ -609,25 +610,31 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 }
 .logline { display: flex; gap: 9px; white-space: pre-wrap; word-break: break-word; }
 .logline .t { color: var(--text-faint); flex: 0 0 auto; }
-/* Same size as the line it labels, so it needs no optical nudge.
-   Wide enough for the longest label and told never to break: the column was
-   26px, which fits TX and RX but split ERROR across two lines, so a fault was
-   the one entry in the log that was hard to read. Measured at this font:
-   TX/RX 14px, WARN 27px, ERROR 34px — 56px leaves room for a longer word
-   without another look at this rule. `.logline` breaks words by design, for
-   the message; the label must opt out of it. */
-.logline .w {
-  flex: 0 0 auto; width: 56px; text-transform: uppercase;
+/* Two fixed columns: who said it, and how bad it is. Both are told never to
+   break — `.logline` breaks words by design, for the message, and a label that
+   wraps costs a line and reads as two entries. Measured at this font:
+   TX/RX 14px, APP 26px, USER 32px, WARN 27px, ERROR 34px. */
+.logline .w, .logline .lv {
+  flex: 0 0 auto; text-transform: uppercase;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.logline.info .w  { color: var(--text-faint); }
-/* Outbound and inbound, told apart at a glance: what we asked for, and what the
-   encoder said back. Colour rather than position, because the column is three
-   characters wide and both words start with a different letter only. */
-.logline .w.dir-tx { color: var(--accent-text); font-weight: 700; }
-.logline .w.dir-rx { color: var(--ok-text); font-weight: 700; }
-.logline.warn     { color: var(--warn); }
-.logline.error    { color: var(--err-text); }
+.logline .w  { width: 38px; }
+.logline .lv { width: 40px; }
+
+/* Who is speaking, told apart by colour rather than by reading three narrow
+   characters. `rx` and `tx` are the wire — the encoder's own words and ours —
+   so they carry the strong colours; the app's commentary is deliberately quiet
+   next to them, and an operator's action is the brightest thing in the column
+   because it is the only line a person caused. */
+.logline .w.dir-tx   { color: var(--accent-text); font-weight: 700; }
+.logline .w.dir-rx   { color: var(--ok-text); font-weight: 700; }
+.logline .w.dir-app  { color: var(--text-faint); }
+.logline .w.dir-user { color: var(--text); font-weight: 700; }
+
+.logline .lv.warn  { color: var(--warn); }
+.logline .lv.error { color: var(--err-text); }
+.logline.warn      { color: var(--warn); }
+.logline.error     { color: var(--err-text); }
 .logline .src { color: var(--accent-text); flex: 0 0 auto; }
 
 /* ------------------------------------------------------------------ modals */

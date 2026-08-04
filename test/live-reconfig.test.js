@@ -166,7 +166,7 @@ test('a value that really changes is reported as one', () => {
 
   const changes = logs.filter((t) => /changed on the encoder/.test(t));
   assert.equal(changes.length, 3, `expected three changes, got: ${JSON.stringify(changes)}`);
-  assert.ok(changes.some((t) => /cycle time changed on the encoder: 8 ms/.test(t)));
+  assert.ok(changes.some((t) => /cycle time changed on the encoder: 18 ms → 8 ms/.test(t)));
   assert.ok(changes.some((t) => /field layout changed on the encoder: POSITION/.test(t)));
   assert.ok(changes.some((t) => /scaling changed on the encoder: 150000/.test(t)));
 });

@@ -52,7 +52,12 @@ class LinkManager extends EventEmitter {
     const link = new EncoderLink(config);
     link.on('state', (e) => {
       this.emit('state', e);
-      this.logger.push({ id: e.id, level: e.state === 'error' ? 'error' : 'info', text: `[${e.state}] ${e.detail}` });
+      // The app's own state machine, not something the encoder said.
+      this.logger.push({
+        id: e.id, dir: 'app',
+        level: e.state === 'error' ? 'error' : 'info',
+        text: `[${e.state}] ${e.detail}`
+      });
     });
     link.on('encoderEvent', (e) => this.emit('encoderEvent', e));
     link.on('fieldLayout', (e) => this.emit('fieldLayout', e));
@@ -203,6 +208,18 @@ class LinkManager extends EventEmitter {
 
     const logBatch = this.logger.drain();
     if (logBatch) this.emit('log', logBatch);
+    // A gap in the log is itself a log entry. It used to be a note beside the
+    // toolbar, which is the one place a reader of the log will not look, and it
+    // left no trace in the record — so an exported log was silently incomplete.
+    // Pushed after the drain, so it arrives on the next tick rather than
+    // enlarging the batch that overflowed.
+    if (logBatch && logBatch.dropped) {
+      this.logger.push({
+        level: 'warn', dir: 'app',
+        text: `${logBatch.dropped} lines arrived faster than they could be sent to the ` +
+          'log window and are missing above; they are in the exported log'
+      });
+    }
   }
 
   /** Aggregate for the header bar. */
