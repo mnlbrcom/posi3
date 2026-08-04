@@ -3366,3 +3366,49 @@ its effect is visible in Offset. In the stacked narrow layout the `on the encode
 suppressed for it, since there is no value on the encoder to state.
 
 **218 tests pass.**
+
+---
+
+## 2026-08-05 — Reading the manual properly, and what it says about Preset
+
+> "why is pdf rendering not availble? open the pdf in chrome and read there or find a pdf reader for
+> CLI"
+
+Fair challenge — the earlier answer gave up at "no PDF renderer". `brew install poppler` provides
+`pdftotext`, and `pdftotext -layout` turns the manual into 1,021 usable lines. Worth having: this is
+the reference document the whole config screen is derived from, and it had been read only second-hand
+until now.
+
+**Verbatim, §5.6.2:**
+
+> **Preset** — "When the preset is set, an internal offset will be calculated, which will be saved and
+> added to all position values afterwards. The value given for the preset denotes the position value
+> the encoder will show at the point where the preset was set. Please note the FAQ for important
+> information!"
+>
+> **Offset** — "This variable makes it possible to directly change the offset calculated and set by
+> the preset function."
+
+**FAQ 1**, which the pointer above leads to:
+
+> "The Preset value will save in the flash of the encoder. This flash has only writing cycles of
+> 100000 times… So we fix it that it is not possible to save the same preset value for more than one
+> time. The next preset value must be different, but can use in the next but one. I.e. Preset value is
+> 0. Then set in the first time 0, in the second 1, in the next one 0, …"
+
+So Offset keeps its input, as established. But the manual makes Preset the odd one out: it is
+write-only, it costs a flash cycle, and **the same value twice in a row is refused.**
+
+### The rule is implemented — on one of the two paths
+
+`EncoderLink.setPreset()` knows all of it: it reads the current value where it can, throws
+`EPRESET_DUPLICATE` rather than burning cycles by surprise, and offers the documented way round —
+write `value + 1`, await the commit, write `value` — at two cycles, only when asked. The Controls
+popup's **Zero / Preset 0** uses it.
+
+**The Encoder Config table does not.** Its Preset field is an ordinary row, and Apply sends it through
+`encoderWriteMany` like any other variable. That path knows nothing about the alternating rule, and
+its verification reads the value back — which for a write-only variable can never match, so a Preset
+written there is reported unconfirmed **even when it worked**.
+
+Recorded rather than changed: routing it correctly is a decision about flash cycles.
