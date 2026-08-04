@@ -62,6 +62,21 @@ const RECOVERY_QUIET_MS = 3000;
 const SEND_GIVE_UP_MS = 2000;
 const OFFLINE_RETRY_MS = 5000;
 
+/**
+ * How long a probe must go unanswered before the destination counts as back.
+ *
+ * The subtlety that makes this necessary: on a connected UDP socket the ICMP
+ * refusal does not come back through `send()`'s callback. The send succeeds,
+ * and the error arrives milliseconds later on the socket. So "no error in the
+ * last three seconds" — a backwards-looking test — passes for a machine that is
+ * still refusing, and the destination flapped between offline and recovered
+ * every five seconds, announcing both.
+ *
+ * Recovery has to be judged forwards: send one, then wait to see if anything
+ * objects.
+ */
+const PROBE_GRACE_MS = 1000;
+
 const LATENCY_WINDOW = 256;
 
 class EncoderLink extends EventEmitter {
@@ -233,6 +248,7 @@ class EncoderLink extends EventEmitter {
         tx: 0,
         txErrors: 0,
         lastError: null,
+        lastErrorCode: null,
         // Announced on a backing-off schedule, not per N failures. A dead
         // destination fails once per sample: at 125 Hz a "every 500 errors"
         // rule shouts every four seconds, indefinitely, about a situation that
@@ -247,11 +263,16 @@ class EncoderLink extends EventEmitter {
         /** Packets not sent because the destination was known to be down. */
         suppressed: 0,
         nextProbeAt: 0,
+        probeSentAt: 0,
         onError: (err) => {
           if (!err) return;
           sink.txErrors++;
           this.counters.txErrors++;
           sink.lastError = err.message;
+          // The code, not just the text: ICMP separates a machine that is not
+          // on the network from one that is up with nothing bound to the port —
+          // which for disguise means the software is not running.
+          sink.lastErrorCode = err.code || null;
           // Arm the recovery notice again: a destination that comes back, goes
           // away and comes back once more should say so both times.
           sink.recovered = false;
@@ -297,19 +318,14 @@ class EncoderLink extends EventEmitter {
           // 440 recovery claims, where the backoff was designed to produce
           // about fifteen. Recovery means the sends have been landing for a
           // while, not that one did.
+          // While offline, the probe path decides — a send callback returning
+          // success proves nothing, because ICMP has not had time to arrive.
+          if (sink.offline) return;
           if (Date.now() - sink.lastErrorAt < RECOVERY_QUIET_MS) return;
 
-          sink.recovered = true;
-          sink.offline = false;
           sink.failingSince = 0;
-          const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-          this._log('info', 'tx', `${where} is reachable again after ${sink.txErrors} lost packets`);
-          this.emit('encoderEvent', {
-            id: this.id, kind: 'destinationUp',
-            text: `${where} is reachable again`
-          });
-          sink.nextWarnAt = 0;
-          sink.warnBackoffMs = 0;
+          sink.lastErrorCode = null;
+          this._announceRecovery(sink, dest);
         }
       };
 
@@ -572,8 +588,21 @@ class EncoderLink extends EventEmitter {
       // seconds instead of every sample. UDP is stateless, so resuming costs
       // nothing — there is no session to re-establish, only a send that works.
       if (sink.offline) {
-        if (nowMs < sink.nextProbeAt) { sink.suppressed++; continue; }
-        sink.nextProbeAt = nowMs + OFFLINE_RETRY_MS;
+        // A probe that nothing objected to, long enough ago to be sure.
+        if (sink.probeSentAt && nowMs - sink.probeSentAt >= PROBE_GRACE_MS &&
+            sink.lastErrorAt < sink.probeSentAt) {
+          sink.offline = false;
+          sink.failingSince = 0;
+          sink.probeSentAt = 0;
+          sink.lastErrorCode = null;
+          this._announceRecovery(sink, dest);
+        } else if (nowMs < sink.nextProbeAt) {
+          sink.suppressed++;
+          continue;
+        } else {
+          sink.nextProbeAt = nowMs + OFFLINE_RETRY_MS;
+          sink.probeSentAt = nowMs;
+        }
       }
 
       // Destinations usually share a device ID, so the packet is built once and
@@ -590,6 +619,20 @@ class EncoderLink extends EventEmitter {
       sink.tx++;
       this.counters.tx++;
     }
+  }
+
+  /** Said once per outage, whichever path noticed the destination was back. */
+  _announceRecovery(sink, dest) {
+    if (sink.recovered) return;
+    sink.recovered = true;
+    const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
+    this._log('info', 'tx', `${where} is reachable again after ${sink.txErrors} lost packets`);
+    this.emit('encoderEvent', {
+      id: this.id, kind: 'destinationUp',
+      text: `${where} is reachable again`
+    });
+    sink.nextWarnAt = 0;
+    sink.warnBackoffMs = 0;
   }
 
   _resolveVelocity(r, pos, nowMs, total) {
@@ -1198,6 +1241,7 @@ class EncoderLink extends EventEmitter {
         id: s.dest.id,
         offline: s.offline,
         suppressed: s.suppressed,
+        health: destinationHealth(s, this.running),
         name: s.dest.name,
         host: s.dest.host,
         port: s.dest.port,
@@ -1280,6 +1324,27 @@ function truncate(s, n = 120) {
 function sameValue(a, b) {
   const fold = (v) => String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
   return fold(a) === fold(b);
+}
+
+/**
+ * What to tell the operator about one destination.
+ *
+ *   sending   packets are leaving and nothing has objected
+ *   refused   the machine answered ICMP port-unreachable — it is on the
+ *             network, but nothing is bound to that port. For disguise that
+ *             means Designer is closed, or the Navigator driver has not been
+ *             started
+ *   offline   no answer at all: switched off, unplugged, or a different subnet
+ *   idle      the link is not running, so nothing has been tried
+ *
+ * The distinction between `refused` and `offline` is worth carrying all the way
+ * to the screen, because they call for different people: one is "start
+ * disguise", the other is "check the machine or the cable".
+ */
+function destinationHealth(sink, running) {
+  if (!running) return 'idle';
+  if (!sink.offline) return 'sending';
+  return sink.lastErrorCode === 'ECONNREFUSED' ? 'refused' : 'offline';
 }
 
 function assertSafeValue(value) {

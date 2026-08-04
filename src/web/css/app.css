@@ -411,6 +411,10 @@ button.btn.sm { padding: 4px 9px; font-size: var(--fs-label); }
 .pill.reconnecting { color: var(--warn); background: var(--warn-wash); }
 .pill.error        { color: var(--err-text); background: var(--err-wash); }
 .pill.stopping     { color: var(--text-faint); }
+/* Destination health, shown per endpoint beside the encoder's own state. */
+.pill.sending      { color: var(--ok-text); background: var(--ok-wash); }
+.pill.refused      { color: var(--warn); background: var(--warn-wash); }
+.pill.offline      { color: var(--err-text); background: var(--err-wash); }
 .pill.connecting .dot,
 .pill.reconnecting .dot { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
@@ -742,6 +746,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 }
 .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* Sits with the encoder's name, because it explains its behaviour. */
+/* Smaller than the encoder's pill: it is a subordinate fact, and there may be
+   several of them. */
+.dest-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.dest-pill { min-width: 0; padding: 2px 8px; font-size: var(--fs-label); }
+.dest-pill-name { color: var(--text-dim); margin-right: 5px; }
+
 .fw-tag {
   flex: 0 0 auto; font-size: var(--fs-label); color: var(--text-faint);
   font-variant-numeric: tabular-nums;
