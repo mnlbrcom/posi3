@@ -2847,3 +2847,45 @@ they call the machine. The address below says which one that is. `refused` and `
 explanation on hover.
 
 **196 tests pass**, every view clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and expanded.
+
+---
+
+## 2026-08-04 — There is no default; there is what the encoder says
+
+> "there is no default, there is a now and a change, we dont compare to a profile, profil is the
+> state it has, we only change something if we realy change something"
+
+The log kept reporting changes nobody made:
+
+    19:11:23  Revolve    warn   field layout changed on the encoder: POSITION_VELOCITY_TIMESTAMP
+    19:11:23  Revolve    info   scaling changed on the encoder: 300000 counts, 8192/rev
+    19:13:34  Encoder 2  info   cycle time changed on the encoder: 18 ms
+
+Nothing had changed. Every new profile was seeded with nameplate figures — `countsPerRev: 8192`,
+`totalCounts: 33554432`, `cycleTimeMs: 10` — and the first read of a commissioned encoder differed
+from them, so it was announced as a change. The rig's own numbers are 300,000 and 100,000 counts and
+an 18 ms cycle; none of those had ever been in a profile.
+
+Worse, the value was learned into memory only and never written back, so **every restart forgot it
+and re-reported the same non-change.**
+
+- **`encoderMeta` starts null.** Before the encoder answers we do not know these, and a guess in the
+  field that is meant to hold the device's state is what created the problem.
+- **The first answer is state, not a change** — adopted silently, and logged as an observation by the
+  lines that already existed for that (`scaling from encoder: …`).
+- **A change is a difference from something we already had**, which means somebody really changed it.
+- **What the device reports is persisted**, so a restart does not relearn it. `service.js` saves on
+  the `encoderMeta` event without re-syncing the link — it already holds the value, and pushing the
+  config back would restart a running connection to tell it what it just told us.
+- **Schema 2 → 3 clears `encoderMeta` on load.** Every value on disk today is fabricated by
+  definition, because no code ever wrote what a device reported. Discarding a guess is not data loss.
+
+Where a number is still needed before the encoder has spoken — the stall watchdog's timer, the
+divisor for degrees and revolutions — the nameplate figure is used for the arithmetic and named as a
+starting point, while what is *reported* stays null until the device says otherwise.
+
+Three tests in `live-reconfig.test.js` own this: a first observation is not a change, a real change
+is reported as one, and the same value twice is not an event. Verified by restoring the old
+unconditional logging, which fails them.
+
+**199 tests pass.**

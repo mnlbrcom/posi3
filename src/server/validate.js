@@ -227,10 +227,16 @@ function sanitiseConnection(raw) {
     };
   }
   if (raw.encoderMeta) {
+    // Unknown stays unknown. Substituting a plausible number here would put the
+    // guess back into the profile that is meant to hold what the device said.
+    const observed = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 1 ? n : null;
+    };
     out.encoderMeta = {
-      countsPerRev: Math.max(1, Number(raw.encoderMeta.countsPerRev) || 8192),
-      totalCounts: Math.max(1, Number(raw.encoderMeta.totalCounts) || 33554432),
-      cycleTimeMs: Math.max(1, Number(raw.encoderMeta.cycleTimeMs) || 10)
+      countsPerRev: observed(raw.encoderMeta.countsPerRev),
+      totalCounts: observed(raw.encoderMeta.totalCounts),
+      cycleTimeMs: observed(raw.encoderMeta.cycleTimeMs)
     };
   }
   if (raw.reconnect) {

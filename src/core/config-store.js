@@ -17,7 +17,7 @@ const {
   DEFAULT_D3_PORT, DEFAULT_TELEMETRY_HZ
 } = require('../shared/constants');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const SAVE_DEBOUNCE_MS = 300;
 
 function defaultSettings() {
@@ -70,7 +70,10 @@ function defaultConnection(overrides = {}) {
     udpSendPolicy: 'every',
     maxSendHz: 0,
     parser: { outputType: 'ASCII_SHORT', fields: null, autoDetect: true },
-    encoderMeta: { countsPerRev: COUNTS_PER_REV, totalCounts: TOTAL_COUNTS, cycleTimeMs: 10 },
+    /* Null, not a nameplate figure: before the encoder has answered we do not
+       know these, and pretending we do is what made every first read look like
+       a change. They are filled in from the device and kept. */
+    encoderMeta: { countsPerRev: null, totalCounts: null, cycleTimeMs: null },
     reconnect: { enabled: true, minDelayMs: 250, maxDelayMs: 5000 },
     mapping: {
       mode: 'full',
@@ -161,7 +164,7 @@ class ConfigStore {
     this.profile = {
       version: SCHEMA_VERSION,
       settings: Object.assign(defaultSettings(), data.settings || {}),
-      connections: (data.connections || []).map((c) => migrateConnection(c))
+      connections: (data.connections || []).map((c) => migrateConnection(c, Number(data.version) || 0))
     };
   }
 
@@ -175,11 +178,11 @@ class ConfigStore {
   upsertConnection(partial) {
     const existing = partial.id ? this.find(partial.id) : null;
     if (existing) {
-      Object.assign(existing, migrateConnection(Object.assign({}, existing, partial)));
+      Object.assign(existing, migrateConnection(Object.assign({}, existing, partial), SCHEMA_VERSION));
       this.save();
       return existing;
     }
-    const created = defaultConnection(migrateConnection(partial));
+    const created = defaultConnection(migrateConnection(partial, SCHEMA_VERSION));
     if (!partial.id) created.id = crypto.randomUUID();
     this.profile.connections.push(created);
     this.save();
@@ -269,13 +272,28 @@ class ConfigStore {
   flushNow() { this._flush(); }
 }
 
-/** Fill in anything a older or hand-edited profile is missing. */
-function migrateConnection(c) {
+/**
+ * Fill in anything an older or hand-edited profile is missing.
+ *
+ * @param {object} c
+ * @param {number} fromVersion  schema the profile was written by; SCHEMA_VERSION
+ *                              for data already in this build's shape.
+ */
+function migrateConnection(c, fromVersion) {
   const base = defaultConnection();
   const out = Object.assign({}, base, c);
   out.encoder = Object.assign({}, base.encoder, c.encoder);
   out.parser = Object.assign({}, base.parser, c.parser);
-  out.encoderMeta = Object.assign({}, base.encoderMeta, c.encoderMeta);
+  // Schema 2 -> 3: every encoderMeta value in an older profile was invented.
+  // Nothing ever wrote what the device reported — the link held it in memory
+  // and dropped it on exit — so the numbers on disk are the nameplate defaults
+  // regardless of what the encoder is actually set to, and the reference rig
+  // proves it: 33,554,432 stored against a device reporting 300,000. Clearing
+  // them is not data loss; it is discarding a guess so the first read can put
+  // the real value there.
+  out.encoderMeta = Number(fromVersion) >= 3
+    ? Object.assign({}, base.encoderMeta, c.encoderMeta)
+    : Object.assign({}, base.encoderMeta);
   out.reconnect = Object.assign({}, base.reconnect, c.reconnect);
   out.mapping = Object.assign({}, base.mapping, c.mapping);
   out.destinations = migrateDestinations(c);

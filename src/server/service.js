@@ -65,6 +65,32 @@ async function startService(opts = {}) {
   // `logToFile` widens it to every line.
   const logFile = new LogFile(dataDir, { verbose: !!store.settings.logToFile });
   manager.on('log', (batch) => logFile.write(batch));
+
+  /**
+   * Keep what the encoder said about itself.
+   *
+   * The link learns the scaling and the cycle time from the device and used to
+   * hold them in memory only, so every restart forgot them and started from a
+   * fabricated default again — which is what made a first read report itself as
+   * a change. The profile is the state the encoder has; the device is the only
+   * thing that writes it.
+   *
+   * The link is not re-synced: it already holds these values, and pushing the
+   * config back would restart a running connection to tell it what it just told
+   * us.
+   */
+  manager.on('encoderMeta', (e) => {
+    const conn = store.find(e.id);
+    if (!conn) return;
+    const next = Object.assign({}, conn.encoderMeta);
+    for (const key of ['countsPerRev', 'totalCounts', 'cycleTimeMs']) {
+      if (e[key] != null) next[key] = e[key];
+    }
+    const before = conn.encoderMeta || {};
+    if (['countsPerRev', 'totalCounts', 'cycleTimeMs'].every((k) => before[k] === next[k])) return;
+    store.upsertConnection({ id: e.id, encoderMeta: next });
+    announceConfigChange();
+  });
   if (store.loadWarning) logFile.note(store.loadWarning, 'warn');
 
   // Reaching beyond loopback exposes flash writes and the encoder's IP
