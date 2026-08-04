@@ -98,7 +98,6 @@ function encoderCard(conn) {
   const applyBtn = el('button', { class: 'btn primary', text: 'Apply changes', disabled: true });
   const revertBtn = el('button', { class: 'btn', text: 'Revert', disabled: true });
   const readBtn = el('button', { class: 'btn', text: 'Read' });
-  const statusText = el('span', { class: 'faint meta' });
   const pillHolder = el('span', { class: 'pill-holder' }, pill(store.stateOf(conn.id)));
   const livePos = el('span', { class: 'target-pos', text: '—' });
 
@@ -166,7 +165,7 @@ function encoderCard(conn) {
     el('div', { class: 'card-head' },
       el('span', { class: 'card-name', text: conn.name }),
       pillHolder,
-      el('div', { class: 'card-actions' }, statusText, readBtn, revertBtn, applyBtn)),
+      el('div', { class: 'card-actions' }, readBtn, revertBtn, applyBtn)),
     el('div', { class: 'cfg-target' },
       el('span', {
         class: 'target-addr',
@@ -219,16 +218,13 @@ function encoderCard(conn) {
     // A stopped connection is no longer a reason not to read: the server opens
     // a socket of its own, asks, and closes it.
     readBtn.disabled = true;
-    statusText.textContent = 'reading…';
     try {
       // Write-only variables answer with an ERROR; asking for them would put a
       // spurious failure in front of the operator on every read.
       const names = vars.filter((v) => !v.writeOnly).map((v) => v.name);
       const res = await window.d3d.encoder.readMany(conn.id, names);
-      let ok = 0;
       for (const [name, r] of Object.entries(res)) {
         if (!r.ok) continue;
-        ok++;
         current.set(name, r.value);
         const cell = currentCells.get(name);
         if (cell) cell.textContent = r.value;
@@ -242,17 +238,14 @@ function encoderCard(conn) {
       // The unknown-status banner asks for exactly this, so answering it has to
       // clear it — otherwise the instruction is a dead end.
       onFlashConfirmed(conn.id);
-      statusText.textContent = `read ${ok} of ${vars.length} variables`;
     } catch (err) {
       // Gone from the network is a different problem from a value being
       // refused, and it is the one worth naming across the top of the window.
       if (err.code === 'EUNREACHABLE') {
         banner('error', `${conn.name} unreachable at ${conn.encoder.host}:${conn.encoder.port}`,
           { key: unreachableKey, ttlMs: 5000 });
-        statusText.textContent = 'unreachable';
       } else {
         toast('error', `${conn.name}: ${err.message}`);
-        statusText.textContent = 'read failed';
       }
     } finally {
       readBtn.disabled = false;
@@ -350,7 +343,6 @@ function encoderCard(conn) {
       if (ctl) ctl.set(value);
     }
     applyDependentRanges();
-    statusText.textContent = `read ${cached.size} of ${vars.length} variables`;
   } else {
     readAll();
   }

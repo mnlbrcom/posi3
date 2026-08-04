@@ -2697,3 +2697,41 @@ it belongs to another encoder, and connecting to it would read one device's sett
 card.
 
 **195 tests pass.**
+
+---
+
+## 2026-08-04 — The address change, proven on hardware
+
+The power cycle happened on the rig. The promotion worked first time, unattended:
+
+    before:  host 10.10.10.20   pending 10.10.10.30
+    read  →  IP = 10.10.10.30
+    after:   host 10.10.10.30   pending —
+
+    18:22:00  Encoder2  tx  opened a one-shot session to 10.10.10.30:6000 (connection is stopped)
+    18:22:00  Encoder2  tx  read IP
+    18:22:00  Encoder2  rx  IP=10.10.10.30
+    18:22:00  Encoder2  --  now answering at 10.10.10.30 — address change applied
+
+The pending address is tried first, so the first read after the power cycle costs nothing extra and
+the promotion needs no timer, no probe loop and no button. Encoder 2 is streaming at its new
+address.
+
+---
+
+## 2026-08-04 — Two smaller things in the way of reading
+
+> "longer words like error and warning have a line break in logs, can we fix that so we have more
+> space for longer categories" / "in encoder config on encoder tile remove read 13 of 14 variables
+> tip/text/indicator" / "if anything does not read, i can see that in the log"
+
+**The log's level column was 26px.** Wide enough for `TX` and `RX`; `ERROR` split across two lines,
+which made a fault the one entry in the log that was hard to read. Measured at the live font:
+TX/RX 14px, WARN 27px, ERROR 34px. The column is 56px and never breaks — `.logline` breaks words by
+design for the *message*, so the label has to opt out of it. Checked at 1440 and 390.
+
+**The config card's status text is gone.** It said `read 13 of 14 variables` after every read, and
+`unreachable` or `read failed` when one did not land. All three duplicated something already on
+screen: the values themselves appear in the table, and every read, reply and failure is in the log
+with a timestamp and a direction. The unreachable banner stays — that one is an interruption, not a
+status.
