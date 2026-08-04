@@ -743,12 +743,35 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   border-radius: var(--radius); padding: 12px 14px 10px;
 }
 .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-/* Sits with the encoder's name, because it explains its behaviour. */
-/* Smaller than the encoder's pill: it is a subordinate fact, and there may be
-   several of them. */
-.dest-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
-.dest-pill { min-width: 0; padding: 2px 8px; font-size: var(--fs-label); }
-.dest-pill-name { color: var(--text-dim); margin-right: 5px; }
+/* One block per destination, each built like the encoder beside it: name and
+   indicator on a line, address and device id beneath. They sit in the same row
+   as the encoder, because the row is the sentence — this device, feeding these
+   machines — and stacking them read as though they belonged to it.
+
+   `flex-wrap: wrap` is the whole adaptive rule: side by side while there is
+   room, under each other only once there is not. */
+.dest-pills {
+  display: flex; flex-wrap: wrap; gap: 8px 20px;
+  align-items: start; min-width: 0;
+}
+/* The encoder's own block, same shape as a destination's so the row is
+   consistent, but named at --fs-head so it still leads. */
+.card-ident { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.card-ident-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.encoder-card .card-head { align-items: start; column-gap: 22px; }
+.dest-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dest-item-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.dest-item-name {
+  font-size: var(--fs-body); color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dest-item-addr {
+  font-size: var(--fs-label); color: var(--text-faint);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+/* Smaller than the encoder's own pill: a destination's state is a subordinate
+   fact, and there may be several of them. */
+.dest-pill { flex: 0 0 auto; padding: 2px 8px; font-size: var(--fs-label); }
 
 /* `margin-left: auto` puts the group at the right of whatever line it lands on,
    and `justify-content: flex-end` keeps its own buttons right-aligned if the
@@ -770,11 +793,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 button.card-name { cursor: pointer; }
 button.card-name:hover { color: var(--accent-text); text-decoration: underline; }
 
-/* The encoder's address, set with its name: which device and where are one
-   fact. Quieter than the name so the name still leads. */
+/* The encoder's address, on its own line under the name. Quieter than the name,
+   so the name and its indicator stay the line the eye scans down the page. */
 .card-addr {
-  flex: 0 0 auto; font-size: var(--fs-label); color: var(--text-faint);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+  margin-top: 2px; font-size: var(--fs-label); color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .card-head .pill-holder { margin-left: auto; flex: 0 0 auto; }
 .encoder-card .card-head .pill-holder { margin-left: 0; }

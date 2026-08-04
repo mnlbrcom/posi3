@@ -228,21 +228,23 @@ function buildCard(conn) {
   const faultRow = el('div', { class: 'card-faults' });
 
   const node = el('div', { class: 'card encoder-card' },
+    // One row of devices: the encoder first, then every machine it feeds. Each
+    // is built the same way — name and indicator on a line, address beneath —
+    // so the row reads across as "this device, going to these", rather than
+    // down as though the destinations belonged to something above them.
     el('div', { class: 'card-head' },
-      // The encoder's name, its address and its state are one fact and read as
-      // one: which device, where, and what it is doing.
-      el('span', { class: 'card-name', text: conn.name }),
-      el('span', {
-        class: 'card-addr',
-        text: `${conn.encoder.host}:${conn.encoder.port}`,
-        title: conn.encoder.pendingHost
-          ? `${conn.encoder.pendingHost} is stored on the encoder and takes effect after a power cycle`
-          : undefined
-      }),
-      pillHolder,
-      // One per destination, beside the encoder's own state. A fan-out has
-      // several places the data has to arrive, and "the encoder is streaming"
-      // says nothing about whether any of them received it.
+      el('div', { class: 'card-ident' },
+        el('div', { class: 'card-ident-head' },
+          el('span', { class: 'card-name', text: conn.name }),
+          pillHolder),
+        el('div', {
+          class: 'card-addr',
+          title: conn.encoder.pendingHost
+            ? `${conn.encoder.pendingHost} is stored on the encoder and takes effect after a power cycle`
+            : undefined
+        }, `${conn.encoder.host}:${conn.encoder.port}`)),
+      // A fan-out has several places the data has to arrive, and "the encoder
+      // is streaming" says nothing about whether any of them received it.
       destPills,
       // Same class as Start All / Stop All: these are the same kind of thing,
       // and a smaller ghost button read as a link rather than an action.
@@ -300,25 +302,25 @@ function buildCard(conn) {
         lastHealth = key;
         clear(destPills);
         for (const d of dests) {
-          // The address, always — a destination's name is the operator's word
-          // for it, and what identifies the machine that is or is not receiving
-          // is where the packets are going.
           const where = `${d.host}:${d.port}`;
+          // The indicator is the state and nothing else. Folding the name and
+          // the address into the pill made the whole block read as one badge,
+          // and a pill that contains an address is no longer a status light.
           const p = pill(d.health);
           p.classList.add('dest-pill');
-          p.title = `${d.name ? `${d.name} · ` : ''}${where} · id ${d.devid}` +
-            (d.health === 'refused'
-              ? ' — the machine is reachable but nothing is listening on that port, so disguise is probably not running'
+          destPills.appendChild(el('div', {
+            class: 'dest-item',
+            title: d.health === 'refused'
+              ? 'The machine is reachable but nothing is listening on that port, so disguise is probably not running'
               : d.health === 'offline'
-                ? ' — no answer from the machine at all'
-                : '');
-          // The state alone is meaningless with several destinations; say which.
-          // The device id rides along because it is what disguise matches on,
-          // and this pill is now the only place the destination is described.
-          p.insertBefore(
-            el('span', { class: 'dest-pill-name', text: `${where} · id ${d.devid}` }),
-            p.lastChild);
-          destPills.appendChild(p);
+                ? 'No answer from the machine at all'
+                : undefined
+          },
+          el('div', { class: 'dest-item-head' },
+            // The operator's word for the machine leads: "director" is what
+            // they call it, and the address below says which one that is.
+            el('span', { class: 'dest-item-name', text: d.name || where }, ), p),
+          el('div', { class: 'dest-item-addr', text: `${where} · id ${d.devid}` })));
         }
       }
 
