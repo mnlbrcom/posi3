@@ -88,6 +88,14 @@ export function renderLog(root) {
     const lines = visible();
     clear(box);
     const names = new Map(store.connections.map((c) => [c.id, c.name]));
+    // The name the line was written with, first: a connection deleted since is
+    // still named here, which is the case where its log lines matter most. The
+    // live map covers anything logged before names were stamped.
+    //
+    // When neither knows it, say so in words. A UUID — whole or shortened — is
+    // not something anyone can read; "deleted" is the fact the reader actually
+    // needs, and the id is on the tooltip for the rare case it is wanted.
+    const who = (l) => l.name || names.get(l.id) || 'deleted';
     // Render only the tail: a virtualised list is not worth the complexity for
     // a window that is only ever read from the bottom.
     for (const l of lines.slice(-600)) {
@@ -101,7 +109,7 @@ export function renderLog(root) {
         // Blank on info, which is most lines — the eye should catch the ones
         // that are not.
         el('span', { class: `lv ${l.level}`, text: l.level === 'info' ? '' : l.level }),
-        l.id ? el('span', { class: 'src', text: names.get(l.id) || l.id }) : null,
+        l.id ? el('span', { class: 'src', title: l.id, text: who(l) }) : null,
         el('span', { text: l.text })));
     }
     box.scrollTop = box.scrollHeight;

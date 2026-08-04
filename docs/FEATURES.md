@@ -3078,3 +3078,37 @@ this app makes on the operator's behalf, not claims about hardware, and they bel
 A test states the rule, verified by restoring each fabricated value in turn.
 
 **207 tests pass.**
+
+---
+
+## 2026-08-04 — The log names the connection, not its UUID
+
+> "can we change in the log the "c9a36e2b-9167-4751-94a0-08eab3356218" to an actuall meaningful name?
+> short precice" / "i dont care what it is, i dont undsertand "c9a36e2b-…" so it needs to be
+> something i understand like "delted UID""
+
+The log view resolved a line's id against the **current** connections. Delete one and every line it
+ever wrote fell back to a raw UUID — precisely when the log is being read to find out what happened
+to it. Export was worse: it printed the id unconditionally, so an exported log was a column of UUIDs
+whatever the connection was called.
+
+**The name is stamped when the line is written**, by whoever writes it — the link from its own
+config, the API from the store. That survives deletion, and it is the more truthful record besides:
+rename an encoder and yesterday's lines still say what it was called yesterday.
+
+    user Trap Lift    added connection "Trap Lift" — encoder 10.10.10.99:6000, to 127.0.0.1:6000 id 99
+    app  Trap Lift    read failed — no answer at 10.10.10.99:6000
+    app  Trap Lift    [idle] stopped
+    user              deleted connection "Trap Lift" — was encoder 10.10.10.99:6000
+
+When no name is known — lines written before this existed — it says **`deleted`**, in words. A
+shortened UUID was tried first and rejected, correctly: `c9a36e2b…` is no more readable than the
+whole thing. What the reader needs is the fact, not the identifier. The full id is on the tooltip for
+the rare case anyone wants it.
+
+Export follows, with the direction padded into a column of its own:
+
+    2026-08-04T20:53:15.067Z [info] rx   Revolve Software Version 4.50
+    2026-08-04T20:53:15.067Z [info] app  Revolve firmware 4.50
+
+**207 tests pass.**

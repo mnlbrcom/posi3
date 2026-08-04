@@ -87,6 +87,18 @@ function createApi(ctx) {
   const { manager, store } = ctx;
   const changed = ctx.onConfigChanged || (() => {});
 
+  /**
+   * The connection's name at the moment the line is written.
+   *
+   * Resolved here rather than by the reader: a reader matching the id against
+   * the current connections shows a bare UUID as soon as one is deleted, which
+   * is exactly when the log is being read to find out what happened to it.
+   */
+  const nameOf = (id) => {
+    const conn = id && store.find(id);
+    return conn ? conn.name : null;
+  };
+
   /** Announce a config mutation, then hand the value back to the caller. */
   const announce = (value) => {
     changed();
@@ -101,7 +113,9 @@ function createApi(ctx) {
    * show — and none of it reaches this layer anyway.
    */
   const userLog = (id, text, level = 'info') =>
-    manager.logger.push({ id: id || null, level, dir: 'user', text, ts: Date.now() });
+    manager.logger.push({
+      id: id || null, name: nameOf(id), level, dir: 'user', text, ts: Date.now()
+    });
 
   /**
    * The app reporting on itself: a failure, a risk, a state it has entered.
@@ -113,7 +127,9 @@ function createApi(ctx) {
    * in that browser.
    */
   const appLog = (id, text, level = 'info') =>
-    manager.logger.push({ id: id || null, level, dir: 'app', text, ts: Date.now() });
+    manager.logger.push({
+      id: id || null, name: nameOf(id), level, dir: 'app', text, ts: Date.now()
+    });
 
   /**
    * Read from an encoder that is not connected, over a socket of its own.
@@ -124,7 +140,7 @@ function createApi(ctx) {
    */
   /** Everything a one-shot session says goes in the log, tagged like any other. */
   const offlineLogger = (id) => (level, dir, text) =>
-    manager.logger.push({ id, level, dir, text, ts: Date.now() });
+    manager.logger.push({ id, name: nameOf(id), level, dir, text, ts: Date.now() });
 
   /**
    * The addresses worth trying, newest first.
@@ -543,8 +559,17 @@ function createApi(ctx) {
 
     logTail: (opts) => manager.logger.tail(opts || {}),
 
+    // The name, not the id. An exported log is read by a person, usually one
+    // who was not there — a column of UUIDs tells them nothing and costs a
+    // third of every line. The id is kept where it is the only thing known.
     logExport: () => manager.logger.tail({ limit: 100000 })
-      .map((l) => `${new Date(l.ts).toISOString()} [${l.level}] ${l.id || '-'} ${l.dir || ''} ${l.text}`)
+      .map((l) => [
+        new Date(l.ts).toISOString(),
+        `[${l.level}]`,
+        (l.dir || '-').padEnd(4),
+        l.name || (l.id ? 'deleted' : '-'),
+        l.text
+      ].join(' '))
       .join('\n')
   };
 }
