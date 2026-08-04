@@ -353,3 +353,28 @@ test('a link delivering a known rate reports it', () => {
   assert.ok(Math.abs(last.rxHz - 100) < 5,
     `expected about 100 Hz, got ${last.rxHz}`);
 });
+
+test('a rate readout holds still without lying', () => {
+  // The one-second average is steady; painting it thirty times a second was
+  // not. Each repaint slides the window by a sample, so with integer counters
+  // a whole-number readout flickered 98 / 99 / 100 continuously.
+  const ui = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'ui.js'), 'utf8');
+  const fn = ui.slice(ui.indexOf('export function steady'));
+  const body = fn.slice(0, fn.indexOf('\n}\n'));
+
+  // Both gates, and both on the display only.
+  assert.match(body, /everyMs = 500/, 'the shown figure changes at most twice a second');
+  assert.match(body, /deadband = 2/, 'and only when the real value has moved enough to matter');
+  // Stopping is the one change nobody should wait for.
+  assert.match(body, /value === 0 \|\| shown === 0/);
+
+  // Every rate readout uses it: a steadied dashboard beside a twitching footer
+  // would just look broken.
+  for (const [file, count] of [
+    ['views/dashboard.js', 4], ['views/connections.js', 2], ['app.js', 3]
+  ]) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', file), 'utf8');
+    assert.ok((src.match(/steady/g) || []).length >= count,
+      `${file} must run its rate through steady()`);
+  }
+});

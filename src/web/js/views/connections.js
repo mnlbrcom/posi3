@@ -6,7 +6,7 @@
  * use, and keep the window open(!)" from the original how-to.
  */
 
-import { el, clear, pill, groupDigits, hz, setText, confirmModal, toast, field, input, select, checkbox, segmented } from '../ui.js';
+import { el, clear, pill, groupDigits, hz, steady, setText, confirmModal, toast, field, input, select, checkbox, segmented } from '../ui.js';
 import { store } from '../store.js';
 import { openControls } from './detail.js';
 
@@ -106,7 +106,8 @@ export function renderConnections(root) {
         connField('Rate', cells.rate)));
 
     list.appendChild(card);
-    live.push({ id: conn.id, cells, pillHolder, startBtn, stopBtn, lastState: state });
+    // Per row: each rate holds its own last-shown value.
+    live.push({ id: conn.id, cells, pillHolder, startBtn, stopBtn, lastState: state, steadyRate: steady() });
   }
 
   view.appendChild(list);
@@ -117,7 +118,7 @@ export function renderConnections(root) {
       for (const l of live) {
         const t = store.telemetryOf(l.id);
         setText(l.cells.pos, t ? groupDigits(t.pos) : null);
-        setText(l.cells.rate, t && t.txHz > 0.5 ? `${hz(t.txHz)} Hz` : null);
+        setText(l.cells.rate, t && t.txHz > 0.5 ? `${hz(l.steadyRate(t.txHz))} Hz` : null);
 
         // Only on a real change: this runs every animation frame, and
         // rebuilding the pill or reassigning `disabled` each time is what made

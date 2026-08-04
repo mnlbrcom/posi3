@@ -3293,3 +3293,39 @@ Measured on hardware after the fix, three samples two seconds apart:
     Encoder 2  rx 55.4 Hz, tx 110.8 Hz   (18 ms cycle, two destinations)
 
 **217 tests pass.**
+
+---
+
+## 2026-08-05 — The rate stops twitching
+
+> "hz number jidders, the average over one sec should stop that but it doesnt can we smooth the value
+> this?" / "yes A and B"
+
+The one-second average is steady. Painting it thirty times a second was not: every telemetry tick
+recomputes it, each recomputation slides the window by one sample, and with integer counters that
+moves the result a packet or two either way. So a whole-number readout flickered 98 / 99 / 100
+continuously. Rounding to the nearest ten had been hiding it.
+
+The measurement was never wrong, so it is untouched. Two gates on the **display** only:
+
+- **how often** the shown figure may change at all — twice a second
+- **how far** the real value must move before it is worth changing — 2 Hz
+
+A slow drift still gets through, because the comparison is against what is shown: successive small
+moves accumulate until they clear the band. Verified against a fake clock:
+
+    jitter 99 / 98 / 100 / 99 / 101 / 98     shown 99 throughout
+    a real change to 55                      shown within 200 ms
+    a drift 100 → 105                        tracked, within ±1
+    a stop                                   shown at once
+
+That last one is a deliberate exception: a value at or returning from zero lands immediately, because
+"it stopped" is the one change nobody should wait half a second to see.
+
+Applied to every rate in the UI — both dashboard totals, each card's RX / TX, the connection rows and
+the footer. A steadied dashboard beside a twitching footer would just look broken.
+
+Measured on the rig: the card's rate held one value, `98 / 98 Hz`, across sixty samples over six
+seconds — zero changes, where before it changed on nearly every frame.
+
+**218 tests pass.**
