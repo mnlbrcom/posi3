@@ -204,11 +204,23 @@ function encoderCard(conn) {
     applyBtn.textContent = edited.size ? `Apply ${edited.size} change${edited.size > 1 ? 's' : ''}` : 'Apply changes';
   }
 
+  /** Keyed per connection, so several stopped encoders do not stack one notice. */
+  const idleKey = `cfg-idle-${conn.id}`;
+
   async function readAll() {
     if (store.stateOf(conn.id) === 'idle') {
       statusText.textContent = 'connection is stopped';
+      // A banner, not just the status line beside the button. Configuration
+      // travels down the same TCP session as the position stream, so a stopped
+      // connection means there is no socket to ask down — and a grey line in a
+      // card header is easy to press twice without noticing.
+      banner('warn',
+        `${conn.name}: the connection is stopped, so there is nothing to read from. ` +
+        'Configuration uses the same TCP session as the data stream — start the connection first.',
+        { key: idleKey });
       return;
     }
+    dismissBanner(idleKey);
     readBtn.disabled = true;
     statusText.textContent = 'reading…';
     try {
