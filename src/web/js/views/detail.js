@@ -64,11 +64,6 @@ export function openControls(conn) {
     onclick: () => toggleLink(conn)
   });
 
-  // Where the dialog was opened from decides where "go to" should land, so
-  // close first: leaving a dialog over a screen the user just asked for is the
-  // kind of thing that looks like a bug.
-  const goTo = (view) => { close(); store.setView(view, conn.id); };
-
   const close = openModal({
     title: `${conn.name} · Controls`,
     closeLabel: 'Done',
@@ -102,13 +97,6 @@ export function openControls(conn) {
           { value: 'every', label: 'Forward every', title: 'Original behaviour; best for velocity derivation in disguise' },
           { value: 'latest', label: 'Newest only', title: 'Lowest latency when only current position matters' }
         ], conn.udpSendPolicy, (v) => saveField(conn, { udpSendPolicy: v }))),
-
-      el('div', { class: 'field' },
-        el('label', { text: 'Go to' }),
-        el('div', { class: 'row-inline' },
-          el('button', { class: 'btn', text: 'Encoder Config', onclick: () => goTo('encoder') }),
-          el('button', { class: 'btn', text: 'Disguise Mapping', onclick: () => goTo('mapping') }),
-          el('button', { class: 'btn', text: 'Log', onclick: () => goTo('log') }))),
 
       // Deleting used to live in the connections row menu, which is gone. It
       // belongs on the one surface that is about managing a single connection,
