@@ -1314,8 +1314,17 @@ class EncoderLink extends EventEmitter {
     this._resolveFlash('disconnected');
   }
 
+  /**
+   * The name is stamped here, not looked up when the line is drawn.
+   *
+   * A reader resolving the id against the current connections shows a bare UUID
+   * the moment one is deleted, and Export never had the name at all. Recording
+   * the name the connection had when the line was written is also the more
+   * truthful record: rename an encoder and yesterday's lines still say what it
+   * was called yesterday.
+   */
   _log(level, dir, text) {
-    this.emit('log', { id: this.id, level, dir, text, ts: Date.now() });
+    this.emit('log', { id: this.id, name: this.config.name, level, dir, text, ts: Date.now() });
   }
 
   _warn(text) {

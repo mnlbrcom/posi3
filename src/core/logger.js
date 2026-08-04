@@ -40,12 +40,14 @@ class Logger {
     this._dropped = 0;
   }
 
-  /** @param {{id?:string, level?:string, dir?:string, text:string, ts?:number}} entry */
+  /** @param {{id?:string, name?:string, level?:string, dir?:string, text:string, ts?:number}} entry */
   push(entry) {
     const line = {
       seq: ++this._seq,
       ts: entry.ts || Date.now(),
       id: entry.id || null,
+      // Stamped by the producer, so it survives the connection being deleted.
+      name: entry.name || null,
       level: entry.level || 'info',
       dir: entry.dir || null,
       text: entry.text

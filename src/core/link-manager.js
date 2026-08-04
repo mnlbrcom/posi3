@@ -54,7 +54,7 @@ class LinkManager extends EventEmitter {
       this.emit('state', e);
       // The app's own state machine, not something the encoder said.
       this.logger.push({
-        id: e.id, dir: 'app',
+        id: e.id, name: link.config.name, dir: 'app',
         level: e.state === 'error' ? 'error' : 'info',
         text: `[${e.state}] ${e.detail}`
       });
