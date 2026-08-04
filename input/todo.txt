@@ -1,8 +1,7 @@
 posi3 — TODO
 ============
 
-Mine, not a work queue. Claude reads this for context and must ask before
-acting on anything in it — whether to take it at all, and how to approach it.
+Notes for Claude. Anything written here is read at the start of a session.
 
 
 OPEN
@@ -10,6 +9,10 @@ OPEN
 - Adding the encoder software version to the dashboard
 - Adding the disguise model to the dashboard and connection
 - Adding the Encoder Model to the dashboard and Encoder Config
+- IP/Nic Picker in add connection optimieren
+- Pop Layouts optimieren
+- Dashboard stats rethink
+Nn
 
 
 DONE

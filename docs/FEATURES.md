@@ -2596,3 +2596,45 @@ failure — and the previous behaviour, 827,300 failures against one destination
 else on the dashboard.
 
 **185 tests pass.**
+
+## 2026-08-04 — Reading an encoder that is not connected
+
+> "when we read an encoder those the connection need to be engaged?" / "sure lets do the one shot
+> connection for read, then we also dont need the banner to tell us its in idle. If we click read but
+> the device is not in the network anymore, we need a banner … auto disaappear after 5 seconds. BTW
+> all banners should have an x on the right to close them."
+
+**It did need to be engaged**, because the configuration channel *is* the data channel — one TCP
+socket, and a stopped connection has none. So a stopped encoder's settings could not be looked at at
+all, which is the wrong way round: reading is the one thing worth doing to an encoder that is not
+streaming, since it is how you find out what it is set to before committing to it.
+
+`readVariablesOnce` opens a socket, asks, and closes — the same thing discovery already does. The
+server chooses: a running link uses its own session, a stopped one gets a socket of its own. The UI
+call is unchanged.
+
+The cost is one of the encoder's few client slots for a fraction of a second, which is why it is a
+deliberate one-shot rather than a poll. Requests are serialised: the encoder broadcasts replies to
+every client and they are matched by name, not by sequence.
+
+**On the rig, with Encoder 2 stopped:**
+
+    Revolve    streaming  read 13 of 14   CycleTime 10  IP 10.10.10.10  Gateway 10.10.10.10
+    Encoder 2  idle       read 13 of 14   CycleTime 18  IP 10.10.10.20  Gateway 10.10.10.1
+
+Its network settings had never been visible before — the connection had never been started.
+
+The "connection is stopped" banner added an hour earlier is gone with the limitation that caused it.
+In its place, the case that actually needs saying: **`Encoder 2 unreachable at 10.10.10.20:6000`**,
+in red, gone after five seconds. Gone from the network is a different problem from a value being
+refused, and only the first is worth the top of the window.
+
+### Every banner closes now
+
+`dismissible: false` is removed. Three notices used it — the startup failure, the read-only profile
+warning, and the flash-write warning. **A notice nobody can clear is a notice that gets ignored**,
+and the flash one had already been seen sitting on screen describing a write that had finished.
+Importance belongs in the wording and the colour, not in trapping it. `ttlMs` makes a banner
+self-closing, and `toast` is now just a banner with one.
+
+**185 tests pass;** audits clean on all five screens.

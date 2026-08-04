@@ -204,23 +204,12 @@ function encoderCard(conn) {
     applyBtn.textContent = edited.size ? `Apply ${edited.size} change${edited.size > 1 ? 's' : ''}` : 'Apply changes';
   }
 
-  /** Keyed per connection, so several stopped encoders do not stack one notice. */
-  const idleKey = `cfg-idle-${conn.id}`;
+  /** Keyed per connection, so several unreachable encoders do not stack. */
+  const unreachableKey = `cfg-gone-${conn.id}`;
 
   async function readAll() {
-    if (store.stateOf(conn.id) === 'idle') {
-      statusText.textContent = 'connection is stopped';
-      // A banner, not just the status line beside the button. Configuration
-      // travels down the same TCP session as the position stream, so a stopped
-      // connection means there is no socket to ask down — and a grey line in a
-      // card header is easy to press twice without noticing.
-      banner('warn',
-        `${conn.name}: the connection is stopped, so there is nothing to read from. ` +
-        'Configuration uses the same TCP session as the data stream — start the connection first.',
-        { key: idleKey });
-      return;
-    }
-    dismissBanner(idleKey);
+    // A stopped connection is no longer a reason not to read: the server opens
+    // a socket of its own, asks, and closes it.
     readBtn.disabled = true;
     statusText.textContent = 'reading…';
     try {
@@ -247,8 +236,16 @@ function encoderCard(conn) {
       onFlashConfirmed(conn.id);
       statusText.textContent = `read ${ok} of ${vars.length} variables`;
     } catch (err) {
-      toast('error', `${conn.name}: ${err.message}`);
-      statusText.textContent = 'read failed';
+      // Gone from the network is a different problem from a value being
+      // refused, and it is the one worth naming across the top of the window.
+      if (err.code === 'EUNREACHABLE') {
+        banner('error', `${conn.name} unreachable at ${conn.encoder.host}:${conn.encoder.port}`,
+          { key: unreachableKey, ttlMs: 5000 });
+        statusText.textContent = 'unreachable';
+      } else {
+        toast('error', `${conn.name}: ${err.message}`);
+        statusText.textContent = 'read failed';
+      }
     } finally {
       readBtn.disabled = false;
     }
@@ -288,7 +285,7 @@ function encoderCard(conn) {
     if (!ok) return;
 
     applyBtn.disabled = true;
-    banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { dismissible: false, key: 'flash' });
+    banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: 'flash' });
 
     // If the encoder never confirms, say so rather than quietly clearing the
     // banner: "write status unknown" is actionable, a vanished banner is not.
@@ -346,10 +343,8 @@ function encoderCard(conn) {
     }
     applyDependentRanges();
     statusText.textContent = `read ${cached.size} of ${vars.length} variables`;
-  } else if (store.stateOf(conn.id) !== 'idle') {
-    readAll();
   } else {
-    statusText.textContent = 'connection is stopped';
+    readAll();
   }
 
   let lastState = null;

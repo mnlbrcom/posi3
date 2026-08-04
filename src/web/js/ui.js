@@ -293,7 +293,19 @@ export function openModal({ title, body, closeLabel = 'Close', wide = false }) {
 }
 
 /** Persistent notice strip under the title bar. Returns a dismiss function. */
-export function banner(kind, text, { dismissible = true, key } = {}) {
+/**
+ * A notice across the top of the window.
+ *
+ * Every banner closes. There used to be a `dismissible: false` for the ones
+ * thought too important to lose — the flash-write warning above all — but a
+ * notice nobody can clear is a notice that eventually gets ignored, and it left
+ * an operator staring at a warning about a write that had already finished.
+ * Importance is carried by the wording and the colour, not by trapping it on
+ * screen.
+ *
+ * `ttlMs` makes it self-closing, for things that are true only for a moment.
+ */
+export function banner(kind, text, { key, ttlMs = 0 } = {}) {
   const root = document.getElementById('banners');
   if (key) {
     const existing = root.querySelector(`[data-key="${CSS.escape(key)}"]`);
@@ -301,8 +313,9 @@ export function banner(kind, text, { dismissible = true, key } = {}) {
   }
   const node = el('div', { class: `banner banner-${kind}`, dataset: key ? { key } : {} },
     el('span', { text }),
-    dismissible ? el('button', { class: 'banner-close', text: '×', onclick: () => node.remove() }) : null);
+    el('button', { class: 'banner-close', text: '×', title: 'Dismiss', onclick: () => node.remove() }));
   root.appendChild(node);
+  if (ttlMs > 0) setTimeout(() => node.remove(), ttlMs);
   return () => node.remove();
 }
 
@@ -312,7 +325,5 @@ export function dismissBanner(key) {
 }
 
 export function toast(kind, text, ms = 4500) {
-  const remove = banner(kind, text);
-  setTimeout(remove, ms);
-  return remove;
+  return banner(kind, text, { ttlMs: ms });
 }

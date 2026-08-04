@@ -49,7 +49,7 @@ async function boot() {
     store.info = await window.d3d.appInfo();
     store.setProfile(await window.d3d.config.get());
   } catch (err) {
-    banner('error', `Could not start: ${err.message}`, { dismissible: false });
+    banner('error', `Could not start: ${err.message}`);
     return;
   }
 
@@ -59,7 +59,7 @@ async function boot() {
     banner('warn', store.info.loadWarning, { key: 'profile-warning' });
   }
   if (store.info.readOnly) {
-    banner('warn', 'This profile is read-only, so changes will not be saved.', { dismissible: false });
+    banner('warn', 'This profile is read-only, so changes will not be saved.');
   }
 
   // The desktop window uses a hidden-inset title bar on macOS, so the traffic
