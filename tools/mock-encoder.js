@@ -72,7 +72,10 @@ const opts = parseArgs(process.argv, {
    * the two-number ambiguity between "pos vel" and "pos timestamp" — was
    * silently ignored and passed against the default three-field mode instead.
    */
-  outputMode: 'Position_Velocity_Timestamp_'
+  outputMode: 'Position_Velocity_Timestamp_',
+  /** ASCII_SHORT, ASCII (verbose) or BINARY. The formatter honoured all three
+   *  already; there was simply no way to ask for one. */
+  outputType: 'ASCII_SHORT'
 });
 
 const random = makeRandom(opts.seed);
@@ -91,7 +94,7 @@ const vars = {
   Offset: '0',
   TimeMode: 'Cyclic',
   OutputMode: opts.outputMode,
-  OutputType: 'ASCII_SHORT',
+  OutputType: opts.outputType,
   CycleTime: String(opts.cycle),
   IP: '10.10.10.10',
   NetMask: '255.255.255.0',

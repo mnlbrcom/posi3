@@ -168,8 +168,8 @@ const ENCODER_VARS = [
     unsupported: ['BINARY'],
     label: 'Output type',
     help: 'ASCII_SHORT sends "<position> <velocity> <time>" separated by spaces. ' +
-      'ASCII sends "POSITION=… VELOCITY=… TIMESTAMP=…". BINARY sends 32-bit values with no ' +
-      'separator, and this app streams ASCII only.'
+      'ASCII sends "POSITION=… VELOCITY=… TIMESTAMP=…" — about twice the bytes, and handled the ' +
+      'same. BINARY sends 32-bit values with no separator, and this app streams ASCII only.'
   },
   {
     name: 'OutputMode', group: 'output', type: 'flags',
