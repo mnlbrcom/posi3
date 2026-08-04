@@ -16,7 +16,15 @@ const { Logger } = require('./logger');
 const { DEFAULT_TELEMETRY_HZ } = require('../shared/constants');
 
 /** Smoothing for the packet-rate readouts, so they do not flicker. */
-const HZ_ALPHA = 0.35;
+/**
+ * Throughput is averaged over this window rather than smoothed exponentially.
+ *
+ * An EMA at 30 Hz reacts within a fraction of a second, so the figure twitched
+ * constantly and read as noise on a screen left open all show. A flat ten
+ * seconds gives a number that holds still long enough to be read, compared
+ * against, and quoted down a headset.
+ */
+const RATE_WINDOW_MS = 10000;
 
 class LinkManager extends EventEmitter {
   constructor(opts = {}) {
@@ -52,7 +60,7 @@ class LinkManager extends EventEmitter {
     link.on('log', (e) => this.logger.push(e));
 
     this._links.set(config.id, link);
-    this._rates.set(config.id, { rx: 0, tx: 0, lastRx: 0, lastTx: 0 });
+    this._rates.set(config.id, { samples: [] });
     return link;
   }
 
@@ -79,6 +87,10 @@ class LinkManager extends EventEmitter {
   start(id) {
     const link = this._links.get(id);
     if (!link) throw new Error(`No such connection: ${id}`);
+    // start() resets the counters, so history from the previous run would make
+    // the average negative for the first ten seconds.
+    const rate = this._rates.get(id);
+    if (rate) rate.samples.length = 0;
     link.start();
     this._syncTimer();
     return link;
@@ -160,15 +172,26 @@ class LinkManager extends EventEmitter {
 
       const t = link.telemetry();
       const rate = this._rates.get(link.id);
-      if (rate && dt > 0) {
-        const rxHz = (t.rxTotal - rate.lastRx) / dt;
-        const txHz = (t.txTotal - rate.lastTx) / dt;
-        rate.lastRx = t.rxTotal;
-        rate.lastTx = t.txTotal;
-        rate.rx += HZ_ALPHA * (rxHz - rate.rx);
-        rate.tx += HZ_ALPHA * (txHz - rate.tx);
-        t.rxHz = rate.rx;
-        t.txHz = rate.tx;
+      if (rate) {
+        // Counters, not deltas: the oldest sample still inside the window and
+        // the newest give the average directly, and a dropped or late tick
+        // cannot skew it the way a per-tick delta would.
+        const now = Date.now();
+        rate.samples.push({ t: now, rx: t.rxTotal, tx: t.txTotal });
+        while (rate.samples.length > 1 && now - rate.samples[0].t > RATE_WINDOW_MS) {
+          rate.samples.shift();
+        }
+        const first = rate.samples[0];
+        const span = (now - first.t) / 1000;
+        // Under a second of history says nothing useful yet; a link that has
+        // just started reads 0 rather than a wild extrapolation.
+        if (span >= 1) {
+          t.rxHz = (t.rxTotal - first.rx) / span;
+          t.txHz = (t.txTotal - first.tx) / span;
+        } else {
+          t.rxHz = 0;
+          t.txHz = 0;
+        }
       } else {
         t.rxHz = 0;
         t.txHz = 0;

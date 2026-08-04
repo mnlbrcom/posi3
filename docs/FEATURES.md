@@ -2457,3 +2457,43 @@ The two help strings were replaced with the encoder's own wording, as given:
   send a velocity Value (steps/s). Timestamp — Encoder will send a timestamp`
 
 **179 tests pass;** audits clean on Dashboard, Encoder Config, Disguise Mapping and Connections.
+
+## 2026-08-04 — The same values read over and over, and a rate that would not sit still
+
+> "also looks like the read happend multiple times in the log reading the same values" / "in
+> connections and dashboard where it shows HZ, can you show a 10 sec avarage for it and only show
+> 10, 20, 30 ...etc so the closest 10th"
+
+### Reads
+
+Measured rather than guessed. A screen sitting idle for twelve seconds issued **13** reads — one
+sweep, on mount, which is correct. Then the same test while a *second, unrelated* encoder started
+and stopped:
+
+    reads issued: 108        (one sweep is 13)
+
+`onStoreChange` re-renders every view on any link-state change, and each config card read all
+fourteen variables as it was constructed. So another encoder connecting rebuilt the screen and
+re-read **every** encoder, several times over — every one a round trip on the same TCP session that
+carries the position stream, all returning values the screen already had.
+
+Values are now kept at module scope and restored on rebuild. A cached value is exactly as fresh as
+the last read: the encoder announces its own changes on the same socket, so anything altered
+elsewhere arrives as a broadcast rather than being discovered by polling. Writes update the cache
+too, or a rebuild would show what the device held a moment ago.
+
+### Throughput
+
+It was an exponential moving average at 30 Hz, so it reacted within a fraction of a second and
+never settled — a figure that reads as noise on a screen left open all show.
+
+Now a flat **ten-second window**, computed from counters rather than per-tick deltas so a late or
+dropped tick cannot skew it, cleared when a link restarts because `start()` resets the counters and
+the average would otherwise go negative. Under a second of history reads 0 rather than extrapolating
+wildly from two samples.
+
+Displayed to the nearest ten. Measured on the rig: raw 98.87 … 98.97 over twelve seconds, shown as a
+motionless **100 Hz**. A rate that rounds to zero without being zero shows `<10` — "nothing is
+arriving" and "a trickle is arriving" call for opposite responses, and rounding must not merge them.
+
+**179 tests pass;** audits clean on Dashboard, Connections and Encoder Config.
