@@ -3197,3 +3197,26 @@ idle rig holds no wakeup open.
 Measured, with nothing running: 17 lines → 18 the moment Stop All was pressed, → 49 after Start All.
 
 **214 tests pass.**
+
+---
+
+## 2026-08-04 — Pause froze the recording, not just the window
+
+> "the Pause log, should stop new sending lines, resume should show all lines since stoped, but it
+> doesnt, they only appear after a cmd+r for me"
+
+`ingestLog` returned early while paused, so lines arriving during a pause were **discarded**, not
+held. Resume showed nothing that had happened, and the missing lines reappeared only after a reload —
+which re-reads the server's ring buffer directly, the same reason a reload appeared to fix the
+auto-update problem.
+
+Pausing to read something and losing what arrived meanwhile is the opposite of what the button is
+for. Pause now freezes the *window*: the buffer keeps filling, and `refreshLive` is what stops.
+
+Measured: 52 lines, paused, a stop-all and start-all run through — still 52 while paused, 84 the
+moment Resume was pressed.
+
+The 2,000-line render cap still applies, so a very long pause loses the oldest lines from the view.
+The server's ring buffer holds 5,000 and Export reads that.
+
+**215 tests pass.**

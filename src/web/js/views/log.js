@@ -16,9 +16,16 @@ let buffer = [];
 let paused = false;
 let filters = { id: '', level: '', dir: '' };
 
-/** Called from app.js for every batch, regardless of which view is showing. */
+/**
+ * Called from app.js for every batch, regardless of which view is showing.
+ *
+ * Pause freezes the *window*, not the recording. This used to return early
+ * while paused, so lines arriving during a pause were thrown away and Resume
+ * showed nothing that had happened — they came back only on a reload, which
+ * re-reads the server's ring buffer. Pausing to read something and losing what
+ * arrived meanwhile is the opposite of what the button is for.
+ */
 export function ingestLog(batch) {
-  if (paused) return;
   for (const line of batch.lines) buffer.push(line);
   if (buffer.length > MAX_RENDERED) buffer = buffer.slice(-MAX_RENDERED);
 }
