@@ -85,20 +85,22 @@ test('nothing is lost from the record, only from the live view', () => {
   assert.equal(kept[11].text, 'line 11');
 });
 
-test('a link state change is the app talking, not the encoder', () => {
+test('a link state change is the app talking, not the encoder', (t) => {
   const logger = new Logger();
   const manager = new LinkManager({ logger });
   const forwarded = collect(manager);
 
   manager.upsert({
     id: 'a', name: 'test',
-    encoder: { host: '127.0.0.1', port: 6000 },
-    destinations: [{ host: '127.0.0.1', port: 6001, devid: 1 }]
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ host: '127.0.0.1', port: 65535, devid: 1 }],
+    reconnect: { enabled: false }
   });
-  // Reconfiguring emits no state; stopping an idle link does. Either way the
-  // line must not claim to come off the wire.
-  manager.stop('a');
+  // A real state change: starting takes it to CONNECTING. (Stopping a link that
+  // was never started deliberately emits nothing — see the stop() guard.)
+  manager.start('a');
   manager._tick();
+  t.after(() => manager.stop('a'));
 
   const states = forwarded.filter((l) => /^\[/.test(l.text));
   assert.ok(states.length > 0, 'expected at least one state line');
@@ -199,4 +201,60 @@ test('an edit records both values', () => {
   const line = userLines(logger).at(-1);
   assert.match(line.text, /velocityPolicy zero → passthrough/,
     'before and after, because "what was it before" is the question asked afterwards');
+});
+
+test('stopping what is already stopped does nothing and says nothing', () => {
+  // Reported from the rig: Encoder 2 had never been started, yet Stop All
+  // produced "[idle] stopped" for it — and "stop all (2 connections)" counted
+  // what existed rather than what was running, so the same line appeared with
+  // nothing to stop.
+  const { api, store, logger, manager } = apiWith();
+  const a = store.upsertConnection({ name: 'Revolve' });
+  const b = store.upsertConnection({ name: 'Encoder 2' });
+  manager.upsert(a);
+  manager.upsert(b);
+
+  const stateLines = () => logger.tail({ limit: 200 }).filter((l) => /^\[/.test(l.text));
+  assert.equal(stateLines().length, 0, 'nothing has been started, so nothing has changed state');
+
+  api.linkStopAll();
+
+  assert.equal(stateLines().length, 0,
+    'a link that was never started has not stopped, and must not say it has');
+  assert.match(userLines(logger).at(-1).text, /nothing was running/,
+    'the count must describe what happened, not how many connections exist');
+});
+
+test('log lines are delivered when nothing is running', () => {
+  // The drain lived on the telemetry timer, which stopped whenever no link was
+  // running — so stopping a connection, editing one, deleting one or a failed
+  // read produced lines that were written and never sent. They arrived only
+  // after a page reload, which re-reads the ring buffer directly. That is
+  // exactly when the log is being read to find out what happened.
+  const { api, store, logger, manager } = apiWith();
+  const conn = store.upsertConnection({ name: 'Revolve' });
+  manager.upsert(conn);
+
+  const delivered = [];
+  manager.on('log', (batch) => delivered.push(...batch.lines));
+
+  assert.equal(manager.runningCount, 0, 'nothing is running');
+  api.configSaveConnection(Object.assign(JSON.parse(JSON.stringify(conn)), { name: 'Renamed' }));
+
+  // The timer has to have been woken by the line itself.
+  manager._tick();
+  assert.ok(delivered.some((l) => /name Revolve → Renamed/.test(l.text)),
+    'an edit with nothing running must still reach the log window');
+});
+
+test('an idle rig does not hold a timer open for nothing', () => {
+  // The other half: waking on demand must not mean running for ever.
+  const { manager, logger } = apiWith();
+  assert.equal(manager._timer, null, 'idle at rest');
+
+  logger.push({ text: 'something happened' });
+  assert.ok(manager._timer, 'a line wakes the drain');
+
+  manager._tick();
+  assert.equal(manager._timer, null, 'and it goes back to sleep once delivered');
 });
