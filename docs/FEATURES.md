@@ -3036,3 +3036,45 @@ Live testing caught a defect in this very change — `flash write started … un
 `checkVarWrite` returns `variable`, not `name`.
 
 **206 tests pass.**
+
+---
+
+## 2026-08-04 — Auditing the rest of the profile for invented values
+
+> "we started this whole debug session with talking about the profil, and the problem that there were
+> certain default values placed, without the fact that there are default values. Is this fixed and
+> values are either new/empty, real/read/actual or changed/future?"
+
+The earlier fix was scoped to `encoderMeta`. Auditing every field a new connection is given found two
+more of the same class, both fabricated facts about a device nobody had spoken to.
+
+**`parser.outputType: 'ASCII_SHORT'`** — claimed on every new connection whatever the encoder was set
+to. Its only consumer was the validator re-asserting the same default: **nothing reads it**, because
+the parser recognises both ASCII and ASCII_SHORT from the line itself. Null now. The field is kept
+only because removing it is a schema change; it is a candidate for deletion.
+
+**`mapping.maxInput: 33,554,431`** — the nameplate again, on a rig whose encoders report 300,000 and
+100,000. Only mode `capture` reads it, and capture means "the span the operator recorded" — nothing
+had been recorded. A capture started on Revolve would have been 111 times too wide. It is `0`, and
+`full` and `revolutions` derive their span from what the device reported, as before. This is the
+same number that once drew the travel bar at 0.62% of its track.
+
+### The three states, as they now stand
+
+| | field | |
+|---|---|---|
+| **new / empty** | `encoderMeta.*`, `parser.outputType`, `parser.fields`, `mapping.maxInput` | `null` / `0` until the encoder answers |
+| **real / read** | the same fields once read | written by the device only, and persisted, so a restart does not relearn them |
+| **changed / future** | `encoder.pendingHost` | programmed and verified, inert until a power cycle, promoted on evidence |
+
+`pendingHost` is the only future-valued field, and correctly so: an IP is the one variable whose write
+does not take effect until the device is restarted. Every other setting applies at once, so there is
+no future value to hold.
+
+The remaining defaults are the operator's own settings — `velocityPolicy`, `udpSendPolicy`,
+`autoStart`, reconnect delays, the factory IP a new connection form starts from. Those are choices
+this app makes on the operator's behalf, not claims about hardware, and they belong in the profile.
+
+A test states the rule, verified by restoring each fabricated value in turn.
+
+**207 tests pass.**
