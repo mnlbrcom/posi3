@@ -114,7 +114,17 @@ function encoderCard(conn) {
 
     const table = el('table', { class: 'vartable' });
     for (const spec of groupVars) {
-      const curCell = el('td', { class: 'cur', text: '—' });
+      // A write-only variable says so, rather than showing the same dash as one
+      // that simply has not been read. Confirmed on the device: `read Preset`
+      // answers "Preset is an unknown variable." Leaving it blank invited the
+      // reading that the read had failed, next to an Offset showing a number.
+      const curCell = spec.writeOnly
+        ? el('td', {
+          class: 'cur unreadable', text: 'write-only',
+          title: `${spec.name} cannot be read back from the encoder. ` +
+            'Its effect is visible in Offset.'
+        })
+        : el('td', { class: 'cur', text: '—' });
       currentCells.set(spec.name, curCell);
 
       const ctl = buildControl(spec, (value) => {

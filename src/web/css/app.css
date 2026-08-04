@@ -559,6 +559,8 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .vartable td.k { width: 210px; color: var(--text-dim); font-size: var(--fs-body); }
 .vartable td.k code { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-faint); display: block; }
 .vartable td.cur { width: 130px; font-family: var(--mono); font-size: var(--fs-body); color: var(--text-faint); }
+/* Not a value, so not set like one: this reads as a property of the variable. */
+.vartable td.cur.unreadable { font-family: var(--sans); font-style: italic; }
 .vartable td.ctl { width: 220px; }
 .vartable tr.dirty td.ctl { position: relative; }
 .vartable tr.dirty td.ctl::before {
@@ -1204,8 +1206,11 @@ select.unknown-value { border-color: var(--warn); }
   .vartable td.k code { display: inline; }
 
   /* Stacked, a bare number under a name reads as the field's value rather than
-     the encoder's. The columns were never headed, so it has to say which it is. */
-  .vartable td.cur::before { content: 'on the encoder: '; color: var(--text-faint); }
+     the encoder's. The columns were never headed, so it has to say which it is.
+     Not for a write-only variable, which has no value on the encoder to state. */
+  .vartable td.cur:not(.unreadable)::before {
+    content: 'on the encoder: '; color: var(--text-faint);
+  }
 
   .vartable td.ctl { padding-top: 6px; }
   .vartable td.help { min-width: 0; }

@@ -3329,3 +3329,40 @@ Measured on the rig: the card's rate held one value, `98 / 98 Hz`, across sixty 
 seconds — zero changes, where before it changed on nearly every frame.
 
 **218 tests pass.**
+
+---
+
+## 2026-08-05 — What Preset and Offset actually are
+
+> "on encoder config we still have preset and offset. Both have a field to enter values. I think thats
+> wrong, only preset should have a field to enter a value, off set gets calulated after the facted,
+> Chech whats actually true and if we need to adjust the design and layout."
+
+Checked against the device rather than assumed:
+
+    read Preset   → ERROR: Preset is an unknown variable.
+    read Offset   → 43156
+
+**Preset is write-only.** You give it the value the shaft should read at this moment; the encoder
+computes an internal offset and applies it to every position after that. It can never be read back.
+
+**Offset is readable and writable.** The manual is explicit — *"Directly changes the offset that the
+preset function calculated and set."* So the instinct is half right: Offset **is** the calculated
+result of a Preset, and it is also a documented input.
+
+**The input stays**, because removing it would remove a capability with no substitute: a Preset only
+works when the shaft is physically at the reference position. Writing the Offset sets the same zero
+without moving anything — which is what a replacement encoder, or a rig that cannot be turned by hand
+to its datum, actually needs.
+
+### What was wrong was the presentation
+
+Preset's *current value* column showed `—`, exactly like a variable that had not been read yet, next
+to an Offset showing a number. Two fields that look identical where one can never show its value.
+
+It says **write-only** now, in the sans face rather than the monospace used for values — because it
+is a property of the variable, not a reading — with the reason on hover: it cannot be read back, and
+its effect is visible in Offset. In the stacked narrow layout the `on the encoder:` prefix is
+suppressed for it, since there is no value on the encoder to state.
+
+**218 tests pass.**
