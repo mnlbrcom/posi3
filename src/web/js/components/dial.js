@@ -153,7 +153,9 @@ export class Dial {
       x: C, y: C + 58, fill: 'var(--text-faint)', 'font-size': '9.5',
       'font-family': 'var(--sans)', 'text-anchor': 'middle', 'letter-spacing': '1'
     }, halo, { 'stroke-width': '4' }));
-    this._unit.textContent = 'COUNTS';
+    // The manual's word, and the one the velocity readout already uses
+    // (steps/s) — the same unit was being named two different ways.
+    this._unit.textContent = 'STEPS';
     this._svg.appendChild(this._value);
     this._svg.appendChild(this._unit);
   }

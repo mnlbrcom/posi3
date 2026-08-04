@@ -2426,3 +2426,34 @@ Two regression tests hold it: verbose ASCII produces correct packets, and the tw
 same values at disguise.
 
 **179 tests pass.**
+
+## 2026-08-04 — The manual's word for the unit, used everywhere
+
+> "change the text behind: ASCII sends … BINARY not supported" / "change the text behind OutputMode
+> Position … Velocity … Timestamp …" / "am i right that what you offen call count is steps in the
+> software, would that be a better wording everywhere?"
+
+Right, and the app was contradicting itself: **position in "counts", velocity in "steps/s" — the
+same unit named two different ways on the same card.** The manual uses *steps* throughout: "8192
+steps per revolution", "physical steps", "the encoder will count 10 steps", "steps/s". The count
+across the UI was 16 "counts" and 14 "COUNTS" against 13 "steps".
+
+Every user-visible instance is now *steps* — the dial's centre unit, the encoder-config live
+position, the mapping helper's field labels and span, the discovery result, and the dashboard's
+scaling line, which now reads:
+
+    Encoder scaling: 8 192 steps/turn · 300 000 steps total · 36.62 turns
+
+**The identifiers keep `counts`** — `countsPerRev`, `totalCounts`, `TOTAL_COUNTS`. They are
+persisted in every saved profile and are part of the telemetry contract, so renaming them costs a
+schema migration to change nothing an operator can see. Noted at the constant so the mismatch reads
+as a decision rather than an oversight.
+
+The two help strings were replaced with the encoder's own wording, as given:
+
+- **OutputType** — `ASCII sends "POSITION=<POSITION> VELOCITY=<VELOCITY> TIMESTAMP=<TIME>",
+  ASCII_SHORT sends "<POSITION> <VELOCITY> <TIME>", BINARY not supported`
+- **OutputMode** — `Position — Encoder will send a scaled Position value. Velocity — Encoder will
+  send a velocity Value (steps/s). Timestamp — Encoder will send a timestamp`
+
+**179 tests pass;** audits clean on Dashboard, Encoder Config, Disguise Mapping and Connections.

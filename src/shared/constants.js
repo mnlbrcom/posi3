@@ -19,7 +19,15 @@
 const COUNTS_PER_REV = 8192;
 /** 12-bit multiturn: 2^12 distinguishable revolutions. */
 const REVOLUTIONS = 4096;
-/** 25-bit total = 33,554,432 counts. Position range is 0 .. TOTAL_COUNTS-1. */
+/**
+ * 25-bit total = 33,554,432 steps. Position range is 0 .. TOTAL_COUNTS-1.
+ *
+ * "Steps" is the manual's word and the device's own — velocity has always been
+ * reported as steps/s, so calling position "counts" named one unit two ways.
+ * The identifiers keep `counts` because they are persisted in every saved
+ * profile and in the telemetry contract; renaming them would cost a schema
+ * migration to change nothing an operator can see.
+ */
 const TOTAL_COUNTS = COUNTS_PER_REV * REVOLUTIONS;
 
 /**
@@ -167,16 +175,16 @@ const ENCODER_VARS = [
      */
     unsupported: ['BINARY'],
     label: 'Output type',
-    help: 'ASCII_SHORT sends "<position> <velocity> <time>" separated by spaces. ' +
-      'ASCII sends "POSITION=… VELOCITY=… TIMESTAMP=…" — about twice the bytes, and handled the ' +
-      'same. BINARY sends 32-bit values with no separator, and this app streams ASCII only.'
+    help: 'ASCII sends "POSITION=<POSITION> VELOCITY=<VELOCITY> TIMESTAMP=<TIME>", ' +
+      'ASCII_SHORT sends "<POSITION> <VELOCITY> <TIME>", BINARY not supported'
   },
   {
     name: 'OutputMode', group: 'output', type: 'flags',
     flags: ['Position_', 'Velocity_', 'Timestamp_'],
     label: 'Output fields',
-    help: 'Position sends a scaled position value. Velocity sends steps/s. Timestamp sends ' +
-      'microseconds since the encoder started, wrapping after about 1.2 hours.'
+    help: 'Position — Encoder will send a scaled Position value. ' +
+      'Velocity — Encoder will send a velocity Value (steps/s). ' +
+      'Timestamp — Encoder will send a timestamp'
   },
   {
     name: 'TimeMode', group: 'output', type: 'enum',

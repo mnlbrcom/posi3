@@ -47,7 +47,7 @@ export function renderMapping(root) {
 
   view.appendChild(el('div', { class: 'view-sub' },
     'Work out min_input / max_input for the disguise Axes window. Drive the axis to each end of ' +
-    'its travel and press Capture — that is usually faster and more accurate than calculating counts.'));
+    'its travel and press Capture — that is usually faster and more accurate than calculating steps.'));
 
   const resultHolder = el('div');
   const livePos = el('span', { class: 'num', text: '—' });
@@ -57,14 +57,14 @@ export function renderMapping(root) {
 
   const captureRow = el('div', {},
     el('div', { class: 'field' },
-      el('label', {}, 'Start of travel (min_input)  ', el('span', { class: 'faint', text: 'counts' })),
+      el('label', {}, 'Start of travel (min_input)  ', el('span', { class: 'faint', text: 'steps' })),
       el('div', { class: 'row-inline' }, minBox,
         el('button', {
           class: 'btn shrink', text: 'Capture current',
           onclick: () => capture('min')
         }))),
     el('div', { class: 'field' },
-      el('label', {}, 'End of travel (max_input)  ', el('span', { class: 'faint', text: 'counts' })),
+      el('label', {}, 'End of travel (max_input)  ', el('span', { class: 'faint', text: 'steps' })),
       el('div', { class: 'row-inline' }, maxBox,
         el('button', {
           class: 'btn shrink', text: 'Capture current',
@@ -192,7 +192,7 @@ function renderResult(conn, res, m) {
   }
 
   const summary = el('div', { class: 'statline', style: 'margin-bottom:12px' },
-    el('span', {}, 'Span ', el('b', { text: `${groupDigits(mapped.rawSpan)} counts` })),
+    el('span', {}, 'Span ', el('b', { text: `${groupDigits(mapped.rawSpan)} steps` })),
     el('span', {}, 'Rotation ', el('b', { text: `${fixed(mapped.revsUsed, 3)} rev (${fixed(mapped.revsUsed * 360, 1)}°)` })),
     el('span', {}, 'Resolution ', el('b', {
       text: mapped.unitsPerCount

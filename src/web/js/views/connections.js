@@ -204,7 +204,7 @@ function encoderAddressField(c, nicOf) {
           options.appendChild(el('option', {
             value: hit.host,
             label: hit.totalScaledRes
-              ? `${hit.host} — ${hit.totalScaledRes.toLocaleString('en-US')} counts`
+              ? `${hit.host} — ${hit.totalScaledRes.toLocaleString('en-US')} steps`
               : `${hit.host} — ${hit.evidence}`
           }));
         }
