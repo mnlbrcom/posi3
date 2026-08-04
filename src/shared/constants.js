@@ -335,6 +335,24 @@ const MAX_LINE_BYTES = 65536;
 const VELOCITY_POLICIES = ['zero', 'passthrough'];
 const UDP_SEND_POLICIES = ['every', 'latest'];
 
+/**
+ * What produced a log line.
+ *
+ *   rx    a line the encoder sent, logged verbatim
+ *   tx    a line we wrote to the encoder, logged verbatim
+ *   app   what this app concluded, decided or did on its own
+ *   user  an operator action: a connection added or edited, a link started
+ *
+ * `rx` and `tx` are reserved for bytes that actually crossed the wire. They
+ * used to be handed out to anything vaguely related to the encoder, so an
+ * interpretation was marked `rx` and — worse — logged *instead of* the reply it
+ * came from. `read CycleTime` was followed by "cycle time changed on the
+ * encoder: 18 ms" and the encoder's actual `CycleTime=18` appeared nowhere. The
+ * device's own words are the record; everything else is commentary and is
+ * marked as such.
+ */
+const LOG_SOURCES = ['rx', 'tx', 'app', 'user'];
+
 module.exports = {
   COUNTS_PER_REV,
   REVOLUTIONS,
@@ -357,5 +375,6 @@ module.exports = {
   DEFAULT_TELEMETRY_HZ,
   MAX_LINE_BYTES,
   VELOCITY_POLICIES,
+  LOG_SOURCES,
   UDP_SEND_POLICIES
 };
