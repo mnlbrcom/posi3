@@ -229,6 +229,7 @@ function encoderCard(conn) {
       edited.clear();
       refreshDirty();
       applyDependentRanges();
+      lastRead.set(conn.id, new Map(current));
       // The unknown-status banner asks for exactly this, so answering it has to
       // clear it — otherwise the instruction is a dead end.
       onFlashConfirmed(conn.id);
@@ -309,6 +310,7 @@ function encoderCard(conn) {
         if (cell) cell.textContent = r.value;
         edited.delete(r.variable);
       }
+      lastRead.set(conn.id, new Map(current));
       refreshDirty();
     } catch (err) {
       clearTimeout(timeout);
@@ -320,8 +322,23 @@ function encoderCard(conn) {
     }
   };
 
-  if (store.stateOf(conn.id) !== 'idle') readAll();
-  else statusText.textContent = 'connection is stopped';
+  const cached = lastRead.get(conn.id);
+  if (cached && cached.size) {
+    // Restore what the last read found, rather than asking again.
+    for (const [name, value] of cached) {
+      current.set(name, value);
+      const cell = currentCells.get(name);
+      if (cell) cell.textContent = value;
+      const ctl = controls.get(name);
+      if (ctl) ctl.set(value);
+    }
+    applyDependentRanges();
+    statusText.textContent = `read ${cached.size} of ${vars.length} variables`;
+  } else if (store.stateOf(conn.id) !== 'idle') {
+    readAll();
+  } else {
+    statusText.textContent = 'connection is stopped';
+  }
 
   let lastState = null;
 
@@ -349,6 +366,23 @@ function encoderCard(conn) {
 
 /** Timers keyed by connection, cleared when the encoder confirms the commit. */
 const pendingFlash = new Map();
+
+/**
+ * The last values read from each encoder, kept at module scope so a rebuild of
+ * this screen does not re-read them.
+ *
+ * `onStoreChange` re-renders every view on any link-state change, and each card
+ * used to read all fourteen variables as it was constructed. Measured: a second
+ * encoder starting and stopping — nothing to do with the card being rebuilt —
+ * put **108 reads** down the wire in fourteen seconds, where one sweep is
+ * thirteen. Every one of them a round trip on the same TCP session that carries
+ * the position stream, all returning values the screen already had.
+ *
+ * A cached value is exactly as fresh as the last read; the encoder announces
+ * its own changes on the same socket, so anything altered elsewhere arrives as
+ * a broadcast rather than being discovered by polling.
+ */
+const lastRead = new Map();
 
 /** Called from app.js when the encoder broadcasts its flash confirmation. */
 export function onFlashConfirmed(id) {

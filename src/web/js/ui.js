@@ -119,9 +119,23 @@ export function duration(ms) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
+/**
+ * Throughput, to the nearest ten.
+ *
+ * The underlying figure is a ten-second average, and showing it to the unit
+ * invited reading a difference of three packets a second as meaningful when it
+ * is jitter. Rounding to ten makes the number stable enough to compare at a
+ * glance and to say out loud.
+ *
+ * A rate that rounds to zero but is not zero shows as `<10` rather than `0`,
+ * because "nothing is arriving" and "a trickle is arriving" call for opposite
+ * responses.
+ */
 export function hz(n) {
   if (!Number.isFinite(n)) return '—';
-  return n < 10 ? n.toFixed(1) : String(Math.round(n));
+  if (n <= 0) return '0';
+  const rounded = Math.round(n / 10) * 10;
+  return rounded === 0 ? '<10' : String(rounded);
 }
 
 /**
