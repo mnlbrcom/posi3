@@ -2497,3 +2497,28 @@ motionless **100 Hz**. A rate that rounds to zero without being zero shows `<10`
 arriving" and "a trickle is arriving" call for opposite responses, and rounding must not merge them.
 
 **179 tests pass;** audits clean on Dashboard, Connections and Encoder Config.
+
+## 2026-08-04 — The raw command box is gone
+
+> "can we remove the raw command box fully?"
+
+Removed at every layer: the input and Send button on the Log screen, the browser shim's
+`encoder.raw`, the `encoderRaw` route, and `EncoderLink.raw()`, which nothing called once the route
+went. One import it orphaned went with it.
+
+It was the only route that reached the encoder with an arbitrary command. Everything else is
+checked against the variable table — a known name, a value of the right type and range — while this
+took any line and forwarded it, guarded only against the CR or LF that would have split it into two
+commands. On a device that writes flash and can change its own IP address, that is a large surface
+for a feature whose remaining use was exploratory.
+
+**It earned its keep on the way out**, which is worth recording: it is how `Version` was found —
+`Software Version 4.50`, an undocumented command discovered from a button on the encoder's own web
+page — and how the OutputMode write dialects were probed without spending a flash cycle, since an
+invalid value is refused rather than written.
+
+That capability is not lost, only moved off the show machine's UI: the same probing is a few lines
+of `net.connect` against port 6000, which is what the tools in `tools/` already do. What is gone is
+the ability to do it by accident, or for anyone with the web UI open to do it at all.
+
+**179 tests pass**; audits clean on Log, Dashboard, Connections and Encoder Config.

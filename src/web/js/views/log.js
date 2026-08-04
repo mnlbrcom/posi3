@@ -6,7 +6,7 @@
  * count matters — a silently thinned log invites the wrong conclusion.
  */
 
-import { el, clear, timeOfDay, toast, select, input, checkbox } from '../ui.js';
+import { el, clear, timeOfDay, toast, select, checkbox } from '../ui.js';
 import { store } from '../store.js';
 
 const MAX_RENDERED = 2000;
@@ -72,28 +72,6 @@ export function renderLog(root) {
 
   view.appendChild(toolbar);
   view.appendChild(box);
-
-  // Raw command entry for anything the config panel does not expose.
-  const rawInput = input({
-    class: 'mono-input',
-    placeholder: 'Send a raw command to the selected connection, e.g. read Verbose'
-  });
-  const sendRaw = async () => {
-    const conn = store.selected;
-    if (!conn) { toast('warn', 'Select a connection first.'); return; }
-    const line = rawInput.value.trim();
-    if (!line) return;
-    try {
-      const r = await window.d3d.encoder.raw(conn.id, line);
-      toast('info', r.variable ? `${r.variable}=${r.value}` : (r.text || 'sent'));
-      rawInput.value = '';
-    } catch (err) { toast('error', err.message); }
-  };
-  rawInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendRaw(); });
-
-  view.appendChild(el('div', { class: 'log-toolbar', style: 'margin-top:10px' },
-    rawInput,
-    el('button', { class: 'btn sm shrink', text: 'Send', onclick: sendRaw })));
 
   root.appendChild(view);
 
