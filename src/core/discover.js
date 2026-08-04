@@ -268,7 +268,79 @@ async function scanSubnet(opts) {
   return { interface: nic, scanned: hosts.length, found, silentKin };
 }
 
+/**
+ * Read variables from an encoder without holding a connection open.
+ *
+ * The configuration channel *is* the data channel, so a stopped connection has
+ * no socket to ask down — which meant a stopped encoder's settings could not be
+ * looked at at all. This opens one, asks, and closes, exactly as discovery
+ * does. The cost is one of the device's few client slots for a fraction of a
+ * second, which is why it is a deliberate one-shot rather than something the
+ * screen does on a timer.
+ *
+ * Serialised: one outstanding request at a time, because the encoder's replies
+ * are broadcast to every client and are matched by name, not by sequence.
+ *
+ * @returns {Promise<Object<string, {ok: boolean, value?: string, error?: string}>>}
+ */
+function readVariablesOnce(host, names, { port = ENCODER_PORT, localAddress = null,
+  connectTimeoutMs = 2000, perReadMs = 1200 } = {}) {
+  return new Promise((resolve, reject) => {
+    const out = {};
+    let queue = names.slice();
+    let current = null;
+    let buf = '';
+    let timer = null;
+    let settled = false;
+
+    const opts = { host, port };
+    if (localAddress) opts.localAddress = localAddress;
+    const socket = net.connect(opts);
+    socket.setNoDelay(true);
+
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.removeAllListeners();
+      socket.destroy();
+      if (err) reject(err); else resolve(out);
+    };
+
+    const next = () => {
+      clearTimeout(timer);
+      if (!queue.length) return finish(null);
+      current = queue.shift();
+      timer = setTimeout(() => {
+        out[current] = { ok: false, error: 'no answer' };
+        next();
+      }, perReadMs);
+      try { socket.write(`read ${current}\r\n`); } catch (e) { finish(e); }
+    };
+
+    timer = setTimeout(() => finish(Object.assign(new Error(
+      `${host}:${port} did not answer`), { code: 'EUNREACHABLE' })), connectTimeoutMs);
+
+    socket.on('error', (err) => finish(Object.assign(err, { code: err.code || 'EUNREACHABLE' })));
+    socket.on('connect', next);
+    socket.on('data', (chunk) => {
+      buf += chunk.toString('latin1');
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).replace(/\r$/, '').trim();
+        buf = buf.slice(i + 1);
+        if (!current || !line) continue;
+        // `Var=Value`, or the encoder's refusal for a variable it does not know.
+        const m = new RegExp(`^${current}\\s*=\\s*(.*)$`, 'i').exec(line);
+        if (m) { out[current] = { ok: true, value: m[1].trim() }; next(); continue; }
+        if (/^ERROR/i.test(line)) { out[current] = { ok: false, error: line }; next(); }
+      }
+      if (buf.length > 8192) buf = buf.slice(-8192);
+    });
+  });
+}
+
 module.exports = {
-  scanSubnet, scannableInterfaces, probe, hostsInSubnet, subnetSize, maskBits,
+  scanSubnet, scannableInterfaces, probe, readVariablesOnce, hostsInSubnet, subnetSize, maskBits,
   ipToInt, intToIp, normaliseMac, arpNeighbours, ENCODER_PORT, MAX_HOSTS, ENCODER_OUIS
 };

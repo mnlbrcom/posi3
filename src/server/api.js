@@ -18,7 +18,7 @@ const {
   fail, checkId, checkHost, checkPort, checkVariable, checkValue, checkVarWrite,
   sanitiseConnection, listInterfaces
 } = require('./validate');
-const { scanSubnet, scannableInterfaces } = require('../core/discover');
+const { scanSubnet, scannableInterfaces, readVariablesOnce } = require('../core/discover');
 
 /**
  * @param {object} ctx
@@ -36,6 +36,29 @@ function createApi(ctx) {
   const announce = (value) => {
     changed();
     return value;
+  };
+
+  /**
+   * Read from an encoder that is not connected, over a socket of its own.
+   *
+   * Throws `EUNREACHABLE` when the device does not answer at all — which is the
+   * case worth telling the operator about by name, since it means the encoder
+   * has gone from the network rather than merely being stopped here.
+   */
+  const readOffline = async (id, names) => {
+    const conn = store.find(checkId(id));
+    if (!conn) fail('ENOENT', 'No such connection');
+    try {
+      return await readVariablesOnce(conn.encoder.host, names, {
+        port: conn.encoder.port,
+        localAddress: conn.encoder.localAddress || null
+      });
+    } catch (err) {
+      const e = new Error(`${conn.name} is unreachable at ${conn.encoder.host}:${conn.encoder.port}`);
+      e.code = 'EUNREACHABLE';
+      e.cause = err;
+      throw e;
+    }
   };
 
   const requireLink = (id) => {
@@ -190,11 +213,24 @@ function createApi(ctx) {
 
     // -- encoder command channel --------------------------------------------
 
-    encoderRead: ({ id, variable }) => requireLink(id).read(checkVariable(variable)),
+    encoderRead: async ({ id, variable }) => {
+      const name = checkVariable(variable);
+      const link = manager.get(checkId(id));
+      if (link && link.running) return link.read(name);
+      const r = await readOffline(id, [name]);
+      if (!r[name].ok) fail('EENCODER', r[name].error);
+      return { variable: name, value: r[name].value };
+    },
 
     encoderReadMany: async ({ id, variables }) => {
-      const link = requireLink(id);
       if (!Array.isArray(variables)) fail('EINVAL', 'Expected an array of variables');
+      const link = manager.get(checkId(id));
+      // A stopped connection has no socket to ask down, so one is opened just
+      // for this and closed again. Reading is the one thing worth doing to an
+      // encoder that is not streaming: it is how you find out what it is set to
+      // before committing to it.
+      if (!link || !link.running) return readOffline(id, variables.map(checkVariable));
+
       const out = {};
       // Sequential on purpose: one socket, one outstanding request.
       for (const raw of variables) {
