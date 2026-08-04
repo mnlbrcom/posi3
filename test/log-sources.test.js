@@ -112,3 +112,91 @@ test('every source a log line can carry is a known one', () => {
   // unstyled and unfilterable, which is how `null` behaved before.
   assert.deepEqual(LOG_SOURCES, ['rx', 'tx', 'app', 'user']);
 });
+
+// ---------------------------------------------------------------------------
+// Operator actions
+// ---------------------------------------------------------------------------
+
+const { createApi } = require('../src/server/api');
+const { ConfigStore } = require('../src/core/config-store');
+const os = require('node:os');
+const fs = require('node:fs');
+const path = require('node:path');
+
+/** A real store and manager, so these exercise the paths the UI actually calls. */
+function apiWith() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'posi3-log-'));
+  const store = new ConfigStore(dir);
+  store.load();
+  const logger = new Logger();
+  const manager = new LinkManager({ logger });
+  const api = createApi({ manager, store, syncLink: () => {}, env: () => ({}) });
+  return { api, store, logger, manager };
+}
+
+/** Lines the operator caused, newest last. */
+const userLines = (logger) => logger.tail({ limit: 200 }).filter((l) => l.dir === 'user');
+
+test('starting and stopping a connection is always logged', () => {
+  // Both are reachable from the Controls popup, which is the surface an
+  // operator uses mid-show. An action that changes whether data is flowing has
+  // to be in the record — "who stopped encoder 2" is a real question.
+  const { api, store, logger, manager } = apiWith();
+  const conn = store.upsertConnection({
+    name: 'Revolve', encoder: { host: '127.0.0.1', port: 65000 },
+    destinations: [{ host: '127.0.0.1', port: 65001, devid: 1 }]
+  });
+  manager.upsert(conn); // what syncLink does when a connection is started
+
+  api.linkStop({ id: conn.id });
+  const stopped = userLines(logger).at(-1);
+  assert.equal(stopped.text, 'stop');
+  assert.equal(stopped.name, 'Revolve', 'the line must name the connection');
+});
+
+test('a stop that cannot happen is not written down as though it did', () => {
+  // The line used to be logged before the attempt, so a connection the manager
+  // has never heard of produced a "stop" in the record and then an error to the
+  // caller. Same rule as everywhere else here: only what actually happened.
+  const { api, store, logger } = apiWith();
+  const conn = store.upsertConnection({ name: 'Never started' });
+
+  assert.throws(() => api.linkStop({ id: conn.id }), /No such connection/);
+  assert.deepEqual(userLines(logger), [], 'nothing happened, so nothing is logged');
+});
+
+test('deleting a connection is logged, and keeps its name', () => {
+  // The connection is out of the store by the time the line is written, so the
+  // name has to be carried explicitly -- and this is the one line whose name
+  // matters most, being the last that connection will ever have.
+  const { api, store, logger } = apiWith();
+  const conn = store.upsertConnection({
+    name: 'Trap Lift', encoder: { host: '10.10.10.99', port: 6000 },
+    destinations: [{ host: '127.0.0.1', port: 6000, devid: 9 }]
+  });
+
+  api.configDeleteConnection({ id: conn.id });
+
+  const line = userLines(logger).at(-1);
+  assert.equal(line.name, 'Trap Lift', 'a deleted connection is still named on its own last line');
+  assert.equal(line.level, 'warn', 'deleting is not routine');
+  assert.match(line.text, /deleted — was encoder 10\.10\.10\.99:6000/);
+  assert.match(line.text, /127\.0\.0\.1:6000 id 9/, 'where it was sending is part of what was lost');
+  assert.equal(store.find(conn.id), null, 'and it really is gone');
+});
+
+test('an edit records both values', () => {
+  const { api, store, logger } = apiWith();
+  const conn = store.upsertConnection({
+    name: 'Revolve', encoder: { host: '10.10.10.10', port: 6000 },
+    destinations: [{ host: '127.0.0.1', port: 6000, devid: 1 }]
+  });
+
+  api.configSaveConnection(Object.assign(JSON.parse(JSON.stringify(conn)), {
+    velocityPolicy: 'passthrough'
+  }));
+
+  const line = userLines(logger).at(-1);
+  assert.match(line.text, /velocityPolicy zero → passthrough/,
+    'before and after, because "what was it before" is the question asked afterwards');
+});
