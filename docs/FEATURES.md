@@ -2810,3 +2810,40 @@ callers and went with it, as did the `.fw-tag` and `.card-target` rules.
 
 **The pill wording needs the server restarted** — `destinationHealth` runs in the bridge process, so
 a running instance keeps saying `sending` until it is restarted.
+
+---
+
+## 2026-08-04 — One row of devices, each labelled the same way
+
+> "leave the ip under the name, keep the names for the sending devices" / "looks like the indicator
+> now is the whole thing, keep it seperated. Name, indicator - ip & id below" / "keep them
+> horizontaly at the same level dont move the servers under encoder" / "only if needed for narrow
+> adaptation move them under each other"
+
+Revises the entry above, which had put each address inline beside its name and folded the
+destination's name and address into the pill itself. Two things were wrong with that: the address on
+the name's line broke the column the eye scans down the page, and a pill containing a name, an
+address and a device id is no longer a status light — the whole block read as one badge.
+
+**Every device on the card is now built the same way** — name and indicator on one line, address and
+device id beneath — and they sit in one row: the encoder first, then each machine it feeds.
+
+    Revolve  [streaming]      disguise 1  [sending]
+    10.10.10.10:6000          10.10.10.5:6000 · id 1
+
+    Encoder 2  [streaming]    director  [sending]        US  [sending]
+    10.10.10.30:6000          10.10.10.5:6000 · id 10    10.10.10.2:6000 · id 10
+
+The row is the sentence — this device, feeding these machines. Stacking the destinations under the
+encoder read as though they belonged to something above them.
+
+**`flex-wrap: wrap` is the entire adaptive rule.** Side by side while there is room, under each other
+only once there is not. Measured: the encoder and all its destinations share a top edge at 1440,
+1100, 900 and 700; at 480 only the card with two destinations wraps, and the one with a single
+destination still sits level; at 390 both wrap.
+
+The destination names are the operator's own — "director", "US" — and lead, because that is what
+they call the machine. The address below says which one that is. `refused` and `offline` keep their
+explanation on hover.
+
+**196 tests pass**, every view clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and expanded.
