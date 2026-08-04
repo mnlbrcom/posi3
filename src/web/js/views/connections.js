@@ -95,7 +95,11 @@ export function renderConnections(root) {
       // fields across a wide window and one per line on a phone, with no
       // sideways scroll at any width in between.
       el('div', { class: 'conn-fields' },
-        connField('Encoder', `${conn.encoder.host}:${conn.encoder.port}`),
+        connField('Encoder', encoderAddressLabel(conn),
+          conn.encoder.pendingHost
+            ? `${conn.encoder.pendingHost} has been written to the encoder but only takes effect ` +
+              'after a power cycle. Both addresses are tried until one answers.'
+            : undefined),
         connField('disguise', dest.short, dest.full),
         connField('Device ID', dest.ids),
         connField('Position', cells.pos),
@@ -133,6 +137,18 @@ export function renderConnections(root) {
 
 async function act(fn) {
   try { await fn(); } catch (err) { toast('error', err.message); }
+}
+
+/**
+ * Where the encoder answers, and where it is going.
+ *
+ * A programmed address is inert until the device is power-cycled, so for a
+ * while there are two of them. Showing only one would either name an address
+ * that does not answer or hide a change somebody else has to go and apply.
+ */
+function encoderAddressLabel(conn) {
+  const now = `${conn.encoder.host}:${conn.encoder.port}`;
+  return conn.encoder.pendingHost ? `${now} → ${conn.encoder.pendingHost}` : now;
 }
 
 /** One labelled field in a connection card. Value may be a string or a node. */
