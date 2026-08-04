@@ -868,7 +868,11 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
 /* Encoder config cards: one per encoder, its groups retractable. */
 .cfg-list { display: grid; grid-template-columns: 1fr; gap: 12px; }
-.cfg-card { padding: 12px 14px 6px; }
+/* `min-width: 0` because a grid item's automatic minimum size is its content's:
+   without it the table's 620px floor became the card's, and an expanded card
+   grew past the window with its header and buttons out of reach. See the
+   stacked layout at the end of this file. */
+.cfg-card { padding: 12px 14px 6px; min-width: 0; }
 /* Folded, the last group's rule would sit hard against the card's edge. */
 .cfg-card .cfg-group:last-child { border-bottom: 1px solid var(--border-soft); }
 .cfg-card .card-head .pill-holder { margin-left: 0; }
@@ -1141,4 +1145,35 @@ select.unknown-value { border-color: var(--warn); }
 @media (max-width: 560px) {
   /* Three metric columns stop fitting once the card is phone-width. */
   .card-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ------------------------------------------- config table, below four columns */
+
+/* Four columns need about 620px, and `.vartable` says so with a `min-width`.
+   Above this width that is a floor for the table; below it the table stops
+   being a table and each variable becomes a stacked block, so there is no width
+   to be short of. A horizontal scrollbar was the other option and is the wrong
+   one — the settings are the content of this screen, not an oversized figure
+   inside it. The other half of the fix is `min-width: 0` on `.cfg-card`. */
+@media (max-width: 860px) {
+  .vartable, .vartable tbody, .vartable tr, .vartable td { display: block; }
+  .vartable { min-width: 0; }
+  .vartable tr { padding: 10px 0 12px; border-bottom: 1px solid var(--border-soft); }
+  .vartable tr:last-child { border-bottom: none; }
+  .vartable td { padding: 2px 0; border-bottom: none; }
+  /* Each column carries its own width, which outranks a bare `td` rule and
+     would keep the value boxed into 130px with the row's full width free. */
+  .vartable td.k, .vartable td.cur, .vartable td.ctl, .vartable td.help { width: auto; }
+
+  /* The name and its variable stay on one line — they are one label. */
+  .vartable td.k { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .vartable td.k code { display: inline; }
+
+  /* Stacked, a bare number under a name reads as the field's value rather than
+     the encoder's. The columns were never headed, so it has to say which it is. */
+  .vartable td.cur::before { content: 'on the encoder: '; color: var(--text-faint); }
+
+  .vartable td.ctl { padding-top: 6px; }
+  .vartable td.help { min-width: 0; }
+  .cfg-group .cfg-body { overflow-x: visible; }
 }

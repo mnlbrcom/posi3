@@ -39,6 +39,8 @@ const opts = parseArgs(process.argv, {
   chrome: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   keepOpen: false,
   settleMs: 700,
+  /** Open every <details> before auditing — folded content is never measured. */
+  expand: false,
   /** Run an arbitrary expression in the page instead of the audit. */
   eval: ''
 });
@@ -255,6 +257,21 @@ async function main() {
         }, sessionId)).result.value;
         if (menuOpened) await sleep(250);
 
+        // Collapsed content is not laid out, so a folded <details> is invisible
+        // to the audit — which is how the config groups shipped overflowing at
+        // every width without a single check failing. Open them and measure.
+        const expanded = opts.expand
+          ? (await cdp.send('Runtime.evaluate', {
+            expression: `(() => {
+              const d = [...document.querySelectorAll('details')].filter((n) => !n.open);
+              d.forEach((n) => { n.open = true; });
+              return d.length;
+            })()`,
+            returnByValue: true
+          }, sessionId)).result.value
+          : 0;
+        if (expanded) await sleep(350);
+
         const { result } = await cdp.send('Runtime.evaluate', {
           expression: AUDIT, returnByValue: true
         }, sessionId);
@@ -264,7 +281,7 @@ async function main() {
           (r.bodyScrollsSideways ? 1 : 0);
         const tag = problems ? 'FAIL' : ' ok ';
         process.stdout.write(`  [${tag}] ${String(width).padStart(4)}px  ${view}` +
-          `${menuOpened ? '  + menu' : ''}\n`);
+          `${menuOpened ? '  + menu' : ''}${expanded ? `  + ${expanded} expanded` : ''}\n`);
 
         if (r.bodyScrollsSideways) {
           process.stdout.write(`         page scrolls sideways: ${r.bodyScrollWidth}px content in ${r.viewportWidth}px\n`);
