@@ -258,3 +258,24 @@ test('an idle rig does not hold a timer open for nothing', () => {
   manager._tick();
   assert.equal(manager._timer, null, 'and it goes back to sleep once delivered');
 });
+
+test('pausing the log window does not stop it recording', () => {
+  // The view is a browser module, so this reads its source: `ingestLog` must
+  // not gate on `paused`. It used to return early there, so lines arriving
+  // during a pause were discarded and Resume showed nothing that had happened —
+  // they reappeared only on a reload, which re-reads the server's ring buffer.
+  // Pausing to read something and losing what arrived meanwhile is the opposite
+  // of what the button is for.
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'log.js'), 'utf8');
+
+  const ingest = src.slice(src.indexOf('export function ingestLog'));
+  const body = ingest.slice(0, ingest.indexOf('\n}'));
+  assert.doesNotMatch(body, /\bpaused\b/,
+    'ingestLog must keep recording while the window is paused');
+
+  // And the pause must still freeze the window, which is refreshLive's job.
+  const refresh = src.slice(src.indexOf('refreshLive()'));
+  assert.match(refresh.slice(0, refresh.indexOf('\n    }')), /if \(paused/,
+    'refreshLive is what pause stops');
+});
