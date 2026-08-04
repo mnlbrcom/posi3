@@ -132,7 +132,10 @@ function checkVarWrite(name, value) {
       picked.push(flag);
       rest = rest.slice(flag.length);
     }
-    return { variable, value: picked.join('') };
+    // Checked, not rewritten. Rebuilding from the canonical spelling would undo
+    // the caller's choice of dialect — and this firmware refuses the manual's
+    // `Position_Velocity_` in favour of its own `POSITION_VELOCITY`.
+    return { variable, value: raw };
   }
 
   if (spec.type === 'ip') {

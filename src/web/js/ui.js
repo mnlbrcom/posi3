@@ -124,6 +124,26 @@ export function hz(n) {
   return n < 10 ? n.toFixed(1) : String(Math.round(n));
 }
 
+/**
+ * The encoder's microsecond counter as a clock: `00:44:15.553`.
+ *
+ * Raw, it is nine or ten digits of nothing an operator can use. As a duration
+ * it reads directly against the shaft: how long since the encoder powered up.
+ *
+ * It is a 32-bit counter, so it wraps at 01:11:34.967 and starts again — which
+ * is why the hours field is kept rather than dropped, and why a jump backwards
+ * in this reading is the counter, not a fault.
+ */
+export function microsToClock(us) {
+  if (us === null || us === undefined || Number.isNaN(us)) return '—';
+  const total = Math.max(0, Math.trunc(us));
+  const ms = Math.floor(total / 1000) % 1000;
+  const secs = Math.floor(total / 1e6);
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  return `${pad(Math.floor(secs / 3600))}:${pad(Math.floor(secs / 60) % 60)}:` +
+    `${pad(secs % 60)}.${pad(ms, 3)}`;
+}
+
 export function micros(n) {
   if (!Number.isFinite(n) || n === 0) return '—';
   return n >= 1000 ? `${(n / 1000).toFixed(2)} ms` : `${Math.round(n)} µs`;

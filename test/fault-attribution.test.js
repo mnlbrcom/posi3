@@ -77,7 +77,11 @@ function link(t, encPort, d3Port) {
  * rather than the counters.
  */
 const answersExcept = (bad) => (line) => {
-  const m = /^(?:set )?read (\w+)/.exec(line) || /^read (\w+)/.exec(line);
+  // `Version` is a bare command, not a variable. The link asks on connect, so a
+  // fake that ignores it leaves a request in flight for the whole read timeout
+  // — and then swallows the next unsolicited error as its reply.
+  if (/^Version$/i.test(line)) return 'Software Version 4.50';
+  const m = /^read (\w+)/.exec(line);
   if (!m) return null;
   return m[1] === bad ? 'ERROR: unknown variable' : `${m[1]}=1`;
 };
