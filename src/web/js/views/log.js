@@ -93,7 +93,13 @@ export function renderLog(root) {
     for (const l of lines.slice(-600)) {
       box.appendChild(el('div', { class: `logline ${l.level}` },
         el('span', { class: 't', text: timeOfDay(l.ts) }),
-        el('span', { class: 'w', text: l.level === 'info' ? (l.dir || '') : l.level }),
+        // Direction is the thing you scan this list for — what we asked versus
+        // what the encoder said — so it gets its own colour rather than
+        // sharing the muted grey of a timestamp.
+        el('span', {
+          class: `w${l.level === 'info' && l.dir ? ` dir-${l.dir}` : ''}`,
+          text: l.level === 'info' ? (l.dir || '') : l.level
+        }),
         l.id ? el('span', { class: 'src', text: names.get(l.id) || l.id }) : null,
         el('span', { text: l.text })));
     }

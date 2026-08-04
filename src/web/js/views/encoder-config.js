@@ -168,7 +168,15 @@ function encoderCard(conn) {
       pillHolder,
       el('div', { class: 'card-actions' }, statusText, readBtn, revertBtn, applyBtn)),
     el('div', { class: 'cfg-target' },
-      el('span', { class: 'target-addr' }, `${conn.encoder.host}:${conn.encoder.port} · ${nic}`),
+      el('span', {
+        class: 'target-addr',
+        title: conn.encoder.pendingHost
+          ? `${conn.encoder.pendingHost} is stored on the encoder and takes effect after a power cycle`
+          : undefined
+      }, `${conn.encoder.host}:${conn.encoder.port} · ${nic}`),
+      conn.encoder.pendingHost
+        ? el('span', { class: 'pending-addr', text: `→ ${conn.encoder.pendingHost} after power cycle` })
+        : null,
       el('span', { class: 'target-live' },
         el('span', { class: 'target-live-label', text: 'Live position' }),
         livePos,

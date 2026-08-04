@@ -2638,3 +2638,62 @@ Importance belongs in the wording and the colour, not in trapping it. `ttlMs` ma
 self-closing, and `toast` is now just a banner with one.
 
 **185 tests pass;** audits clean on all five screens.
+
+## 2026-08-04 — Two facts about an encoder's address, and one field for both
+
+> "Can me make sure the existing connections ip also gets changed after the change gets confirmed.
+> Question if the ip changes would we know, since the confirm would come on a new ip/tcp socket?" /
+> "how do we approach the stuctual design when we change ips and want the connection to also change,
+> but we have to power cycle?" / "do both"
+
+**The confirmation comes back on the same socket.** The manual: *"The IP-address will only be
+activated after a new power-up."* The device keeps answering where it was, so the acknowledgement
+and everything after it arrive on the session the write went down. Nothing is lost.
+
+That fact is the whole design problem, and the first attempt got it backwards.
+
+### Two facts, one field
+
+Between programming an address and power-cycling the device there are two different truths — where
+it answers **now**, and what it will answer on **later**. `encoder.host` was made to hold both: on a
+verified write it was set to the new address, with the old one kept as a fallback. Measured on the
+rig within a minute:
+
+    saved host:     10.10.10.30   ← no reply
+    device answers: 10.10.10.20
+    Read →  EUNREACHABLE: Encoder 2 is unreachable at 10.10.10.30
+
+The connection named a machine that would not exist until somebody walked to the rack.
+
+**`host` now always names where the encoder answers, and is never changed by a write.**
+`pendingHost` holds what has been programmed. Both are tried, pending first, so reads and writes
+work on either side of the power cycle. **Promotion happens on evidence** — the pending address
+answered, so the power cycle has happened — and then it becomes `host` and pending clears. Starting
+a link probes the pending address first, so Start works without anyone knowing which side of the
+power cycle they are on.
+
+Shown rather than hidden, because the person who power-cycles it may not be the person who typed it:
+
+    Connections      Encoder   10.10.10.20:6000 → 10.10.10.30
+    Encoder Config   10.10.10.20:6000 · via 10.10.10.2   → 10.10.10.30 after power cycle
+
+### The commit broadcast is not evidence
+
+An IP write on this firmware is accepted, stored, and **never announced** — measured: no
+`Parameters successfully written!` in thirty seconds, while the value read back had changed. Waiting
+for it reported "write status unknown" for a write that had plainly worked.
+
+So a one-shot write now **reads the value back** before letting go of the socket. That is stronger
+evidence anyway: the broadcast says something was committed, a read-back says *this* was. A value
+that does not stick is reported failed rather than successful, and the address is adopted only when
+the read-back proves it.
+
+### Also
+
+Hardware switch 2 forces the factory address regardless of what is programmed, so a power-cycled
+encoder may come back at `10.10.10.10` rather than the new address. The log says so when a pending
+address is recorded. The factory address is deliberately **not** probed automatically — on this rig
+it belongs to another encoder, and connecting to it would read one device's settings into another's
+card.
+
+**195 tests pass.**

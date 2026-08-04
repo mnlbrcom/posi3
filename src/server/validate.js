@@ -165,7 +165,18 @@ function sanitiseConnection(raw) {
     localAddress: enc.localAddress ? checkHost(enc.localAddress, 'Local interface') : null,
     // Remembered alongside the address so a DHCP lease change can be reported
     // as "the adapter moved" rather than an opaque bind failure.
-    localIfName: enc.localIfName ? String(enc.localIfName).slice(0, 120) : null
+    localIfName: enc.localIfName ? String(enc.localIfName).slice(0, 120) : null,
+    /**
+     * An address that has been programmed into the encoder but is not live yet.
+     *
+     * These are two different facts and they need two fields: `host` is where
+     * the device answers *now*, `pendingHost` is what it will answer on after
+     * a power cycle. Holding only one of them made the config name a dead
+     * address for the whole window between writing an IP and walking to the
+     * rack. `host` is never changed by a write; `pendingHost` is promoted to it
+     * once it actually answers, and cleared.
+     */
+    pendingHost: enc.pendingHost ? checkHost(enc.pendingHost, 'Pending encoder address') : undefined
   };
 
   // Destinations. Accepts the schema-1 lone `d3` too, so an older profile or a

@@ -386,6 +386,8 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
     let timer = null;
     let settled = false;
     let committed = false;
+    let verifying = [];
+    let checking = false;
 
     const opts = { host, port };
     if (localAddress) opts.localAddress = localAddress;
@@ -398,23 +400,53 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
       clearTimeout(timer);
       socket.removeAllListeners();
       socket.destroy();
-      if (err) reject(err); else resolve({ results, committed });
+      if (err) reject(err);
+      // Every entry proved, not merely "nothing left unproved" — a write marked
+      // failed on read-back would otherwise satisfy the weaker form.
+      else resolve({ results, committed, verified: results.length > 0 && results.every((r) => r.verified === true) });
     };
 
-    /** Nothing left to write: wait for the flash commit, then let go. */
-    const awaitCommit = () => {
+    /**
+     * Everything written: prove it, then wait briefly for the flash commit.
+     *
+     * The commit broadcast is not reliable evidence. An `IP` write on this
+     * firmware is accepted, stored, and never announced — measured: the value
+     * read back changed, and no `Parameters successfully written!` arrived in
+     * thirty seconds. Waiting for it reported "status unknown" for a write that
+     * had plainly worked.
+     *
+     * So the value is read back instead. That is stronger evidence anyway: the
+     * broadcast says something was committed, a read-back says *this* was.
+     */
+    const verify = () => {
       clearTimeout(timer);
       current = null;
-      if (!results.some((r) => r.ok)) return finish(null);
-      log('info', 'tx', 'waiting for the encoder to confirm the flash write…');
-      timer = setTimeout(() => finish(null), commitMs);
+      const done = results.filter((r) => r.ok);
+      if (!done.length) return finish(null);
+      verifying = done.slice();
+      readBack();
+    };
+
+    const readBack = () => {
+      clearTimeout(timer);
+      if (!verifying.length) {
+        // Give the commit a moment to arrive, but do not hang on it.
+        log('info', 'tx', 'waiting for the encoder to confirm the flash write…');
+        timer = setTimeout(() => finish(null), commitMs);
+        return;
+      }
+      current = verifying.shift();
+      checking = true;
+      timer = setTimeout(readBack, perWriteMs);
+      log('info', 'tx', `read ${current.variable}`);
+      socket.write(`read ${current.variable}\r\n`);
     };
 
     const send = (line) => { log('info', 'tx', line); socket.write(`${line}\r\n`); };
 
     const next = () => {
       clearTimeout(timer);
-      if (!queue.length) return awaitCommit();
+      if (!queue.length) return verify();
       current = queue.shift();
       usedBare = false;
       timer = setTimeout(() => {
@@ -452,6 +484,19 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
         if (!current) continue;
 
         const m = new RegExp(`^${current.variable}\\s*=\\s*(.*)$`, 'i').exec(line);
+        if (m && checking) {
+          const got = m[1].trim();
+          log('info', 'rx', `${current.variable}=${got}`);
+          const holds = fold(got) === fold(current.value);
+          const entry = results.find((r) => r.variable === current.variable);
+          if (entry) {
+            entry.verified = holds;
+            if (!holds) { entry.ok = false; entry.error = `did not stick — the encoder reports ${got}`; }
+          }
+          checking = false;
+          readBack();
+          continue;
+        }
         if (m) {
           const got = m[1].trim();
           log('info', 'rx', `${current.variable}=${got}`);

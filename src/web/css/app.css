@@ -612,6 +612,11 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* Same size as the line it labels now, so it needs no optical nudge. */
 .logline .w { flex: 0 0 auto; width: 26px; text-transform: uppercase; }
 .logline.info .w  { color: var(--text-faint); }
+/* Outbound and inbound, told apart at a glance: what we asked for, and what the
+   encoder said back. Colour rather than position, because the column is three
+   characters wide and both words start with a different letter only. */
+.logline .w.dir-tx { color: var(--accent-text); font-weight: 700; }
+.logline .w.dir-rx { color: var(--ok-text); font-weight: 700; }
 .logline.warn     { color: var(--warn); }
 .logline.error    { color: var(--err-text); }
 .logline .src { color: var(--accent-text); flex: 0 0 auto; }
@@ -864,6 +869,8 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px;
   margin: 6px 0 10px; font-size: var(--fs-label); color: var(--text-faint);
 }
+/* A change somebody still has to go and apply. */
+.pending-addr { color: var(--warn); font-variant-numeric: tabular-nums; }
 .cfg-target .target-live { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 
 /* `details` rather than a hand-rolled toggle: it opens without JavaScript, it

@@ -19,7 +19,7 @@ const {
   sanitiseConnection, listInterfaces
 } = require('./validate');
 const {
-  scanSubnet, scannableInterfaces, readVariablesOnce, writeVariablesOnce
+  scanSubnet, scannableInterfaces, readVariablesOnce, writeVariablesOnce, probe
 } = require('../core/discover');
 const flashBudget = require('../core/flash-budget');
 
@@ -52,21 +52,58 @@ function createApi(ctx) {
   const offlineLogger = (id) => (level, dir, text) =>
     manager.logger.push({ id, level, dir, text, ts: Date.now() });
 
+  /**
+   * The addresses worth trying, newest first.
+   *
+   * A programmed address does not take effect until the encoder is
+   * power-cycled, so for a while the device is at one address and the profile
+   * names another. Both are tried rather than making the operator care which
+   * side of the power cycle they are on.
+   */
+  const addressesFor = (conn) =>
+    [conn.encoder.pendingHost, conn.encoder.host].filter((h, i, a) => h && a.indexOf(h) === i);
+
+  /**
+   * A pending address that answers has become the real one.
+   *
+   * Promotion on evidence, never on assumption: the encoder was reachable there,
+   * so the power cycle has happened. Until then `host` keeps naming the address
+   * that works, which is the whole point of the two fields.
+   */
+  const promoteIfAnswered = (conn, usedHost) => {
+    if (!conn.encoder.pendingHost || usedHost !== conn.encoder.pendingHost) return;
+    const updated = JSON.parse(JSON.stringify(conn));
+    updated.encoder.host = conn.encoder.pendingHost;
+    delete updated.encoder.pendingHost;
+    store.upsertConnection(updated);
+    manager.logger.push({
+      id: conn.id, level: 'info', dir: null, ts: Date.now(),
+      text: `now answering at ${usedHost} — address change applied`
+    });
+    ctx.syncLink(updated);
+    changed();
+  };
+
   const readOffline = async (id, names) => {
     const conn = store.find(checkId(id));
     if (!conn) fail('ENOENT', 'No such connection');
-    try {
-      return await readVariablesOnce(conn.encoder.host, names, {
-        port: conn.encoder.port,
-        localAddress: conn.encoder.localAddress || null,
-        onLog: offlineLogger(conn.id)
-      });
-    } catch (err) {
-      const e = new Error(`${conn.name} is unreachable at ${conn.encoder.host}:${conn.encoder.port}`);
-      e.code = 'EUNREACHABLE';
-      e.cause = err;
-      throw e;
+    let last = null;
+    for (const host of addressesFor(conn)) {
+      try {
+        const out = await readVariablesOnce(host, names, {
+          port: conn.encoder.port,
+          localAddress: conn.encoder.localAddress || null,
+          onLog: offlineLogger(conn.id)
+        });
+        promoteIfAnswered(conn, host);
+        return out;
+      } catch (err) { last = err; }
     }
+    const e = new Error(
+      `${conn.name} is unreachable at ${addressesFor(conn).join(' or ')}:${conn.encoder.port}`);
+    e.code = 'EUNREACHABLE';
+    e.cause = last;
+    throw e;
   };
 
   /**
@@ -80,18 +117,23 @@ function createApi(ctx) {
     const conn = store.find(checkId(id));
     if (!conn) fail('ENOENT', 'No such connection');
     flashBudget.claim(conn.id);
-    try {
-      const { results } = await writeVariablesOnce(conn.encoder.host, checked, {
-        port: conn.encoder.port,
-        localAddress: conn.encoder.localAddress || null,
-        onLog: offlineLogger(conn.id)
-      });
-      return results;
-    } catch (err) {
-      const e = new Error(`${conn.name} is unreachable at ${conn.encoder.host}:${conn.encoder.port}`);
-      e.code = 'EUNREACHABLE';
-      throw e;
+    let last = null;
+    for (const host of addressesFor(conn)) {
+      try {
+        const { results } = await writeVariablesOnce(host, checked, {
+          port: conn.encoder.port,
+          localAddress: conn.encoder.localAddress || null,
+          onLog: offlineLogger(conn.id)
+        });
+        promoteIfAnswered(conn, host);
+        return results;
+      } catch (err) { last = err; }
     }
+    const e = new Error(
+      `${conn.name} is unreachable at ${addressesFor(conn).join(' or ')}:${conn.encoder.port}`);
+    e.code = 'EUNREACHABLE';
+    e.cause = last;
+    throw e;
   };
 
   /**
@@ -102,22 +144,50 @@ function createApi(ctx) {
    * reconfigured — restarting it here would send it at an address that is not
    * live yet. Only the saved connection moves, so the next start finds it.
    */
-  const adoptNewAddress = async (id, results) => {
-    const written = results.find((r) => r.ok && r.variable === 'IP');
+  /**
+   * Record an address the encoder has accepted but is not using yet.
+   *
+   * Verified, not merely acknowledged: the value was read back from the device.
+   * A refusal is acknowledged in exactly the same shape, so an acknowledgement
+   * proves nothing.
+   *
+   * `host` is deliberately left alone. It names where the encoder answers, and
+   * it still answers where it did — the programmed address is inert until the
+   * device is power-cycled.
+   */
+  const recordPendingAddress = async (id, results) => {
+    const written = results.find((r) => r.ok && r.verified && r.variable === 'IP');
     if (!written) return;
     const conn = store.find(checkId(id));
     if (!conn || conn.encoder.host === written.value) return;
 
-    const from = conn.encoder.host;
     const updated = JSON.parse(JSON.stringify(conn));
-    updated.encoder.host = written.value;
+    updated.encoder.pendingHost = written.value;
     store.upsertConnection(updated);
     manager.logger.push({
       id: conn.id, level: 'warn', dir: null, ts: Date.now(),
-      text: `saved address changed ${from} -> ${written.value}. The encoder keeps answering on ` +
-        `${from} until it is power-cycled.`
+      text: `address ${written.value} stored on the encoder. It keeps answering on ` +
+        `${conn.encoder.host} until it is power-cycled. If hardware switch 2 in the connection ` +
+        `cap is ON it will come back at ${constants.DEFAULT_ENCODER_IP} instead.`
     });
     changed();
+  };
+
+  /**
+   * Settle a pending address before connecting.
+   *
+   * After a power cycle the encoder is at the programmed address while `host`
+   * still names the old one. Probing first means Start works without anyone
+   * having to know which side of the power cycle they are on.
+   */
+  const resolvePending = async (id) => {
+    const conn = store.find(checkId(id));
+    if (!conn || !conn.encoder.pendingHost) return;
+    const hit = await probe(conn.encoder.pendingHost, {
+      port: conn.encoder.port,
+      localAddress: conn.encoder.localAddress || null
+    });
+    if (hit) promoteIfAnswered(conn, conn.encoder.pendingHost);
   };
 
   const requireLink = (id) => {
@@ -242,7 +312,8 @@ function createApi(ctx) {
 
     // -- links --------------------------------------------------------------
 
-    linkStart: ({ id }) => {
+    linkStart: async ({ id }) => {
+      await resolvePending(id);
       const key = checkId(id);
       if (!manager.has(key)) {
         const conn = store.find(key);
@@ -326,7 +397,7 @@ function createApi(ctx) {
         ? await link.writeMany(checked)
         : await writeOffline(id, checked);
 
-      await adoptNewAddress(id, results);
+      await recordPendingAddress(id, results);
       return results;
     },
 
