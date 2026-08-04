@@ -609,8 +609,17 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 }
 .logline { display: flex; gap: 9px; white-space: pre-wrap; word-break: break-word; }
 .logline .t { color: var(--text-faint); flex: 0 0 auto; }
-/* Same size as the line it labels now, so it needs no optical nudge. */
-.logline .w { flex: 0 0 auto; width: 26px; text-transform: uppercase; }
+/* Same size as the line it labels, so it needs no optical nudge.
+   Wide enough for the longest label and told never to break: the column was
+   26px, which fits TX and RX but split ERROR across two lines, so a fault was
+   the one entry in the log that was hard to read. Measured at this font:
+   TX/RX 14px, WARN 27px, ERROR 34px — 56px leaves room for a longer word
+   without another look at this rule. `.logline` breaks words by design, for
+   the message; the label must opt out of it. */
+.logline .w {
+  flex: 0 0 auto; width: 56px; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .logline.info .w  { color: var(--text-faint); }
 /* Outbound and inbound, told apart at a glance: what we asked for, and what the
    encoder said back. Colour rather than position, because the column is three
