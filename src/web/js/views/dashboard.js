@@ -397,8 +397,8 @@ function readingBasis() {
     update(t, span, mapping) {
       const turns = t.countsPerRev > 0 ? t.totalCounts / t.countsPerRev : 0;
       setText(scaling,
-        `Encoder scaling: ${groupDigits(t.countsPerRev)}/turn · ` +
-        `${groupDigits(t.totalCounts)} total · ${fixed(turns, turns < 100 ? 2 : 0)} turns`);
+        `Encoder scaling: ${groupDigits(t.countsPerRev)} steps/turn · ` +
+        `${groupDigits(t.totalCounts)} steps total · ${fixed(turns, turns < 100 ? 2 : 0)} turns`);
       scaling.title = 'Angle, revolution and speed are derived from this. It comes from the ' +
         'encoder\'s UsedScopeOfPhysRes and TotalScaledRes, and changes here as soon as they ' +
         'change on the device — it is not the nameplate figure.';

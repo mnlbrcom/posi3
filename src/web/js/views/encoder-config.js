@@ -340,7 +340,7 @@ function encoderCard(conn) {
         return;
       }
       // Separated: run together, the count and the angle read as one number.
-      setText(livePos, `${groupDigits(t.pos)} counts  ·  ${fixed(t.angleDeg, 2)}°`);
+      setText(livePos, `${groupDigits(t.pos)} steps  ·  ${fixed(t.angleDeg, 2)}°`);
       const cycleCtl = controls.get('CycleTime');
       if (cycleCtl && cycleCtl.setRateHint) cycleCtl.setRateHint(current.get('CycleTime'));
     }
