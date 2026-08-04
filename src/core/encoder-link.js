@@ -194,7 +194,24 @@ class EncoderLink extends EventEmitter {
     this._connect();
   }
 
+  /**
+   * @returns {boolean} whether there was anything to stop.
+   *
+   * A link that is idle *and holding nothing* has nothing to tear down, and
+   * nothing happened — this used to run the whole teardown regardless and set
+   * IDLE/'stopped', so a connection that had never been started announced
+   * `[idle] stopped` every time somebody pressed Stop All: a state change in
+   * the log for a link whose state had not changed.
+   *
+   * The resources are checked as well as the state, not instead of it. Idle
+   * with a socket or a UDP sink open is reachable — `_openUdp()` runs before
+   * `_connect()` sets CONNECTING — and skipping the release there leaks a
+   * handle, which is exactly what a coarser `state === IDLE` guard did.
+   */
   stop() {
+    const holdsNothing = !this._socket && !this._sinks.length &&
+      !this._reconnectTimer && !this._watchdog;
+    if (this._state === STATE.IDLE && holdsNothing) return false;
     this._stopping = true;
     this._clearTimers();
     this._commands.rejectAll(new Error('link stopped'));
@@ -206,6 +223,7 @@ class EncoderLink extends EventEmitter {
     this._closeUdp();
     this._assembler.reset();
     this._setState(STATE.IDLE, 'stopped');
+    return true;
   }
 
   /** Apply a changed configuration. Restarts the link when it is running. */

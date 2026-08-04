@@ -479,13 +479,17 @@ function createApi(ctx) {
 
     linkStartAll: () => {
       for (const conn of store.connections) ctx.syncLink(conn);
-      userLog(null, `start all (${store.connections.length} connections)`);
+      // What will actually happen, not how many exist. Counting connections
+      // said "2" when both were already running and when neither was.
+      const idle = store.connections.length - manager.runningCount;
+      userLog(null, idle ? `start all — starting ${idle}` : 'start all — everything was already running');
       manager.startAll();
       return manager.ids();
     },
 
     linkStopAll: () => {
-      userLog(null, `stop all (${manager.ids().length} connections)`);
+      const running = manager.runningCount;
+      userLog(null, running ? `stop all — stopping ${running}` : 'stop all — nothing was running');
       manager.stopAll();
       return manager.ids();
     },

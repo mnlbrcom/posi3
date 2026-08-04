@@ -38,7 +38,21 @@ class Logger {
 
     this._pending = [];
     this._dropped = 0;
+
+    /**
+     * Called when a line lands while nothing was waiting to be sent.
+     *
+     * Delivery is batched, not per line: an encoder sweep is hundreds of lines
+     * inside a few milliseconds, and a screen can show sixty frames a second —
+     * pushing each one costs a message and a repaint to display nothing extra.
+     * But the batching has to be driven by lines existing, not by anything
+     * else, so whoever owns the timer is told when to wake up.
+     */
+    this.onFirstPending = opts.onFirstPending || null;
   }
+
+  /** Lines waiting to be sent. */
+  get pending() { return this._pending.length; }
 
   /** @param {{id?:string, name?:string, level?:string, dir?:string, text:string, ts?:number}} entry */
   push(entry) {
@@ -57,8 +71,10 @@ class Logger {
     this._head = (this._head + 1) % this.capacity;
     if (this._size < this.capacity) this._size++;
 
+    const wasEmpty = this._pending.length === 0 && this._dropped === 0;
     if (this._pending.length < this.maxPerFlush) this._pending.push(line);
     else this._dropped++;
+    if (wasEmpty && this.onFirstPending) this.onFirstPending();
   }
 
   /** @returns {{lines: object[], dropped: number}|null} null when there is nothing new */

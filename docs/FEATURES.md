@@ -3150,3 +3150,50 @@ connection can be deleted from. The grep that said otherwise searched for `views
 imports read `./detail.js`.
 
 **211 tests pass.**
+
+---
+
+## 2026-08-04 — Stop All stopped things that were not running, and the log went quiet when it mattered
+
+> "encoder 2 was never started" / "stop all still works even if all connections are stoped" / "stop
+> all and start all should only stop and start encoders that arent in that state already" / "also
+> logs dont auto updated only on cmd+r?" / "it gets there after a cmd+r" / "what makes more sense
+> updating log whenever an entry is made or x amount per sec?"
+
+Reported from the rig:
+
+    23:05:34  user  stop all (2 connections)
+    23:05:34  app   Revolve    [idle] stopped
+    23:05:34  app   Encoder 2  [idle] stopped     ← never started
+    23:06:10  user  stop all (2 connections)      ← nothing was running
+
+**`stop()` tore down and announced regardless of state.** A link that had never been started went
+from IDLE to IDLE and emitted `[idle] stopped` — a state change in the log for something whose state
+had not changed. It now returns early when the link is idle *and holding nothing*, and reports
+whether there was anything to stop.
+
+The resource check is not decoration. A link can be idle with a socket or UDP sink open —
+`_openUdp()` runs before `_connect()` sets CONNECTING — and a coarser `state === IDLE` guard leaked
+the handle. Caught immediately: five test files stopped exiting at all, because their cleanup relied
+on `stop()` to release what `_openUdp()` had opened.
+
+**The counts describe what happened.** `stop all — stopping 1`, or `stop all — nothing was running`,
+rather than counting the connections that exist.
+
+### The log went quiet exactly when it was needed
+
+`_tick()` drains the log to clients, and its timer **stopped whenever no link was running**. So with
+everything stopped, lines were written and never sent: stopping a connection, editing one, deleting
+one, a failed read — all invisible until something started again, or until a reload, which re-reads
+the ring buffer directly. That is precisely when an operator is reading the log to find out what
+happened.
+
+**Batched delivery is right; tying it to links running was not.** An encoder sweep is hundreds of
+lines inside a few milliseconds and a screen shows sixty frames a second, so per-line delivery costs
+a message and a repaint to display nothing extra. The batching now follows the lines rather than the
+links: a line arriving while idle wakes the drain, and the timer stops again once it is empty — an
+idle rig holds no wakeup open.
+
+Measured, with nothing running: 17 lines → 18 the moment Stop All was pressed, → 49 after Start All.
+
+**214 tests pass.**

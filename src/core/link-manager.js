@@ -32,6 +32,17 @@ class LinkManager extends EventEmitter {
     this._links = new Map();
     this._rates = new Map();
     this.logger = opts.logger || new Logger();
+    /**
+     * Log delivery must not depend on anything streaming.
+     *
+     * `_tick()` is what drains the log to clients, and the timer that drives it
+     * used to stop whenever no link was running — so with everything stopped,
+     * lines were written and never sent. Stopping a connection, editing one,
+     * deleting one, a failed read: all invisible until something started again
+     * or the page was reloaded, which re-reads the ring buffer directly. That is
+     * precisely when an operator is reading the log to find out what happened.
+     */
+    this.logger.onFirstPending = () => this._startTimer();
     this._telemetryHz = opts.telemetryHz || DEFAULT_TELEMETRY_HZ;
     this._timer = null;
     this._lastTickMs = 0;
@@ -114,9 +125,12 @@ class LinkManager extends EventEmitter {
     this._syncTimer();
   }
 
+  /** @returns {number} how many links actually had to be stopped. */
   stopAll() {
-    for (const link of this._links.values()) link.stop();
+    let stopped = 0;
+    for (const link of this._links.values()) if (link.stop()) stopped++;
     this._syncTimer();
+    return stopped;
   }
 
   /** Any link that is not idle. */
@@ -148,7 +162,7 @@ class LinkManager extends EventEmitter {
 
   /** Run the timer only while something is actually streaming. */
   _syncTimer() {
-    if (this.runningCount > 0) this._startTimer();
+    if (this.runningCount > 0 || this.logger.pending) this._startTimer();
     else this._stopTimer();
   }
 
@@ -213,6 +227,11 @@ class LinkManager extends EventEmitter {
     // left no trace in the record — so an exported log was silently incomplete.
     // Pushed after the drain, so it arrives on the next tick rather than
     // enlarging the batch that overflowed.
+    // Nothing running and nothing left to send: stop until something happens.
+    // The timer costs little, but a show server should not hold a 30 Hz wakeup
+    // open all night for an idle rig.
+    if (this.runningCount === 0 && !this.logger.pending) this._stopTimer();
+
     if (logBatch && logBatch.dropped) {
       this.logger.push({
         level: 'warn', dir: 'app',
