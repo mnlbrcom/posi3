@@ -205,6 +205,9 @@ function buildCard(conn) {
   const versionTag = el('span', { class: 'fw-tag', text: '' });
   let lastVersion = null;
 
+  const destPills = el('span', { class: 'dest-pills' });
+  let lastHealth = '';
+
   // Two columns of figures, deliberately split by the question they answer.
   // "Live values" is what the encoder is doing; "Stream" is whether the bridge
   // is keeping up with it. Mixing them is what made the old layout hard to read
@@ -237,6 +240,10 @@ function buildCard(conn) {
         onclick: () => openControls(conn)
       }),
       pillHolder,
+      // One per destination, beside the encoder's own state. A fan-out has
+      // several places the data has to arrive, and "the encoder is streaming"
+      // says nothing about whether any of them received it.
+      destPills,
       versionTag,
       // Same class as Start All / Stop All: these are the same kind of thing,
       // and a smaller ghost button read as a link rather than an action.
@@ -286,6 +293,30 @@ function buildCard(conn) {
       // already on the line above — so it is shown only for the states where it
       // carries something the card does not already say: which interface is
       // being tried, how long until the next retry, why a connection failed.
+      // Rebuilt only when something actually changed: this runs every frame,
+      // and replacing the nodes each time is what made earlier versions of this
+      // card shiver.
+      const dests = (t && t.destinations) || [];
+      const key = dests.map((d) => `${d.id}:${d.health}`).join('|');
+      if (key !== lastHealth) {
+        lastHealth = key;
+        clear(destPills);
+        for (const d of dests) {
+          const where = d.name || `${d.host}:${d.port}`;
+          const p = pill(d.health);
+          p.classList.add('dest-pill');
+          p.title = `${where} · id ${d.devid}` +
+            (d.health === 'refused'
+              ? ' — the machine is reachable but nothing is listening on that port, so disguise is probably not running'
+              : d.health === 'offline'
+                ? ' — no answer from the machine at all'
+                : '');
+          // The state alone is meaningless with several destinations; say which.
+          p.insertBefore(el('span', { class: 'dest-pill-name', text: where }), p.lastChild);
+          destPills.appendChild(p);
+        }
+      }
+
       if (t && t.version !== lastVersion) {
         lastVersion = t.version;
         setText(versionTag, t.version ? `fw ${t.version}` : '');

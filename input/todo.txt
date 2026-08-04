@@ -1,0 +1,21 @@
+posi3 — TODO
+============
+
+Notes for Claude. Anything written here is read at the start of a session.
+
+
+OPEN
+----
+
+
+
+DONE
+----
+
+
+REFERENCE
+---------
+Rig:      encoder 10.10.10.10 (fw 4.50) · encoder 10.10.10.20 · disguise 10.10.10.5
+          this machine 10.10.10.2 on en3
+Audit of inherited-but-never-requested features: ~/Desktop/posi3-inherited-features.txt
+Full history and rationale: docs/FEATURES.md
