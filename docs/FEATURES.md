@@ -2553,3 +2553,46 @@ flapping, and a destination that genuinely comes back is still announced. An exi
 the old behaviour — recovery on the first success — and now asserts the new rule and says why.
 
 **183 tests pass.**
+
+## 2026-08-04 — A dead destination stops being fed, and stops nothing else
+
+> "check the disguise api, you can ask for an alive sign off… what should we do with the connection
+> then?" / "do we want to send data to thehardware even if the disguise software is not running?" /
+> "if we fan out and one machine is off … we still should run the whole connection, just need to
+> find a way to not shooting into a black hole but keep everyone else happy and their data going"
+
+**disguise has no heartbeat to ask.** Its Python API is `POST http://<host>/api/session/python/execute`
+on port 80, and the documentation has no status, health or version endpoint. Nor is one needed: the
+*connected* UDP socket already answers the question, and answers it better than an application-level
+ping would, because ICMP distinguishes two cases a heartbeat would blur —
+
+    EHOSTUNREACH / EHOSTDOWN   the machine is not on the network at all
+    ECONNREFUSED               the machine is up, nothing is bound to that port
+
+That is the same mechanism that identified disguise's port during hardware validation without
+touching the machine.
+
+**So the signal was already there; the response was wrong.** After two seconds of unbroken failure a
+destination is marked offline: sending to it stops, one probe datagram goes every five seconds
+instead, and a banner says so — a banner rather than a toast, because it persists until it is fixed
+and an operator who looked away should still find it. UDP is stateless, so resuming costs nothing;
+there is no session to rebuild, only a send that works.
+
+**The link is never stopped for it.** The encoder's TCP socket accepts only a handful of clients, so
+dropping it risks losing the slot to a leftover one — and with fan-out, one dead machine must not
+starve the others. Proved with three destinations, the middle one pointed at a closed port:
+
+    link state: streaming · rx 1200
+      stage left      tx  1200   txErrors     0   suppressed     0   offline false
+      DEAD machine    tx   402   txErrors   402   suppressed   798   offline true
+      stage right     tx  1200   txErrors     0   suppressed     0   offline false
+      datagrams actually received: stage left 1199, stage right 1199
+
+Two thirds of the dead machine's traffic never left, while both live machines received every packet.
+The `402` is the two seconds before it gave up; after that it is one probe per five seconds.
+
+`suppressed` is counted separately from `txErrors`, because a packet deliberately not sent is not a
+failure — and the previous behaviour, 827,300 failures against one destination, buried everything
+else on the dashboard.
+
+**185 tests pass.**

@@ -44,10 +44,11 @@ async function linkWithSink(t) {
   t.after(() => l.stop());
   l.start();
 
-  // Wait for the UDP sinks to exist.
+  // Wait for the sink to be *connected*, not merely to exist: _forward skips a
+  // sink that is not ready, so a test that runs before then measures nothing.
   const end = Date.now() + 4000;
-  while (!l._sinks.length && Date.now() < end) await sleep(20);
-  assert.ok(l._sinks.length, 'the link should have opened a sink');
+  while ((!l._sinks.length || !l._sinks[0].ready) && Date.now() < end) await sleep(20);
+  assert.ok(l._sinks.length && l._sinks[0].ready, 'the link should have a connected sink');
   return { link: l, sink: l._sinks[0], warnings };
 }
 
@@ -94,4 +95,46 @@ test('a destination that really comes back is announced', async (t) => {
   const claims = warnings.filter((w) => /reachable again/.test(w));
   assert.equal(claims.length, 1, 'a genuine recovery must still be reported');
   assert.match(claims[0], /after 10 lost packets/);
+});
+
+test('sending stops when the destination will not answer, and the link stays up', async (t) => {
+  // The question this answers: should we keep firing at a machine that has told
+  // us by ICMP that it is not there? No — but the encoder connection must
+  // survive it. Its TCP socket accepts only a handful of clients, and with
+  // fan-out one dead disguise must not stop the others.
+  const { link, sink } = await linkWithSink(t);
+
+  fail(sink, 5);
+  assert.equal(sink.offline, false, 'a blip is not an outage');
+
+  // Two seconds of unbroken failure.
+  sink.failingSince = Date.now() - 2100;
+  fail(sink, 1);
+  assert.equal(sink.offline, true, 'sustained failure pauses the destination');
+
+  const before = sink.suppressed;
+  for (let i = 0; i < 500; i++) link._forward(i, 0);
+  assert.ok(sink.suppressed - before >= 490,
+    `packets should be suppressed, not sent: ${sink.suppressed - before} of 500`);
+
+  // This fixture's encoder accepts and says nothing, so the link is connected
+  // rather than streaming. What matters is that it is still up.
+  assert.ok(link.running, 'the encoder connection must survive a dead destination');
+  assert.notEqual(link.snapshot().state, 'idle');
+});
+
+test('one probe still goes out while a destination is offline', async (t) => {
+  const { link, sink } = await linkWithSink(t);
+  sink.failingSince = Date.now() - 2100;
+  fail(sink, 1);
+  assert.equal(sink.offline, true);
+
+  // Due now rather than in five seconds.
+  sink.nextProbeAt = 0;
+  const suppressedBefore = sink.suppressed;
+  link._forward(1, 0);
+  assert.equal(sink.suppressed, suppressedBefore, 'the probe is sent, not suppressed');
+
+  link._forward(2, 0);
+  assert.equal(sink.suppressed, suppressedBefore + 1, 'and the next one is suppressed again');
 });

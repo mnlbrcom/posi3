@@ -15,7 +15,7 @@
 // already provided it. Imported first so it exists before boot() runs.
 import './api.js';
 
-import { el, clear, hz, toast, banner } from './ui.js';
+import { el, clear, hz, toast, banner, dismissBanner } from './ui.js';
 import { store } from './store.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderConnections } from './views/connections.js';
@@ -208,7 +208,14 @@ function wireEvents() {
         store.fieldLayouts.set(e.id, { fields: e.fields, inferred: false });
         break;
 
+      case 'destinationDown':
+        // A banner, not a toast: this persists until it is fixed, and an
+        // operator who looked away should still find it.
+        banner('warn', `${who}: ${e.text}`, { key: `dest-${e.id}` });
+        break;
+
       case 'destinationUp':
+        dismissBanner(`dest-${e.id}`);
         toast('info', `${who}: ${e.text}`);
         break;
 

@@ -48,6 +48,20 @@ const POOL_SIZE = 8;
  */
 const RECOVERY_QUIET_MS = 3000;
 
+/**
+ * Sending stops after this long of unbroken failure, and one probe datagram
+ * goes out every RETRY_MS after that.
+ *
+ * There is nothing to gain from firing a hundred packets a second at a machine
+ * that has told us, by ICMP, that it is not there. disguise exposes no
+ * heartbeat — its Python API is `POST /api/session/python/execute` with no
+ * documented status endpoint — but the connected UDP socket already answers the
+ * question better than a heartbeat would: EHOSTUNREACH means the machine is not
+ * on the network, ECONNREFUSED means it is but nothing is bound to the port.
+ */
+const SEND_GIVE_UP_MS = 2000;
+const OFFLINE_RETRY_MS = 5000;
+
 const LATENCY_WINDOW = 256;
 
 class EncoderLink extends EventEmitter {
@@ -226,6 +240,13 @@ class EncoderLink extends EventEmitter {
         nextWarnAt: 0,
         warnBackoffMs: 0,
         lastErrorAt: 0,
+        /** First failure of the current run of them, or 0 when sending is fine. */
+        failingSince: 0,
+        /** Sending suppressed; one probe every OFFLINE_RETRY_MS instead. */
+        offline: false,
+        /** Packets not sent because the destination was known to be down. */
+        suppressed: 0,
+        nextProbeAt: 0,
         onError: (err) => {
           if (!err) return;
           sink.txErrors++;
@@ -237,6 +258,23 @@ class EncoderLink extends EventEmitter {
 
           const now = Date.now();
           sink.lastErrorAt = now;
+          if (!sink.failingSince) sink.failingSince = now;
+
+          // Long enough to rule out a blip, short enough that a show does not
+          // spend a minute shouting into a hole.
+          if (!sink.offline && now - sink.failingSince >= SEND_GIVE_UP_MS) {
+            sink.offline = true;
+            sink.nextProbeAt = now + OFFLINE_RETRY_MS;
+            const place = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
+            this._log('warn', 'tx',
+              `${place} is not answering — pausing sends, retrying every ${OFFLINE_RETRY_MS / 1000}s. ` +
+              'The encoder connection stays up.');
+            this.emit('encoderEvent', {
+              id: this.id, kind: 'destinationDown',
+              text: `${place} is offline — sends paused, retrying every ${OFFLINE_RETRY_MS / 1000}s`
+            });
+          }
+
           if (now < sink.nextWarnAt) return;
           // 0s, 15s, 60s, 240s, then every 15 minutes.
           sink.warnBackoffMs = sink.warnBackoffMs
@@ -262,6 +300,8 @@ class EncoderLink extends EventEmitter {
           if (Date.now() - sink.lastErrorAt < RECOVERY_QUIET_MS) return;
 
           sink.recovered = true;
+          sink.offline = false;
+          sink.failingSince = 0;
           const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
           this._log('info', 'tx', `${where} is reachable again after ${sink.txErrors} lost packets`);
           this.emit('encoderEvent', {
@@ -523,9 +563,18 @@ class EncoderLink extends EventEmitter {
     let len = 0;
     let builtFor = -1;
 
+    const nowMs = Date.now();
     for (let i = 0; i < sinks.length; i++) {
       const sink = sinks[i];
       if (!sink.ready) continue;
+
+      // A destination that has stopped answering gets one probe every few
+      // seconds instead of every sample. UDP is stateless, so resuming costs
+      // nothing — there is no session to re-establish, only a send that works.
+      if (sink.offline) {
+        if (nowMs < sink.nextProbeAt) { sink.suppressed++; continue; }
+        sink.nextProbeAt = nowMs + OFFLINE_RETRY_MS;
+      }
 
       // Destinations usually share a device ID, so the packet is built once and
       // sent to each. Only rebuild when a destination overrides it.
@@ -1147,6 +1196,8 @@ class EncoderLink extends EventEmitter {
       // receiving rather than only that something is wrong.
       destinations: this._sinks.map((s) => ({
         id: s.dest.id,
+        offline: s.offline,
+        suppressed: s.suppressed,
         name: s.dest.name,
         host: s.dest.host,
         port: s.dest.port,
