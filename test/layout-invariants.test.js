@@ -55,6 +55,27 @@ test('wide tables scroll inside their panel rather than the page', () => {
   assert.match(rule('.vartable'), /min-width:\s*\d+px/, '.vartable needs an explicit minimum');
 });
 
+test('a table minimum stays inside its own card', () => {
+  // `.vartable`'s 620px is a floor for the table, but a grid item's automatic
+  // minimum size is its content's -- so it became a floor under `.cfg-card`
+  // too, and an expanded card grew past the window with its header and buttons
+  // out of reach. The card has to be allowed to shrink independently.
+  assert.match(rule('.cfg-card'), /min-width:\s*0/,
+    '.cfg-card must not inherit a floor from the table inside it');
+
+  // Below four columns the table restacks rather than scrolling sideways, so
+  // the minimum has to be lifted where that happens -- and each column carries
+  // its own width, which outranks a bare `td` rule.
+  const stacked = CSS.slice(CSS.indexOf('@media (max-width: 860px)'));
+  assert.match(stacked, /\.vartable\s*\{[^}]*min-width:\s*0/,
+    'the stacked layout must drop the four-column minimum');
+  assert.match(
+    stacked,
+    /\.vartable td\.k,\s*\.vartable td\.cur,\s*\.vartable td\.ctl,\s*\.vartable td\.help\s*\{[^}]*width:\s*auto/,
+    'every column width must be reset by name, not by a bare td rule'
+  );
+});
+
 test('the page body never scrolls sideways', () => {
   assert.match(rule('html, body'), /overflow:\s*hidden/);
   assert.match(rule('.content'), /overflow-x:\s*hidden/);

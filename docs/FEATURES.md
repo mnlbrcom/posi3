@@ -2735,3 +2735,41 @@ design for the *message*, so the label has to opt out of it. Checked at 1440 and
 screen: the values themselves appear in the table, and every read, reply and failure is in the log
 with a timestamp and a direction. The unreachable banner stays — that one is an interruption, not a
 status.
+
+---
+
+## 2026-08-04 — Expanding a config group pushed the card out of the window
+
+> "in Encoder Config, Once expanding certain setting parts, breaks the adaptive design and content
+> becomes unreachable / out of bounds, Needs a fix."
+
+Four columns need about 620px, and `.vartable` said so with `min-width: 620px`. That number did not
+stay in the table. **A grid item's automatic minimum size is its content's minimum**, so the floor
+under the table became a floor under `.cfg-card` — every expanded card measured ~628px wide whatever
+the window was:
+
+     860px    card overflows the content area by 12px
+     480px    card 180px past the viewport, header and buttons with it
+     390px    card 270px past the viewport
+
+Only the table had been given somewhere to scroll, so the parts pushed out — the encoder's name,
+Read, Revert, Apply changes, the address — were simply unreachable.
+
+**The card may now shrink, and below 860px the table stops being a table.** Each variable becomes a
+stacked block: name and variable on one line, the encoder's value, the control, the help. There is
+no width to be short of. A horizontal scrollbar was the other option and is the wrong one — these
+settings are the content of the screen, not an oversized figure inside it.
+
+Two details worth keeping: each column carries its own `width`, which outranks a bare `td` rule and
+kept the value boxed into 130px with the full row free beside it; and stacked, an unheaded value
+under a name reads as the field's rather than the device's, so it says `on the encoder:`.
+
+### The check could not have caught this
+
+`uicheck` audits what is laid out, and a folded `<details>` is not laid out — so the config groups,
+which are **all folded by default**, had never been measured at any width. `--expand` opens every
+one before auditing. `layout-invariants` gained a test that fails if either half of the fix is
+removed, verified by removing each half in turn.
+
+**196 tests pass**, and every view is clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and
+expanded.
