@@ -65,7 +65,7 @@ test('velocity off at the encoder: passthrough sends 0, not nothing', () => {
 });
 
 test('velocity off at the encoder: every policy still produces a valid packet', () => {
-  for (const policy of ['zero', 'passthrough', 'derived']) {
+  for (const policy of ['zero', 'passthrough']) {
     const l = link(policy);
     const v = outVel(l, { pos: 100, vel: null });
     assert.equal(typeof v, 'number', `${policy} must yield a number`);
@@ -97,4 +97,14 @@ test('switching the encoder on and off mid-run needs no reconfiguration here', (
   assert.equal(outVel(l, { pos: 10, vel: 500 }), 500);   // velocity present
   assert.equal(outVel(l, { pos: 20, vel: null }), 0);    // switched off
   assert.equal(outVel(l, { pos: 30, vel: -250 }), -250); // switched back on
+});
+
+test('a profile still naming the removed policy sends zero', () => {
+  // 'derived' computed a velocity here and sent it. It is gone — the encoder
+  // reports one and disguise derives one — but a saved profile written before
+  // the removal can still name it, and an unknown policy must not become an
+  // undefined value in the packet.
+  const l = link('derived');
+  assert.equal(outVel(l, { pos: 100, vel: 4096 }), 0, 'falls back to the original driver behaviour');
+  assert.equal(packet(1, 100, outVel(l, { pos: 100, vel: 4096 })), '1:100,0;\n');
 });

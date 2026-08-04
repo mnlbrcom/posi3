@@ -324,7 +324,15 @@ const DEFAULT_TELEMETRY_HZ = 30;
 /** LineAssembler gives up and warns past this without seeing a newline. */
 const MAX_LINE_BYTES = 65536;
 
-const VELOCITY_POLICIES = ['zero', 'passthrough', 'derived'];
+/**
+ * What occupies the velocity slot in the packet to disguise.
+ *
+ * A third option, 'derived', computed the velocity here from position deltas
+ * and sent that. Removed: the encoder reports its own, and disguise derives one
+ * itself via the axis velocitycalcmode. A saved profile still naming it falls
+ * back to 'zero' — the value the original driver sent for every packet.
+ */
+const VELOCITY_POLICIES = ['zero', 'passthrough'];
 const UDP_SEND_POLICIES = ['every', 'latest'];
 
 module.exports = {

@@ -445,10 +445,16 @@ export async function openEditor(existing) {
     field('Velocity sent to disguise',
       segmented([
         { value: 'zero', label: 'Zero', title: 'Matches the original driver exactly — disguise derives velocity itself' },
-        { value: 'passthrough', label: 'From encoder', title: "Forward the encoder's own signed steps/s" },
-        { value: 'derived', label: 'Derived', title: 'Compute from position deltas here' }
+        { value: 'passthrough', label: 'From encoder', title: "Forward the encoder's own signed steps/s" }
       ], c.velocityPolicy, (v) => { c.velocityPolicy = v; }),
       'Zero reproduces the original d3driver.exe byte for byte, so existing disguise projects behave identically.'),
+
+    field('When records arrive coalesced',
+      segmented([
+        { value: 'every', label: 'Forward every', title: 'Original behaviour; best for velocity derivation in disguise' },
+        { value: 'latest', label: 'Newest only', title: 'Lowest latency when only current position matters' }
+      ], c.udpSendPolicy, (v) => { c.udpSendPolicy = v; }),
+      'TCP can deliver several samples in one read. Forward every keeps the motion continuous; newest only sends the latest and drops the rest.'),
 
     checkbox('Start this connection automatically when the app launches', c.autoStart, (v) => { c.autoStart = v; })
   ];
