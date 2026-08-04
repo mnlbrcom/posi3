@@ -12,32 +12,8 @@
  * footer only closes.
  */
 
-import {
-  el, pill, groupDigits,
-  confirmModal, openModal, toast, segmented
-} from '../ui.js';
+import { el, pill, groupDigits, confirmModal, openModal, toast } from '../ui.js';
 import { store } from '../store.js';
-
-/**
- * Explain the chosen policy in terms of what reaches disguise.
- *
- * The packet shape never varies — it is always `id:pos,vel;` — so the only
- * question is what occupies the velocity slot. Saying that plainly matters
- * because "From encoder" reads like it might send nothing when the encoder is
- * not configured to report velocity, and it does not: it sends 0.
- */
-function velocityHint(conn) {
-  if (conn.velocityPolicy === 'passthrough') {
-    return 'Sends the encoder\'s own value when OutputMode includes Velocity, and 0 when it ' +
-      'does not. The packet keeps the same shape either way, so disguise never sees it change.';
-  }
-  if (conn.velocityPolicy === 'derived') {
-    return 'Computed here from position deltas, so it works even when the encoder is not ' +
-      'reporting velocity. Smoothed over ~200 ms, so it lags a sudden stop.';
-  }
-  return 'The original behaviour: disguise derives velocity from position itself via the axis ' +
-    'velocitycalcmode. Byte-identical to d3driver.exe.';
-}
 
 export function openControls(conn) {
   const zeroBtn = el('button', {
@@ -78,26 +54,6 @@ export function openControls(conn) {
 
       el('div', { class: 'modal-actions' }, pill(state), runStop, zeroBtn, runBtn),
 
-      el('div', { class: 'field' },
-        el('label', { text: 'Velocity sent to disguise' }),
-        segmented([
-          { value: 'zero', label: 'Always zero', title: 'Byte-identical to the original d3driver.exe' },
-          {
-            value: 'passthrough',
-            label: 'From encoder',
-            title: "The encoder's own signed steps/s when it sends them, 0 when it does not"
-          },
-          { value: 'derived', label: 'Derived here', title: 'Computed from position deltas, wrap-aware' }
-        ], conn.velocityPolicy, (v) => saveField(conn, { velocityPolicy: v })),
-        el('div', { class: 'hint' }, velocityHint(conn))),
-
-      el('div', { class: 'field' },
-        el('label', { text: 'When records arrive coalesced' }),
-        segmented([
-          { value: 'every', label: 'Forward every', title: 'Original behaviour; best for velocity derivation in disguise' },
-          { value: 'latest', label: 'Newest only', title: 'Lowest latency when only current position matters' }
-        ], conn.udpSendPolicy, (v) => saveField(conn, { udpSendPolicy: v }))),
-
       // Deleting used to live in the connections row menu, which is gone. It
       // belongs on the one surface that is about managing a single connection,
       // set apart from the controls above so it is not next to anything you
@@ -134,14 +90,6 @@ async function toggleLink(conn) {
   try {
     if (running) await window.d3d.link.stop(conn.id);
     else await window.d3d.link.start(conn.id);
-  } catch (err) { toast('error', err.message); }
-}
-
-async function saveField(conn, patch) {
-  try {
-    const updated = Object.assign({}, conn, patch);
-    await window.d3d.config.saveConnection(updated);
-    store.setProfile(await window.d3d.config.get());
   } catch (err) { toast('error', err.message); }
 }
 

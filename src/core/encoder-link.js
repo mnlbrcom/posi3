@@ -536,7 +536,18 @@ class EncoderLink extends EventEmitter {
       this._updateDerived(pos, r.ts, nowMs, total);
       return r.vel === null ? 0 : r.vel;
     }
-    return Math.round(this._updateDerived(pos, r.ts, nowMs, total));
+
+    // There used to be a third policy that sent this computed value to
+    // disguise. It was removed: the encoder reports a velocity of its own and
+    // disguise derives one via the axis velocitycalcmode, so a third figure —
+    // differing from the encoder's by a median factor of 0.6 on the reference
+    // rig — was a third opinion nobody asked for.
+    //
+    // The computation stays because the Speed readout is derived from it: rpm
+    // comes from position deltas, not from the encoder's velocity field, so it
+    // is there whether or not the encoder reports one.
+    this._updateDerived(pos, r.ts, nowMs, total);
+    return 0;
   }
 
   /** Wrap-aware velocity from position deltas, smoothed over ~200 ms. */
