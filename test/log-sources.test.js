@@ -287,3 +287,69 @@ test('pause freezes the window at a point, and keeps recording past it', () => {
   assert.match(src, /pausedAtSeq = isPaused\(\) \? null : \(buffer\.length \? buffer\[buffer\.length - 1\]\.seq : 0\)/,
     'the freeze point is the newest line held at the moment Pause was pressed');
 });
+
+test('throughput is averaged over a second and shown as a whole number', () => {
+  // Two settings that have to agree: a one-second window is steady enough to
+  // read without rounding to tens, and rounding to tens hid the difference
+  // between a link at 96 and one at 104 while making 98 read as 100.
+  const lm = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
+  assert.match(lm, /const RATE_WINDOW_MS = 1000;/, 'the average covers one second');
+
+  const ui = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'ui.js'), 'utf8');
+  const fn = ui.slice(ui.indexOf('export function hz'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  assert.doesNotMatch(body, /\/ 10\) \* 10/, 'the rate is not rounded to the nearest ten');
+  assert.match(body, /Math\.round\(n\)/);
+  // A trickle is not nothing: those call for opposite responses.
+  assert.match(body, /'<1'/);
+});
+
+test('a link delivering a known rate reports it', () => {
+  // This is the check that was missing. Shortening the averaging window to one
+  // second broke the rate outright — the guard against too little history was
+  // a fixed `span >= 1`, which the window itself then capped, so a link at 100
+  // packets a second read 0 Hz. Nothing failed, because nothing measured the
+  // number the readout exists to show.
+  const { manager } = apiWith();
+  manager.upsert({
+    id: 'r', name: 'Rate',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ host: '127.0.0.1', port: 65535, devid: 1 }]
+  });
+  const link = manager.get('r');
+
+  // Stand in for the socket: a link that reports counters and calls itself
+  // running, without needing an encoder.
+  let rx = 0;
+  Object.defineProperty(link, 'running', { get: () => true });
+  link.telemetry = () => ({ id: 'r', rxTotal: rx, txTotal: rx, destinations: [] });
+
+  const rates = [];
+  manager.on('telemetry', (p) => rates.push(p.links[0]));
+
+  // Two seconds at 100/s, ticking at the real telemetry rate of ~33 ms.
+  //
+  // The cadence matters: at exactly 100 ms the span lands on 1000 ms and the
+  // old fixed `span >= 1` guard happened to pass. At 33 ms it lands just under,
+  // which is why the readout showed 0 Hz on the rig while a test with a tidier
+  // clock saw nothing wrong.
+  let clock = Date.now();
+  let exact = 0;
+  const realNow = Date.now;
+  try {
+    Date.now = () => clock;
+    for (let i = 0; i < 60; i++) {
+      manager._tick();
+      clock += 33;
+      exact += 100 * 0.033;
+      rx = Math.round(exact);
+    }
+  } finally {
+    Date.now = realNow;
+  }
+
+  const last = rates[rates.length - 1];
+  assert.ok(last, 'telemetry was emitted');
+  assert.ok(Math.abs(last.rxHz - 100) < 5,
+    `expected about 100 Hz, got ${last.rxHz}`);
+});

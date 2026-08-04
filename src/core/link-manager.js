@@ -15,16 +15,21 @@ const { EncoderLink } = require('./encoder-link');
 const { Logger } = require('./logger');
 const { DEFAULT_TELEMETRY_HZ } = require('../shared/constants');
 
-/** Smoothing for the packet-rate readouts, so they do not flicker. */
 /**
  * Throughput is averaged over this window rather than smoothed exponentially.
  *
  * An EMA at 30 Hz reacts within a fraction of a second, so the figure twitched
- * constantly and read as noise on a screen left open all show. A flat ten
- * seconds gives a number that holds still long enough to be read, compared
- * against, and quoted down a headset.
+ * constantly and read as noise on a screen left open all show. A flat window
+ * gives a number that holds still long enough to be read and quoted down a
+ * headset.
+ *
+ * One second, not ten: at ten the figure was steady but slow to admit anything
+ * had changed — a connection that stopped delivering kept reading near its old
+ * rate for several seconds. One second still averages ~100 samples at a normal
+ * cycle time, which is plenty to stop it flickering, and it now says what is
+ * happening rather than what was happening.
  */
-const RATE_WINDOW_MS = 10000;
+const RATE_WINDOW_MS = 1000;
 
 class LinkManager extends EventEmitter {
   constructor(opts = {}) {
@@ -197,14 +202,21 @@ class LinkManager extends EventEmitter {
         // cannot skew it the way a per-tick delta would.
         const now = Date.now();
         rate.samples.push({ t: now, rx: t.rxTotal, tx: t.txTotal });
-        while (rate.samples.length > 1 && now - rate.samples[0].t > RATE_WINDOW_MS) {
+        // Drop the oldest only while the *next* one is still beyond the window,
+        // so the retained span always covers the window rather than falling
+        // just short of it. Pruning on the oldest itself capped the span at the
+        // window and left it hovering under the minimum below, which reported
+        // 0 Hz for a link delivering a hundred packets a second.
+        while (rate.samples.length > 2 && now - rate.samples[1].t > RATE_WINDOW_MS) {
           rate.samples.shift();
         }
         const first = rate.samples[0];
         const span = (now - first.t) / 1000;
-        // Under a second of history says nothing useful yet; a link that has
-        // just started reads 0 rather than a wild extrapolation.
-        if (span >= 1) {
+        // Too little history says nothing useful yet; a link that has just
+        // started reads 0 rather than a wild extrapolation. Proportional to the
+        // window, not a fixed second — that coupling is what broke when the
+        // window was shortened to one.
+        if (span * 1000 >= RATE_WINDOW_MS / 2) {
           t.rxHz = (t.rxTotal - first.rx) / span;
           t.txHz = (t.txTotal - first.tx) / span;
         } else {
