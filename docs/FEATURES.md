@@ -4852,3 +4852,21 @@ Designer upgraded mid-run is no longer muted until restart.
 - **Tray and menu Start/Stop go through the api layer**, so they write the
   same operator log line as every other actor and their destinations establish
   disguise state. A tray start used to do neither.
+
+### Small core: honest counts, clean windows, unpoisoned gaps
+
+- **Start All clears the rate windows** as `start(id)` always did, so
+  Stop All → Start All no longer reads a large negative Hz for the first
+  second. The single-start path even carried a comment naming this failure.
+- **"Reachable again after N lost packets" counts this outage.** `txErrors`
+  is cumulative for the run and was reported raw — the rig once announced
+  1265 for an outage that had lost a fraction of them. The outage's own count
+  is now snapshotted at its first error; the cumulative counter still holds
+  the run total for the dashboard.
+- **Gap statistics survive a reconnect.** The previous-sample markers lived
+  through disconnects, so a new connection's first sample recorded the whole
+  outage as an inter-sample gap — poisoning p99/max for the next 256 samples —
+  and could count a spurious wrap. Cleared on disconnect.
+- **`summary()` no longer reads a field that never existed** (`rate.tx`,
+  `NaN` from the day it was written; latent, since nothing calls it yet). It
+  now derives packets/s from the same sample window the telemetry rate uses.
