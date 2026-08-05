@@ -263,18 +263,71 @@ function sanitiseConnection(raw) {
  */
 function checkMapping(m) {
   const raw = m && typeof m === 'object' ? m : {};
+  // `Number(x) || 1` lets Infinity through (it is truthy) and accepts a
+  // negative ratio, both of which end as NaN or garbage in the axis values
+  // sent to disguise. Finite or the fallback; ratios positive or the fallback.
+  const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
+  const ratio = (v, fallback) => (num(v, fallback) > 0 ? num(v, fallback) : fallback);
   return {
     mode: ['full', 'revolutions', 'capture'].includes(raw.mode) ? raw.mode : 'full',
-    revolutions: Number(raw.revolutions) || 1,
-    gearRatio: Number(raw.gearRatio) || 1,
-    minInput: Number(raw.minInput) || 0,
-    maxInput: Number(raw.maxInput) || 0,
-    minOutput: Number(raw.minOutput) || 0,
-    maxOutput: raw.maxOutput === undefined ? 1 : Number(raw.maxOutput),
+    revolutions: ratio(raw.revolutions, 1),
+    gearRatio: ratio(raw.gearRatio, 1),
+    minInput: num(raw.minInput, 0),
+    maxInput: num(raw.maxInput, 0),
+    minOutput: num(raw.minOutput, 0),
+    maxOutput: raw.maxOutput === undefined ? 1 : num(raw.maxOutput, 1),
     wrapInput: raw.wrapInput !== false,
     property: String(raw.property || 'offset.x').slice(0, 200),
     object: String(raw.object || '').slice(0, 300)
   };
+}
+
+/**
+ * Settings, validated like everything else that persists.
+ *
+ * `configSetSettings` merged arbitrary keys and types straight into the
+ * saved profile: `webPort: "abc"` was accepted, written to disk, and consumed
+ * at the next launch — where an unbindable value kills the desktop app in
+ * `fatal()`. A bad setting must be refused at the moment somebody types it,
+ * when it is theirs to correct, not at a restart weeks later.
+ */
+function checkSettings(partial) {
+  const raw = partial && typeof partial === 'object' ? partial : {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    switch (key) {
+      case 'telemetryHz': {
+        const hz = Number(value);
+        if (!Number.isFinite(hz) || hz < 1 || hz > 120) fail('EINVAL', 'Telemetry rate must be 1-120 Hz');
+        out[key] = hz;
+        break;
+      }
+      case 'webPort': {
+        const port = Number(value);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) {
+          fail('EINVAL', 'Web port must be 0-65535 (0 means any free port)');
+        }
+        out[key] = port;
+        break;
+      }
+      case 'webBindHost': {
+        const host = String(value || '').trim();
+        // 0.0.0.0 and :: mean every interface and are not ordinary hosts.
+        if (host !== '0.0.0.0' && host !== '::') checkHost(host, 'web bind address');
+        out[key] = host;
+        break;
+      }
+      case 'autoStartOnLaunch':
+      case 'startMinimized':
+      case 'launchAtLogin':
+      case 'logToFile':
+        out[key] = !!value;
+        break;
+      default:
+        fail('EINVAL', `Unknown setting: ${key}`);
+    }
+  }
+  return out;
 }
 
 /** IPv4 interfaces for the multi-NIC picker on show servers. */
@@ -291,6 +344,7 @@ function listInterfaces() {
 }
 
 module.exports = {
+  checkSettings,
   fail, checkHost, checkPort, checkDevid, checkId, checkVariable, checkValue, checkVarWrite,
   sanitiseConnection, listInterfaces
 };

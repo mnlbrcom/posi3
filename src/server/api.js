@@ -16,7 +16,7 @@ const constants = require('../shared/constants');
 const { computeMapping, d3Fields, suggestedPreset } = require('../shared/mapping');
 const {
   fail, checkId, checkHost, checkPort, checkVariable, checkVarWrite,
-  sanitiseConnection, listInterfaces
+  checkSettings, sanitiseConnection, listInterfaces
 } = require('./validate');
 const { migrateConnection, SCHEMA_VERSION } = require('../core/config-store');
 
@@ -822,7 +822,7 @@ function createApi(ctx) {
 
     configSetSettings: (partial) => {
       const was = JSON.parse(JSON.stringify(store.settings));
-      const s = store.setSettings(partial || {});
+      const s = store.setSettings(checkSettings(partial));
       const edits = describeEdit(was, s);
       if (edits.length) userLog(null, `changed settings: ${edits.join(' · ')}`);
       manager.setTelemetryHz(s.telemetryHz);
