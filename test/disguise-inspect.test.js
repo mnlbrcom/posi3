@@ -126,8 +126,8 @@ test('an older Designer is named as such, not left as a bare 404', async (t) => 
   await assert.rejects(
     () => inspectReceivers(d.host, { apiPort: d.apiPort }),
     (err) => err.code === 'EDISGUISE_NO_API' &&
-      /older than the Python API/.test(err.message) &&
-      /not Designer at all/.test(err.message));
+      /No API call possible with the disguise version/.test(err.message) &&
+      /not Designer/.test(err.message));
 });
 
 test('the script only reads — posi3 never writes to a Designer session', () => {
@@ -191,7 +191,7 @@ test('an id that exists nowhere in the show is named as missing', async (t) => {
   assert.ok(!ids.includes('1'), 'so a connection sending as id 1 has no axis to drive');
 });
 
-test('a wrong port and a missing axis are two problems, and both are said', async (t) => {
+test('while the port is wrong, the device id is not anyone’s next question', async (t) => {
   const d = await fakeDesigner(t, ok([receiver({
     drivers: [{ type: 'NavigatorDriver', port: 8000 }],
     axes: [{ type: 'ScreenPositionAxis', id: '10' }]
@@ -204,14 +204,38 @@ test('a wrong port and a missing axis are two problems, and both are said', asyn
   assert.ok(!allPorts.includes(6000), 'and the port is wrong');
   // The verdict text is built in api.js; this pins the inputs it reasons from,
   // so a change to either half cannot silently drop one of the two statements.
+  // One problem at a time, in the order they have to be fixed: while the port
+  // is wrong nothing arrives at all, so the id cannot be the next question.
   const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
-  assert.match(api, /No port match — this connection sends to \$\{dest\.port\}/);
-  assert.match(api, /ID mismatch — this connection sends id \$\{dest\.devid\}/);
-  // Each names the object to go and look at, rather than a bare number.
-  assert.match(api, /\$\{label\(r\)\}'s \$\{d\.type\} on port \$\{d\.port\}/,
-    'the driver is named, with its port');
-  assert.match(api, /axis ids \$\{ids\.join\(', '\)\}/,
-    'and an id mismatch lists the ids that do exist');
-  assert.match(api, /problems\.join\('\. '\)/,
-    'both are reported together, not one instead of the other');
+  assert.match(api, /\} else if \(!portExists\) \{[\s\S]{0,200}No port match/,
+    'the port is checked first, on its own');
+  assert.match(api, /\} else if \(!idExists\) \{[\s\S]{0,400}ID mismatch/,
+    'and the id only once the port agrees');
+  assert.doesNotMatch(api, /problems\.join/,
+    'the two are never joined into one sentence');
+
+  // Each names the object to go and open, rather than a bare number.
+  assert.match(api, /\$\{label\(r\)\}'s \$\{d\.type\} on port \$\{d\.port\}/);
+  assert.match(api, /axis ids \$\{ids\.join\(', '\)\}/);
+});
+
+test('an unusable API version says exactly that', () => {
+  // Before any of the port or id reasoning: if Designer cannot answer at all,
+  // none of it applies and none of it should be shown.
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'disguise-api.js'), 'utf8');
+  assert.match(src, /No API call possible with the disguise version on \$\{host\}/);
+});
+
+test('the detail line does not restate the mismatch as "not receiving"', () => {
+  // While anything mismatches, "not receiving" says nothing the verdict has not
+  // already said. Where it is the only thing left, the verdict says so instead.
+  const view = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
+  // The emitted string itself, not the comment above it explaining why.
+  const block = view.slice(view.indexOf("class: 'hint' },", view.indexOf('for (const rec of r.receivers)')));
+  const emitted = block.slice(0, block.indexOf('));'));
+  assert.doesNotMatch(emitted, /receiving/, 'the per-receiver line stays to what was found');
+  assert.doesNotMatch(emitted, /engaged/);
+  assert.match(emitted, /axis ids/);
 });

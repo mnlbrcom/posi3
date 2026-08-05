@@ -3879,3 +3879,45 @@ The id mismatch is deliberately named against the **driver** rather than the rec
 object whose axes these are, and the one that has to be opened to add another.
 
 **245 tests pass.**
+
+---
+
+## 2026-08-05 — One problem at a time
+
+> "only show ID part when port is correct, since aslong as i have no port, i dont need to think about
+> id … And before all this check if disguise can do API calls if not , just say no api call possible
+> with this disguise version. Also your msg says … not engaged, not receiving - not receiving is
+> obvious since mismatch … And the axes state is set to engaged, so i dont know where you found that
+> they are not."
+
+The checks now run in the order they have to be fixed, and stop at the first:
+
+1. can Designer answer at all — *"No API call possible with the disguise version on 10.10.10.4"*
+2. is there a position receiver
+3. **does the port match** — if not, that is the whole message
+4. **only then, does the device id match**
+5. only once both agree, is the receiver engaged
+
+While the port is wrong nothing arrives at all, so the device id cannot be anyone's next question.
+Reporting both gave an operator two things to hold when one was actionable.
+
+    No port match — this connection sends to 6000, and posi3's NavigatorDriver on port 8000.
+    posi3: NavigatorDriver on 8000 · axis ids 10, 1
+
+`not receiving` is gone from the detail line: while anything mismatches it restates the mismatch.
+Where it is the only thing left, the verdict says so instead.
+
+### On `engaged`
+
+Asked of the live session, and worth recording because it contradicted an expectation:
+
+    ScreenPositionAxis   attributes: input, output          — no engaged, no enabled
+    ScreenPositionReceiver   started=True  engaged=False  receiving=False
+
+**The axes have no engaged state of their own.** `engaged` exists only on the receiver, and Designer
+reported it as `False` while `started` was `True`. Whether that property means what the Engage button
+in the UI means is not something this end can settle, so it is now reported as *"Designer reports the
+receiver as not engaged"* — what was said, attributed — rather than asserted as a fault, and only
+when the port and id already agree so it is the one remaining explanation.
+
+**247 tests pass.**

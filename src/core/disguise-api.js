@@ -143,8 +143,9 @@ async function inspectReceivers(host, opts = {}) {
     // was added later. Worth saying, because "404" invites the reading that the
     // address is wrong when the address is fine.
     const e = new Error(res.status === 404
-      ? `${host} is serving HTTP but has no ${new URL(url).pathname} — this Designer is older ` +
-        'than the Python API, or what is answering on that address is not Designer at all.'
+      ? `No API call possible with the disguise version on ${host} — it is serving HTTP but has ` +
+        `no ${new URL(url).pathname}. Either Designer predates the Python API, or what is ` +
+        'answering on that address is not Designer.'
       : `${host} answered ${res.status} — ${text.slice(0, 200)}`);
     e.code = res.status === 404 ? 'EDISGUISE_NO_API' : 'EDISGUISE_API';
     throw e;

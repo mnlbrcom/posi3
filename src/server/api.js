@@ -429,21 +429,17 @@ function createApi(ctx) {
       const allPorts = [...new Set(receivers.flatMap((r) => (r.drivers || []).map((d) => Number(d.port))))];
       const allIds = [...new Set(receivers.flatMap((r) => (r.axes || []).map((a) => String(a.id))))];
 
-      // Two independent facts, reported independently, and each naming the
-      // thing an operator has to go and look at. A missing axis is a whole
-      // object nobody created; a wrong port is one field. Folding them into a
-      // single "nothing matches" hid whichever one they were not thinking of.
+      // One problem at a time, in the order they have to be fixed. While the
+      // port is wrong nothing arrives at all, so the device id cannot be
+      // anyone's next question — reporting both at once just gave an operator
+      // two things to hold when only one was actionable.
       const idExists = allIds.includes(String(dest.devid));
       const portExists = allPorts.includes(dest.port);
 
-      /** "posi3's NavigatorDriver on 8000" — what to go and look at. */
+      /** "posi3's NavigatorDriver on port 8000" — the object to go and open. */
       const describeDriver = (r) => {
         const d = (r.drivers || [])[0];
         return d ? `${label(r)}'s ${d.type} on port ${d.port}` : `${label(r)} (no driver)`;
-      };
-      const axisList = (r) => {
-        const ids = (r.axes || []).map((a) => a.id);
-        return ids.length ? `axis ids ${ids.join(', ')}` : 'no axes';
       };
 
       let verdict;
@@ -451,37 +447,32 @@ function createApi(ctx) {
       if (!receivers.length) {
         verdict = `${dest.host} has a Designer session, but no position receiver in it. ` +
           'Add one, with a Navigator driver and an axis inside.';
-      } else if (both && both.engaged && both.receiving) {
-        verdict = `${label(both)} is engaged and receiving on port ${dest.port}, with an axis for ` +
-          `id ${dest.devid}. Everything matches.`;
-        level = 'info';
-      } else if (both && !both.engaged) {
-        verdict = `${label(both)} has a driver on ${dest.port} and an axis with id ${dest.devid}, ` +
-          'but the receiver is not engaged — so nothing will move until it is.';
-      } else if (both) {
-        verdict = `${label(both)} matches and is engaged, but reports that it is not receiving. ` +
-          'Check that this connection is running and that nothing between them drops the traffic.';
+      } else if (!portExists) {
+        verdict = `No port match — this connection sends to ${dest.port}, and ` +
+          receivers.map(describeDriver).join('; ') + '.';
+      } else if (!idExists) {
+        // Only now, and named against the driver: that is the object whose axes
+        // these are, and the one to open to add another.
+        const home = portOnly[0];
+        const ids = (home.axes || []).map((a) => a.id);
+        verdict = `ID mismatch — this connection sends id ${dest.devid}, and ` +
+          `${describeDriver(home)} has ` +
+          (ids.length ? `axis ids ${ids.join(', ')}` : 'no axes at all') + '.';
+      } else if (!both) {
+        verdict = `Port ${dest.port} and axis id ${dest.devid} are in different receivers ` +
+          `(${portOnly.map(label).join(', ')} and ${axisOnly.map(label).join(', ')}) — ` +
+          'they have to be in the same one.';
+      } else if (!both.engaged) {
+        // Port and id agree, so this is the only thing left that would stop it
+        // moving. Reported as what Designer says rather than as a verdict: the
+        // property is `ScreenPositionReceiver.engaged`, and it is the receiver
+        // that carries it — the axes have no such state of their own.
+        verdict = `Port ${dest.port} and axis id ${dest.devid} both match on ${label(both)}, ` +
+          'but Designer reports the receiver as not engaged.';
       } else {
-        const problems = [];
-        if (!portExists) {
-          problems.push(`No port match — this connection sends to ${dest.port}, and ` +
-            (receivers.length
-              ? receivers.map(describeDriver).join('; ')
-              : 'nothing is listening'));
-        }
-        if (!idExists) {
-          // Named against the driver, because that is the object whose axes
-          // these are and the one that has to be opened to add another.
-          const home = portOnly[0] || receivers[0];
-          problems.push(`ID mismatch — this connection sends id ${dest.devid}, and ` +
-            `${describeDriver(home)} has ${axisList(home)}`);
-        }
-        if (!problems.length) {
-          problems.push(`Port ${dest.port} and axis id ${dest.devid} are in different receivers ` +
-            `(${portOnly.map(label).join(', ')} and ${axisOnly.map(label).join(', ')}) — ` +
-            'they have to be in the same one');
-        }
-        verdict = `${problems.join('. ')}.`;
+        verdict = `${label(both)} is engaged on port ${dest.port}, with an axis for id ` +
+          `${dest.devid}. Everything matches.`;
+        level = 'info';
       }
 
       appLog(conn.id, verdict, level);
