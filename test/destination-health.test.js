@@ -101,7 +101,11 @@ test('coming back is news too', async (t) => {
   assert.ok(!events.includes('destinationUp'),
     'half a second of success is not yet recovery');
 
-  for (let i = 0; i < 40; i++) { link._forward(i, 0); await sleep(90); }
+  // The window is thirty seconds — long enough to outlast the silence a
+  // switched-off host can produce at the full send rate. Wound back rather than
+  // waited out.
+  link._sinks[0].lastErrorAt = Date.now() - 31000;
+  for (let i = 0; i < 10; i++) { link._forward(i, 0); await sleep(10); }
   await until(() => events.includes('destinationUp'), 4000, 'the recovery notice');
   assert.ok(events.includes('destinationUp'));
 });

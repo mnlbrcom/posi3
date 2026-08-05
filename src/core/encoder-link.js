@@ -42,13 +42,28 @@ const {
 const POOL_SIZE = 8;
 /** Recent arrival→send measurements, in microseconds. */
 /**
- * How long sends must keep landing before a destination counts as recovered.
+ * How long ordinary sending must stay clean before a destination is called back.
  *
- * Long enough that a lone datagram slipping through a down host does not
- * qualify, short enough that a genuine recovery is announced while it still
- * matters.
+ * Thirty seconds, and it has to be this long because silence is not evidence.
+ * Measured against a switched-off machine, sending at the full rate:
+ *
+ *   17:56:11  no answer from 10.10.10.5 at all
+ *   17:56:20  is reachable again after 115 lost packets    <- nine quiet seconds
+ *   17:56:21  no answer from 10.10.10.5 at all
+ *
+ * Nine seconds without a single error, from a host that was off. The kernel
+ * stops reporting once the ARP entry for a dead host expires during the pause,
+ * and says nothing again until re-resolution fails — so any window shorter than
+ * that failure latency reads as recovery. Three seconds produced three false
+ * claims in ninety, whether the three seconds were spent in a trial or in
+ * ordinary traffic afterwards.
+ *
+ * Thirty seconds is longer than any gap observed, and the cost of the choice is
+ * only that a genuine recovery is announced half a minute late — while the
+ * dashboard pill turns green immediately, because that reflects state rather
+ * than making a claim.
  */
-const RECOVERY_QUIET_MS = 3000;
+const RECOVERY_QUIET_MS = 30000;
 
 /**
  * Sending stops after this long of unbroken failure, and one probe datagram
@@ -93,18 +108,28 @@ const PROBE_GRACE_MS = 1000;
  *   15:28:09  no answer from 10.10.10.5 at all
  *   15:28:11  is not answering — pausing sends
  *
- * A clean probe now starts a trial instead of ending the outage: packets at
- * TRIAL_GAP_MS for TRIAL_MS, and every one of them has to go unremarked. One
- * error at any point drops it back to probing without a word — the outage never
- * ended, so there is nothing to announce.
+ * A clean probe starts a trial instead of ending the outage, and the trial runs
+ * at the **normal rate**. That matters more than it sounds: a trickle does not
+ * provoke ICMP. Trialling at 250ms intervals sent twelve packets over three
+ * seconds and drew nothing from a machine that was switched off, so the outage
+ * was declared over — and the first second of real traffic produced the error
+ * that proved it was not:
  *
- * Twelve packets rather than one is still nothing against a 100/s stream, and
- * it is the only evidence UDP offers: there is no delivery confirmation, so
- * "we sent a number of these and the network stayed quiet" is the strongest
- * claim available.
+ *   17:47:14.948  is reachable again after 805 lost packets
+ *   17:47:15.891  no answer from 10.10.10.5 at all      <- one second later
+ *   17:47:17.901  is not answering — pausing sends
+ *
+ * So the trial sends exactly what the show sends. A single error ends it
+ * silently — the outage never lifted, so there is nothing to announce — which
+ * means a dead host costs about a second of traffic per attempt and then goes
+ * quiet again for OFFLINE_RETRY_MS. Roughly a fifth of the stream, against a
+ * claim that is now worth something.
+ *
+ * It is the only evidence UDP offers: there is no delivery confirmation, so
+ * "we sent at the real rate for three seconds and nothing objected" is the
+ * strongest thing that can be said.
  */
 const TRIAL_MS = 3000;
-const TRIAL_GAP_MS = 250;
 
 /**
  * What the network actually told us, said in the operator's terms.
@@ -339,9 +364,8 @@ class EncoderLink extends EventEmitter {
         suppressed: 0,
         nextProbeAt: 0,
         probeSentAt: 0,
-        /** While proving itself: end of the trial, and the next trial send. */
+        /** While proving itself at the normal rate: when the trial ends. */
         trialUntil: 0,
-        nextTrialAt: 0,
         onError: (err) => {
           if (!err) return;
           sink.txErrors++;
@@ -364,7 +388,6 @@ class EncoderLink extends EventEmitter {
           // operator to be told twice. Back to one probe every few seconds.
           if (sink.trialUntil) {
             sink.trialUntil = 0;
-            sink.nextTrialAt = 0;
             sink.probeSentAt = 0;
             sink.nextProbeAt = now + OFFLINE_RETRY_MS;
           }
@@ -375,9 +398,17 @@ class EncoderLink extends EventEmitter {
             sink.offline = true;
             sink.nextProbeAt = now + OFFLINE_RETRY_MS;
             const place = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
+            // One line, not two. "is not answering" and "no answer from the
+            // host" are the same fact — going offline *is* the diagnosis — and
+            // saying both left an operator reading the same news twice, two
+            // seconds apart. The cause and what follows from it belong in one
+            // sentence.
+            const cause = explainSendError(sink.lastErrorCode, dest);
             this._log('warn', 'app',
-              `${place} is not answering — pausing sends, retrying every ${OFFLINE_RETRY_MS / 1000}s. ` +
-              'The encoder connection stays up.');
+              `${place}: ${cause || 'not answering'} Sends paused, retrying every ` +
+              `${OFFLINE_RETRY_MS / 1000}s — the encoder connection stays up.`);
+            // And the periodic warning does not immediately repeat it.
+            sink.nextWarnAt = now + (sink.warnBackoffMs || 15000);
             this.emit('encoderEvent', {
               id: this.id, kind: 'destinationDown',
               text: `${place} is offline — sends paused, retrying every ${OFFLINE_RETRY_MS / 1000}s`
@@ -704,31 +735,30 @@ class EncoderLink extends EventEmitter {
         // Sends have to have been quiet for RECOVERY_QUIET_MS as well, which is
         // the same bar the send-callback path already used.
         if (sink.trialUntil) {
-          // Under trial. Any error since it began has already cancelled it in
-          // the error handler, so reaching the end means every packet went
-          // unremarked — which is as much as UDP will ever tell us.
+          // Under trial, and sending at the ordinary rate — anything less does
+          // not provoke the ICMP that proves a host is gone. Any error since it
+          // began has already cancelled it in the error handler, so reaching the
+          // end means every packet went unremarked at full rate, which is as
+          // much as UDP will ever tell us.
           if (nowMs >= sink.trialUntil) {
+            // Sending resumes. Nothing is announced here: a quiet trial is not
+            // proof a host is back — this one stayed quiet for three seconds at
+            // full rate against a machine that was switched off, three times in
+            // ninety seconds. The announcement is left to `onSent`, which
+            // requires RECOVERY_QUIET_MS of ordinary traffic with no error at
+            // all; a dead host produces one within a second and goes straight
+            // back to offline, having claimed nothing.
             sink.offline = false;
             sink.failingSince = 0;
             sink.probeSentAt = 0;
             sink.trialUntil = 0;
             sink.lastErrorCode = null;
-            // `sink.dest`, not `dest`: this is _forward, not the _openUdp loop
-            // where that name exists. A ReferenceError here killed the main
-            // process the first time a destination genuinely recovered.
-            this._announceRecovery(sink, sink.dest);
-          } else if (nowMs < sink.nextTrialAt) {
-            sink.suppressed++;
-            continue;
-          } else {
-            sink.nextTrialAt = nowMs + TRIAL_GAP_MS;
           }
         } else if (sink.probeSentAt && nowMs - sink.probeSentAt >= PROBE_GRACE_MS &&
             sink.lastErrorAt < sink.probeSentAt) {
           // The probe drew no objection. That is a reason to look harder, not a
           // reason to declare the outage over.
           sink.trialUntil = nowMs + TRIAL_MS;
-          sink.nextTrialAt = nowMs + TRIAL_GAP_MS;
         } else if (nowMs < sink.nextProbeAt) {
           sink.suppressed++;
           continue;
