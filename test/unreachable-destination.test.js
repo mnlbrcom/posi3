@@ -338,7 +338,9 @@ test('going offline is said once, with its cause', async (t) => {
   const offlineLines = warnings.filter((w) => /Sends paused/.test(w));
   assert.equal(offlineLines.length, 1, 'once, not twice');
   assert.match(offlineLines[0], /no answer at all/, 'with the cause in it');
-  assert.match(offlineLines[0], /retrying every 5s/, 'and what happens next');
+  // The interval, not the number: this asserted /every 5s/ and failed when the
+  // probe was made more frequent, for a message that had become more accurate.
+  assert.match(offlineLines[0], /retrying every \d+s/, 'and what happens next');
   assert.deepEqual(warnings.filter((w) => /is not answering —/.test(w)), [],
     'and not also as a separate line saying the same thing');
 });
@@ -370,7 +372,7 @@ test('going offline says one thing, and the banner and the log say the same thin
   assert.equal(logged.length, 1, 'and one log line');
   assert.equal(bannered[0], logged[0], 'and they are the same sentence');
   assert.match(bannered[0], /no answer at all/);
-  assert.match(bannered[0], /retrying every 5s/);
+  assert.match(bannered[0], /retrying every \d+s/);
 });
 
 test('an outage is announced once, however many times sending is retried', async (t) => {

@@ -4597,3 +4597,55 @@ of continuous failure before the sink is declared offline, so a single lost
 packet cannot blank a card mid-show. `ECONNREFUSED` from a live machine with
 nothing bound is near-instant; a dark machine is slow because the network says
 nothing at all.
+
+## 2026-08-05 — Getting back from offline, in seconds rather than half a minute
+
+**Asked:** what moves a destination from offline back to connected when the
+cable goes back in, and check it more often — the link was stable and disguise
+was visibly receiving for several seconds before the indicator moved.
+
+**What was actually in the way.** Four gates in series, not one slow check:
+
+| | |
+|---|---|
+| up to 5 s | `OFFLINE_RETRY_MS` — while offline, sending is suppressed and one probe datagram goes out every five seconds. Nothing was even attempted until the next one came due. |
+| 1 s | `PROBE_GRACE_MS` — waiting to see whether ICMP objects to that probe. |
+| 3 s | `TRIAL_MS` — full-rate sending, error-free throughout, before `offline` clears. |
+| **30 s** | `RECOVERY_QUIET_MS`, inside `destinationHealth`. `txErrors` is cumulative and never reset, so after a sink's first error this reads "thirty seconds since the last one" for the rest of the run. |
+
+The last one dominates and hid the other three: the first nine seconds fit
+inside it, so the pill could not go green until half a minute after the final
+error, whatever the ladder did. A comment above the constant claimed the pill
+"turns green immediately" — it had not been true since the quiet gate moved
+into the health function.
+
+**Built:**
+
+- `OFFLINE_RETRY_MS` 5 s → **1 s**. The probe is one datagram; the wider gap
+  bought nothing and cost up to five seconds of an outage that was already over.
+- **`_probeHostAlive`** — proof a host is up, instead of absence of proof that
+  it is down. UDP can only report failure, and silence is what a switched-off
+  machine produces too (measured: nine consecutive seconds at full send rate),
+  which is why believing it needed thirty seconds. TCP answers in one round
+  trip: a completed handshake proves the machine is up, and **so does a
+  refusal**, because only a live machine sends RST. It connects to the
+  destination's own port, so nothing new is configured and nothing need be
+  listening. Not the Designer Python API and no script — a connect and an
+  immediate close, the reachability test `ping` would give without needing root.
+  Runs only while a destination is already offline, one attempt at a time,
+  unref'd, and closed in `_closeUdp`.
+- **`hostProvenBack(sink)`** — one rule, three ways, in descending order of what
+  they prove: never failed; TCP proved it alive after the last error; or it has
+  been quiet for thirty seconds. Used by both the pill and the "reachable again"
+  line, which previously carried separate copies of the thirty-second test.
+- A firewall that drops everything gets no TCP answer and falls through to the
+  silence rule, so the worst case degrades to the old behaviour rather than to a
+  wrong answer.
+
+**Result:** a replugged cable is back at roughly 1 s probe + 1 s grace + 3 s
+trial ≈ **5 s**, down from ~30 s, and the trial still stands between a clean
+probe and a green pill — the flapping protection is untouched.
+
+Two tests asserted `/retrying every 5s/` and failed because the message had
+become more accurate. Rewritten to `/every \d+s/`: the message must state the
+interval, not a particular number.
