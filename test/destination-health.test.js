@@ -52,10 +52,11 @@ test('a persistent failure is announced once, not on every packet', async (t) =>
   const warnings = [];
   link.on('log', (e) => { if (e.level === 'warn') warnings.push(e.text); });
 
-  // Far more than the old rule's 500-error threshold.
-  for (let i = 0; i < 1500; i++) link._forward(i, 0);
+  // Kept going past SEND_GIVE_UP_MS: nothing is said before we have given up,
+  // because a failure that clears inside two seconds is a blip.
+  const end = Date.now() + 2600;
+  while (Date.now() < end) { for (let i = 0; i < 60; i++) link._forward(i, 0); await sleep(20); }
   await until(() => link._sinks[0].txErrors > 400, 4000, 'failures to accumulate');
-  await sleep(300);
 
   assert.ok(link._sinks[0].txErrors > 400, 'the failures must still be counted');
   assert.equal(warnings.length, 1,
@@ -67,8 +68,14 @@ test('the warning names the destination and what is wrong', async (t) => {
   const warnings = [];
   link.on('log', (e) => { if (e.level === 'warn') warnings.push(e.text); });
 
-  for (let i = 0; i < 50; i++) link._forward(i, 0);
-  await until(() => warnings.length > 0, 4000, 'a warning');
+  // Long enough to give up on it: before that, a failure is a blip and says
+  // nothing.
+  const stop = Date.now() + 3000;
+  while (Date.now() < stop && !warnings.length) {
+    for (let i = 0; i < 20; i++) link._forward(i, 0);
+    await sleep(20);
+  }
+  await until(() => warnings.length > 0, 2000, 'a warning');
 
   // The name, not a particular sentence around it: the wording changed when the
   // raw errno was replaced by a diagnosis, and a test pinned to the phrasing

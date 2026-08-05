@@ -75,18 +75,23 @@ test('a lone success between failures is not recovery', async (t) => {
 test('the warning backoff survives that flapping', async (t) => {
   const { sink, warnings } = await linkWithSink(t);
 
+  // Already failing for longer than the give-up window, so the first error in
+  // the loop takes it offline and says so once. The successes scattered through
+  // are what a host that is off actually looks like — the odd datagram slipping
+  // between ARP retries — and they must not reopen the announcement.
+  sink.failingSince = Date.now() - 5000;
   for (let round = 0; round < 40; round++) {
     fail(sink, 25);
     sink.onSent();
   }
 
-  // 0s then 15s: inside one test run only the first warning is due.
-  // `fail()` raises errors with no `code`, so these take the fallback wording.
-  const said = warnings.filter((w) => /Cannot reach/.test(w));
+  // One message for the outage, and no more inside this window: the backoff
+  // starts at 15s. `fail()` raises errors with no `code`, so the cause falls
+  // back to "not answering".
+  const said = warnings.filter((w) => /Sends paused/.test(w));
   assert.equal(said.length, 1,
     `one warning was due in this window, got ${said.length}: ${said.join(' | ')}`);
-  assert.match(said[0], /send EHOSTUNREACH/,
-    'an error the app cannot explain keeps its raw message, which is the only place it can be seen');
+  assert.match(said[0], /not answering/);
 });
 
 test('a destination that really comes back is announced', async (t) => {
@@ -236,6 +241,9 @@ test('a refused port is diagnosed, not just reported', async (t) => {
 
   const refused = new Error('recvmsg ECONNREFUSED');
   refused.code = 'ECONNREFUSED';
+  // Past the give-up window: nothing is said about a failure that might still
+  // clear, so the diagnosis arrives with the decision to pause sends.
+  sink.failingSince = Date.now() - 5000;
   sink.onError(refused);
 
   const said = warnings.join(' ');
@@ -255,6 +263,7 @@ test('a machine that is really absent still says so', async (t) => {
   const { sink, warnings } = await linkWithSink(t);
   const down = new Error('send EHOSTUNREACH');
   down.code = 'EHOSTUNREACH';
+  sink.failingSince = Date.now() - 5000;
   sink.onError(down);
 
   assert.match(warnings.join(' '), /no answer from [\d.]+ at all — switched off, unplugged/,
@@ -332,4 +341,126 @@ test('going offline is said once, with its cause', async (t) => {
   assert.match(offlineLines[0], /retrying every 5s/, 'and what happens next');
   assert.deepEqual(warnings.filter((w) => /is not answering —/.test(w)), [],
     'and not also as a separate line saying the same thing');
+});
+
+test('going offline says one thing, and the banner and the log say the same thing', async (t) => {
+  // The banner and the log line were built in different places with different
+  // words. The banner claimed "is offline — sends paused, retrying every 5s"
+  // and no log line ever carried those words, so the one message an operator
+  // was interrupted by left no trace in the record — against the rule that
+  // anything worth a banner is worth a log line.
+  const { link, sink } = await linkWithSink(t);
+  const logged = [];
+  const bannered = [];
+  link.on('log', (e) => { if (e.level === 'warn') logged.push(e.text); });
+  link.on('encoderEvent', (e) => { if (e.kind === 'destinationDown') bannered.push(e.text); });
+
+  const down = new Error('send EHOSTUNREACH');
+  down.code = 'EHOSTUNREACH';
+  sink.onError(down);
+  // Inside the give-up window nothing is said: a failure that clears in two
+  // seconds is a blip, and a banner for something already over is noise.
+  assert.deepEqual(bannered, [], 'no banner before we have given up');
+  assert.deepEqual(logged, [], 'and nothing logged either');
+
+  sink.failingSince = Date.now() - 5000;
+  sink.onError(down);
+
+  assert.equal(bannered.length, 1, 'one banner for the outage');
+  assert.equal(logged.length, 1, 'and one log line');
+  assert.equal(bannered[0], logged[0], 'and they are the same sentence');
+  assert.match(bannered[0], /no answer from [\d.]+ at all/);
+  assert.match(bannered[0], /retrying every 5s/);
+});
+
+test('a continuing outage says how long, not how often it retries', async (t) => {
+  // "retrying every 5s" was repeated on a backoff that fires at 15s, 60s, 240s —
+  // so the message described a cadence that did not match when it appeared. The
+  // retry interval is in the first message and has not changed; what is new is
+  // how long this has been going on.
+  const { link, sink } = await linkWithSink(t);
+  const warns = [];
+  link.on('log', (e) => { if (e.level === 'warn') warns.push(e.text); });
+
+  const down = new Error('send EHOSTUNREACH');
+  down.code = 'EHOSTUNREACH';
+  sink.failingSince = Date.now() - 40000;
+  sink.onError(down);              // goes offline, one message
+  warns.length = 0;
+
+  sink.nextWarnAt = 0;             // the backoff comes due
+  sink.onError(down);
+
+  assert.equal(warns.length, 1);
+  assert.match(warns[0], /still not answering after \d+s/);
+  assert.doesNotMatch(warns[0], /retrying every/,
+    'the cadence is not restated on a schedule that does not match it');
+});
+
+test('an outage is announced once, however many times sending is retried', async (t) => {
+  // Sending resumes every few seconds to test whether the host is back, so the
+  // sink goes offline again each time it fails — the *same* outage continuing.
+  // It was announced identically each time, twelve seconds apart, for a machine
+  // that had never come back.
+  const { link, sink } = await linkWithSink(t);
+  const said = [];
+  link.on('log', (e) => { if (/Sends paused/.test(e.text)) said.push(e.text); });
+
+  const down = new Error('send EHOSTUNREACH');
+  down.code = 'EHOSTUNREACH';
+
+  for (let cycle = 0; cycle < 4; cycle++) {
+    sink.failingSince = Date.now() - 5000;
+    sink.onError(down);                 // fails, goes offline
+    assert.equal(sink.offline, true);
+    sink.offline = false;               // a trial resumes sending, as it does
+  }
+
+  assert.equal(said.length, 1, `one announcement for one outage, got ${said.length}`);
+
+  // A genuine recovery makes the next outage news again.
+  sink.lastErrorAt = Date.now() - 31000;
+  sink.onSent();
+  sink.failingSince = Date.now() - 5000;
+  sink.onError(down);
+  assert.equal(said.length, 2, 'a new outage is announced');
+});
+
+test('an outage does not get younger, and its cause is not restated', async (t) => {
+  // "still not answering after 17s", then a minute later "after 7s" — the
+  // elapsed time was measured from `failingSince`, which restarts every time a
+  // trial resumes sending and fails again. And the cause was repeated in full
+  // each time, which is the first message over again.
+  const { link, sink } = await linkWithSink(t);
+  const warns = [];
+  link.on('log', (e) => { if (e.level === 'warn') warns.push(e.text); });
+
+  const down = new Error('send EHOSTUNREACH');
+  down.code = 'EHOSTUNREACH';
+  sink.failingSince = Date.now() - 5000;
+  sink.onError(down);                       // outage begins, announced once
+  sink.outageSince = Date.now() - 90000;    // an outage an hour into a show
+  warns.length = 0;
+
+  // A trial resumed and failed again, so the current run is seconds old.
+  sink.offline = false;
+  sink.failingSince = Date.now() - 3000;
+  sink.nextWarnAt = 0;
+  sink.onError(down);
+
+  const followUp = warns.find((w) => /still not answering/.test(w));
+  assert.ok(followUp, 'the outage is restated on the backoff');
+  assert.match(followUp, /after 90s/, 'measured from when the outage began');
+  assert.doesNotMatch(followUp, /switched off, unplugged/,
+    'without repeating a cause that has not changed');
+
+  // A cause that does change is worth saying.
+  warns.length = 0;
+  const refused = new Error('recvmsg ECONNREFUSED');
+  refused.code = 'ECONNREFUSED';
+  sink.offline = true;
+  sink.nextWarnAt = 0;
+  sink.onError(refused);
+  assert.match(warns.join(' '), /Now: .*nothing is listening/,
+    'a host that starts refusing the port instead is news');
 });
