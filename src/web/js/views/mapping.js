@@ -256,10 +256,11 @@ function receiverCard(conn, dest) {
             (d.ipFromFilter ? ` (from ${d.ipFromFilter})` : ''))
           .join(', ') || 'no driver';
         const axes = (rec.axes || []).map((a) => a.id).join(', ') || 'none';
+        // No engaged/receiving here: while anything mismatches, "not
+        // receiving" is a restatement of the mismatch. Where it is the only
+        // thing left, the verdict above says so.
         verdict.appendChild(el('div', { class: 'hint' },
-          `${rec.name || rec.path}: ${drivers} · axis ids ${axes} · ` +
-          `${rec.engaged ? 'engaged' : 'not engaged'}, ` +
-          `${rec.receiving ? 'receiving' : 'not receiving'}`));
+          `${rec.name || rec.path}: ${drivers} · axis ids ${axes}`));
       }
     } catch (err) {
       verdict.className = 'map-verdict err';
