@@ -80,6 +80,33 @@ const OFFLINE_RETRY_MS = 5000;
 const PROBE_GRACE_MS = 1000;
 
 /**
+ * A destination has to earn its way back, not merely fail to object once.
+ *
+ * While offline we send one packet every five seconds, and a host that is off
+ * does not refuse every one of them — once the ARP entry has failed the kernel
+ * drops some silently. So "no error since the last probe" is guaranteed by our
+ * own silence rather than by the machine being back, and a switched-off
+ * disguise announced itself reachable every 27 seconds, for ever:
+ *
+ *   15:27:59  no answer from 10.10.10.5 at all
+ *   15:28:05  is reachable again after 3,102 lost packets     <- it was not
+ *   15:28:09  no answer from 10.10.10.5 at all
+ *   15:28:11  is not answering — pausing sends
+ *
+ * A clean probe now starts a trial instead of ending the outage: packets at
+ * TRIAL_GAP_MS for TRIAL_MS, and every one of them has to go unremarked. One
+ * error at any point drops it back to probing without a word — the outage never
+ * ended, so there is nothing to announce.
+ *
+ * Twelve packets rather than one is still nothing against a 100/s stream, and
+ * it is the only evidence UDP offers: there is no delivery confirmation, so
+ * "we sent a number of these and the network stayed quiet" is the strongest
+ * claim available.
+ */
+const TRIAL_MS = 3000;
+const TRIAL_GAP_MS = 250;
+
+/**
  * What the network actually told us, said in the operator's terms.
  *
  * The raw errno was in front of the operator instead — "Cannot reach disguise 1
@@ -312,6 +339,9 @@ class EncoderLink extends EventEmitter {
         suppressed: 0,
         nextProbeAt: 0,
         probeSentAt: 0,
+        /** While proving itself: end of the trial, and the next trial send. */
+        trialUntil: 0,
+        nextTrialAt: 0,
         onError: (err) => {
           if (!err) return;
           sink.txErrors++;
@@ -328,6 +358,16 @@ class EncoderLink extends EventEmitter {
           const now = Date.now();
           sink.lastErrorAt = now;
           if (!sink.failingSince) sink.failingSince = now;
+
+          // A trial that draws an error has failed, and silently: the outage
+          // never ended, so there is nothing to announce and nothing for an
+          // operator to be told twice. Back to one probe every few seconds.
+          if (sink.trialUntil) {
+            sink.trialUntil = 0;
+            sink.nextTrialAt = 0;
+            sink.probeSentAt = 0;
+            sink.nextProbeAt = now + OFFLINE_RETRY_MS;
+          }
 
           // Long enough to rule out a blip, short enough that a show does not
           // spend a minute shouting into a hole.
@@ -663,17 +703,32 @@ class EncoderLink extends EventEmitter {
         //
         // Sends have to have been quiet for RECOVERY_QUIET_MS as well, which is
         // the same bar the send-callback path already used.
-        if (sink.probeSentAt && nowMs - sink.probeSentAt >= PROBE_GRACE_MS &&
-            sink.lastErrorAt < sink.probeSentAt &&
-            nowMs - sink.lastErrorAt >= RECOVERY_QUIET_MS) {
-          sink.offline = false;
-          sink.failingSince = 0;
-          sink.probeSentAt = 0;
-          sink.lastErrorCode = null;
-          // `sink.dest`, not `dest`: this is _forward, not the _openUdp loop where
-          // that name exists. A ReferenceError here killed the main process the
-          // first time a destination actually recovered through the probe path.
-          this._announceRecovery(sink, sink.dest);
+        if (sink.trialUntil) {
+          // Under trial. Any error since it began has already cancelled it in
+          // the error handler, so reaching the end means every packet went
+          // unremarked — which is as much as UDP will ever tell us.
+          if (nowMs >= sink.trialUntil) {
+            sink.offline = false;
+            sink.failingSince = 0;
+            sink.probeSentAt = 0;
+            sink.trialUntil = 0;
+            sink.lastErrorCode = null;
+            // `sink.dest`, not `dest`: this is _forward, not the _openUdp loop
+            // where that name exists. A ReferenceError here killed the main
+            // process the first time a destination genuinely recovered.
+            this._announceRecovery(sink, sink.dest);
+          } else if (nowMs < sink.nextTrialAt) {
+            sink.suppressed++;
+            continue;
+          } else {
+            sink.nextTrialAt = nowMs + TRIAL_GAP_MS;
+          }
+        } else if (sink.probeSentAt && nowMs - sink.probeSentAt >= PROBE_GRACE_MS &&
+            sink.lastErrorAt < sink.probeSentAt) {
+          // The probe drew no objection. That is a reason to look harder, not a
+          // reason to declare the outage over.
+          sink.trialUntil = nowMs + TRIAL_MS;
+          sink.nextTrialAt = nowMs + TRIAL_GAP_MS;
         } else if (nowMs < sink.nextProbeAt) {
           sink.suppressed++;
           continue;

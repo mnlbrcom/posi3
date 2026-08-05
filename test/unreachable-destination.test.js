@@ -162,13 +162,15 @@ test('a destination recovering through the probe path does not crash the process
   // nothing having objected since it went out.
   sink.offline = true;
   sink.txErrors = 12;
-  sink.probeSentAt = Date.now() - 5000;
-  sink.lastErrorAt = sink.probeSentAt - 1000;
   sink.recovered = false;
+  // Straight to the end of a trial that stayed quiet: this test is about the
+  // announcement, which is where the ReferenceError was.
+  sink.trialUntil = Date.now() - 1;
+  sink.lastErrorAt = Date.now() - 30000;
 
   link._forward(12345, 0);
 
-  assert.equal(sink.offline, false, 'the probe went unanswered, so it is back');
+  assert.equal(sink.offline, false, 'a trial that drew no objection ends the outage');
   const claims = warnings.filter((w) => /reachable again/.test(w));
   assert.equal(claims.length, 1, `expected one recovery claim, got: ${claims.join(' | ')}`);
   assert.match(claims[0], /127\.0\.0\.1:\d+ is reachable again/,
@@ -200,12 +202,16 @@ test('a probe does not count as recovery while errors keep arriving', async (t) 
     'errors were arriving right up to the probe, so this is not recovery');
   assert.deepEqual(warnings.filter((w) => /reachable again/.test(w)), []);
 
-  // Genuinely quiet for long enough: that is recovery.
+  // Genuinely quiet, and only after a trial that stayed quiet throughout.
   sink.lastErrorAt = Date.now() - 6000;
   sink.probeSentAt = Date.now() - 1500;
   link._forward(1001, 0);
+  assert.ok(sink.trialUntil > 0, 'a quiet probe earns a trial, not a verdict');
+  assert.equal(sink.offline, true, 'and the outage is not over yet');
 
-  assert.equal(sink.offline, false, 'nothing has objected for seconds — it is back');
+  sink.trialUntil = Date.now() - 1;
+  link._forward(1002, 0);
+  assert.equal(sink.offline, false, 'the trial ran its course quietly — it is back');
   assert.equal(warnings.filter((w) => /reachable again/.test(w)).length, 1);
 });
 
@@ -245,4 +251,55 @@ test('a machine that is really absent still says so', async (t) => {
 
   assert.match(warnings.join(' '), /no answer from [\d.]+ at all — switched off, unplugged/,
     'the opposite case must stay distinguishable from a refused port');
+});
+
+test('one unobjected probe is not recovery', async (t) => {
+  // From the rig, with the disguise machine switched off — every 27 seconds:
+  //
+  //   15:27:59  no answer from 10.10.10.5 at all
+  //   15:28:05  is reachable again after 3,102 lost packets
+  //   15:28:09  no answer from 10.10.10.5 at all
+  //
+  // While offline we send one packet every five seconds, and a host that is off
+  // does not refuse every one — once the ARP entry has failed the kernel drops
+  // some silently. So "no error since the last probe" was guaranteed by our own
+  // silence, not by the machine being back.
+  const { link, sink, warnings } = await linkWithSink(t);
+
+  sink.offline = true;
+  sink.txErrors = 3000;
+  sink.recovered = false;
+  sink.probeSentAt = Date.now() - 2000;   // sent, and nothing objected
+  sink.lastErrorAt = sink.probeSentAt - 100;
+
+  link._forward(1, 0);
+  assert.equal(sink.offline, true, 'one quiet probe must not end the outage');
+  assert.ok(sink.trialUntil > 0, 'it starts a trial instead');
+  assert.deepEqual(warnings.filter((w) => /reachable again/.test(w)), []);
+
+  // The host is still dead: the next packet of the trial draws an error.
+  const dead = new Error('send EHOSTUNREACH');
+  dead.code = 'EHOSTUNREACH';
+  sink.onError(dead);
+
+  assert.equal(sink.trialUntil, 0, 'the trial is cancelled');
+  assert.equal(sink.offline, true, 'and it stays offline');
+  assert.deepEqual(warnings.filter((w) => /reachable again/.test(w)), [],
+    'with nothing announced — the outage never ended');
+});
+
+test('a trial that stays quiet all the way through is recovery', async (t) => {
+  const { link, sink, warnings } = await linkWithSink(t);
+
+  sink.offline = true;
+  sink.txErrors = 42;
+  sink.recovered = false;
+  sink.trialUntil = Date.now() - 1;      // the trial has run its course
+  sink.lastErrorAt = Date.now() - 30000;
+
+  link._forward(1, 0);
+
+  assert.equal(sink.offline, false, 'every packet went unremarked, so it is back');
+  assert.equal(warnings.filter((w) => /reachable again/.test(w)).length, 1);
+  assert.match(warnings.find((w) => /reachable again/.test(w)), /after 42 lost packets/);
 });
