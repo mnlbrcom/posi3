@@ -124,6 +124,15 @@ const IDLE_PROBE_MS = 1000;
 const IDLE_PROBE_TIMEOUT_MS = 900;
 
 /**
+ * When no datagram has been offered to a sink for this long, the silence rule
+ * has nothing to read: ICMP only ever answers a packet, so an unplugged
+ * destination behind an encoder that is not producing samples drew no
+ * objection and wore `connected` on zero evidence. Past this quiet, the TCP
+ * handshake is the evidence instead — the same rule the encoder side uses.
+ */
+const DEST_SEND_QUIET_MS = 1500;
+
+/**
  * How long a probe must go unanswered before the destination counts as back.
  *
  * The subtlety that makes this necessary: on a connected UDP socket the ICMP
@@ -265,6 +274,7 @@ class EncoderLink extends EventEmitter {
     this.encoderAlive = null;
     this._idleProbeTimer = null;
     this._idleProbe = null;
+    this._destWatch = null;
     this._derivedVel = 0;
 
     this._latencyUs = new Float64Array(LATENCY_WINDOW);
@@ -329,6 +339,7 @@ class EncoderLink extends EventEmitter {
     this._latencyCount = 0; this._latencyIdx = 0;
     this._gapCount = 0; this._gapIdx = 0;
     this._openUdp();
+    this._startDestWatch();
     this._connect();
   }
 
@@ -351,6 +362,7 @@ class EncoderLink extends EventEmitter {
       !this._reconnectTimer && !this._watchdog;
     if (this._state === STATE.IDLE && holdsNothing) return false;
     this._stopping = true;
+    this._stopDestWatch();
     this._clearTimers();
     this._commands.rejectAll(new Error('link stopped'));
     if (this._socket) {
@@ -422,6 +434,11 @@ class EncoderLink extends EventEmitter {
         probeSentAt: 0,
         /** When TCP last proved this host alive. Stale once an error is newer. */
         aliveAt: 0,
+        /** The last handshake's verdict: true, false, or null for never asked. */
+        destAlive: null,
+        /** When a datagram was last actually handed to this socket. */
+        lastTxAt: 0,
+        nextLivenessAt: 0,
         /** The in-flight liveness connect, so only one is ever open. */
         aliveProbe: null,
         /** While proving itself at the normal rate: when the trial ends. */
@@ -682,6 +699,7 @@ class EncoderLink extends EventEmitter {
     this.encoderAlive = null;
     this._idleProbeTimer = null;
     this._idleProbe = null;
+    this._destWatch = null;
 
     if (this._socket) {
       this._socket.removeAllListeners();
@@ -917,6 +935,7 @@ class EncoderLink extends EventEmitter {
         builtFor = sink.dest.devid;
       }
 
+      sink.lastTxAt = nowMs;
       sink.udp.send(buf, 0, len, sink.txErrors ? sink.onSendResult : sink.onError);
       sink.tx++;
       this.counters.tx++;
@@ -943,6 +962,7 @@ class EncoderLink extends EventEmitter {
       if (sink.aliveProbe !== socket) return;
       sink.aliveProbe = null;
       socket.destroy();
+      sink.destAlive = alive;
       if (alive) sink.aliveAt = Date.now();
     };
     socket.on('connect', () => settle(true));
@@ -968,6 +988,40 @@ class EncoderLink extends EventEmitter {
     this._idleProbeTimer = setInterval(tick, IDLE_PROBE_MS);
     if (this._idleProbeTimer.unref) this._idleProbeTimer.unref();
     tick();
+  }
+
+  /**
+   * Keep every destination's liveness current while nothing is being sent.
+   *
+   * The send path carries its own evidence — ICMP answers packets — but it
+   * only runs when the encoder produces samples. During `connecting` and
+   * `reconnecting`, or with the encoder stalled, no packet is ever offered,
+   * so the handshake asks instead. One probe per sink per second, and only
+   * while the sink has been send-quiet: the moment real traffic resumes, the
+   * network's own answers take over.
+   */
+  _startDestWatch() {
+    if (this._destWatch) return;
+    const tick = () => {
+      const now = Date.now();
+      for (const sink of this._sinks) {
+        if (!sink.ready) continue;
+        if (sink.lastTxAt && now - sink.lastTxAt < DEST_SEND_QUIET_MS) continue;
+        if (now < sink.nextLivenessAt) continue;
+        sink.nextLivenessAt = now + OFFLINE_RETRY_MS;
+        this._probeHostAlive(sink);
+      }
+    };
+    this._destWatch = setInterval(tick, OFFLINE_RETRY_MS);
+    if (this._destWatch.unref) this._destWatch.unref();
+    tick();
+  }
+
+  _stopDestWatch() {
+    if (this._destWatch) {
+      clearInterval(this._destWatch);
+      this._destWatch = null;
+    }
   }
 
   stopIdleProbe() {
@@ -1678,6 +1732,10 @@ class EncoderLink extends EventEmitter {
         offline: s.offline,
         suppressed: s.suppressed,
         health: destinationHealth(s, this.running),
+        // Whether datagrams are actually going out right now. `receiving` is
+        // only ever claimed on top of this: a config match with nothing
+        // flowing is a match, not a delivery.
+        sending: !!s.lastTxAt && Date.now() - s.lastTxAt < DEST_SEND_QUIET_MS,
         name: s.dest.name,
         host: s.dest.host,
         port: s.dest.port,
@@ -1837,6 +1895,15 @@ function destinationHealth(sink, running) {
   // The silence still has to have lasted. Errors recently, or suppressed sends,
   // mean not connected — otherwise the pill flipped for the second or two
   // between a trial resuming sends and the next error arriving.
+  // No datagram has been offered recently — the encoder is not producing —
+  // so the silence above proves nothing and the handshake answers instead.
+  // `idle` only for the moment before the first one lands.
+  if (!sink.lastTxAt || Date.now() - sink.lastTxAt >= DEST_SEND_QUIET_MS) {
+    if (sink.destAlive === false) return 'offline';
+    if (sink.destAlive === true) return 'connected';
+    return 'idle';
+  }
+
   const quiet = hostProvenBack(sink);
   if (sink.offline || !quiet) {
     return sink.lastErrorCode === 'ECONNREFUSED' ? 'refused' : 'offline';

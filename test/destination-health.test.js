@@ -166,6 +166,9 @@ test('connected is not receiving, and only disguise can say otherwise', async (t
   const sink = link._sinks[0];
   link._state = 'streaming';
   sink.txErrors = 0;
+  // Data is actually flowing: with nothing sent, silence proves nothing and
+  // the handshake answers instead — that case has its own tests below.
+  sink.lastTxAt = Date.now();
 
   const health = () => link.snapshot().telemetry.destinations[0].health;
   assert.equal(health(), 'connected', 'the network alone can never say more than this');
@@ -175,7 +178,7 @@ test('connected is not receiving, and only disguise can say otherwise', async (t
   const destId = t1.destinations[0].id;
 
   manager.disguiseChecks.set(destId, { matches: true, at: Date.now() });
-  const raised = { destinations: [{ id: destId, health: 'connected' }] };
+  const raised = { destinations: [{ id: destId, health: 'connected', sending: true }] };
   for (const d of raised.destinations) {
     const c = manager.disguiseChecks.get(d.id);
     if (c && d.health === 'connected') d.health = c.matches ? 'receiving' : 'mismatch';
@@ -320,4 +323,52 @@ test('a recovery announcement counts this outage, not the whole run', async (t) 
   assert.match(lines[lines.length - 1], /after 3 lost packets/,
     'this outage lost three, however many the run has lost');
   assert.equal(sink.txErrors, 7, 'while the cumulative counter keeps the run total');
+});
+
+test('with nothing sent, the handshake decides — silence is not evidence', async (t) => {
+  // The reported case: encoder unplugged, so no samples and no datagrams —
+  // and the unplugged destination wore `connected` on zero evidence, because
+  // ICMP only ever answers a packet nobody was sending.
+  const link = new EncoderLink({
+    id: 'quiet', name: 'quiet',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [
+      // TEST-NET-1: unroutable, so the handshake fails without a packet
+      // leaving the machine.
+      { id: 'gone', name: 'gone', host: '192.0.2.1', port: 6000, devid: 1 },
+      // Loopback: this machine is up, and for a destination a refusal proves
+      // it — "US is connected but not receiving; it is this laptop".
+      { id: 'here', name: 'here', host: '127.0.0.1', port: 65533, devid: 2 }
+    ]
+  });
+  t.after(() => { link.stop(); link.stopIdleProbe(); });
+
+  link._openUdp();
+  link._startDestWatch();
+  link._state = 'connecting'; // running, no samples — the reported situation
+
+  const healthOf = (id) => link.snapshot().telemetry.destinations.find((d) => d.id === id).health;
+  await until(() => healthOf('gone') === 'offline', 5000, 'the dead destination to be proven dead');
+  await until(() => healthOf('here') === 'connected', 5000, 'the live machine to be proven alive');
+});
+
+test('a config match with nothing flowing is a match, not a delivery', () => {
+  const { LinkManager } = require('../src/core/link-manager');
+  const manager = new LinkManager({ logger: { push() {} } });
+  manager.disguiseChecks.set('d', { matches: true, at: Date.now() });
+
+  const still = { destinations: [{ id: 'd', health: 'connected', sending: false }] };
+  manager.applyDisguiseChecks(still);
+  assert.equal(still.destinations[0].health, 'connected',
+    'receiving would claim data is arriving, and none is being sent');
+
+  const flowing = { destinations: [{ id: 'd', health: 'connected', sending: true }] };
+  manager.applyDisguiseChecks(flowing);
+  assert.equal(flowing.destinations[0].health, 'receiving');
+
+  manager.disguiseChecks.set('d', { matches: false, at: Date.now() });
+  const wrong = { destinations: [{ id: 'd', health: 'connected', sending: false }] };
+  manager.applyDisguiseChecks(wrong);
+  assert.equal(wrong.destinations[0].health, 'mismatch',
+    'but a mismatch is about configuration and stands without data');
 });
