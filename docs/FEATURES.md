@@ -4530,3 +4530,33 @@ Ninety seconds with `director` switched off and `US` a laptop, neither able to a
 No repetition, no accumulating traffic, and nothing stuck.
 
 **264 tests pass.**
+
+---
+
+## 2026-08-05 — Decision: a healthy destination is not re-checked
+
+> "it takes roughly 4 sec from mismatch to receiving when i change the id in disguise, Why does it
+> takes so long?" / "we leave it as it is, Thats why we have the ask button."
+
+**Why the four seconds.** It was not a fixed delay: it was the remainder of the interval already
+running. While a destination reads `mismatch`, re-checks go at 8s, 15s, 30s, then a minute — so the
+same change made just after a check would have waited the full interval, and a mismatch left standing
+for a couple of minutes is on the sixty-second step. The round trip and the repaint are noise beside
+that.
+
+It cannot be immediate. Changing an axis id inside Designer produces **no network-observable event** —
+the packets keep flowing, no ICMP, nothing for the state watcher to see. Without polling, a timer is
+the only thing left.
+
+**The accepted cost, recorded so it is not "fixed" later.** Once a destination reads `receiving`,
+nothing is scheduled at all. Breaking the rig in Designer from that point — moving the axis id,
+changing the driver's port — is invisible to posi3, which will go on saying `receiving`. So
+`receiving` means *matched when last looked at*, and that may be hours ago.
+
+The alternative is a heartbeat while healthy: polling an endpoint whose documentation forbids
+polling, against a machine that is working, during a show. **Ask disguise** exists for the moment
+somebody wants the claim re-established, and that is the trade the user chose. There is a comment at
+the line that clears the timer saying so, because it is exactly the kind of thing a later reader
+would replace with a `setInterval`.
+
+**264 tests pass.**
