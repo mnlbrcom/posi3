@@ -4996,3 +4996,33 @@ machine: every retry attempt used to re-enter `connecting` and every failure
 `reconnecting`, two names for the one condition "a retry loop is running".
 Only the very first attempt announces `connecting`; from then on the loop
 keeps `reconnecting` until it succeeds or is stopped.
+
+### A destination proves itself even when nothing is being sent
+
+**Asked:** "disguise 1 — connected — its not, why does it say connected,
+should be offline." The encoder was unplugged too, so no samples flowed.
+
+**The lie:** `connected` meant "packets are leaving and nothing objected" —
+but with the encoder down, *no packets were leaving at all*. ICMP only ever
+answers a packet, so an unplugged destination behind a silent encoder drew no
+objection and wore `connected` on zero evidence. The liveness probe existed
+but only ran after send failures, and with nothing sent there were none.
+
+**Built:**
+
+- **A destination watch for the whole running span** (`_startDestWatch`, once
+  a second): whenever a sink has been send-quiet for 1.5 s, the TCP handshake
+  probe asks instead — during `connecting`/`reconnecting` (where the old
+  watchdog never ran), with a stalled encoder, whenever silence has no
+  evidence to offer. The moment real traffic resumes, the network's own
+  answers take over and the probes stop.
+- **`destinationHealth` reads the handshake when send-quiet**: proven absent →
+  `offline`; proven there (a refusal counts — "US is this laptop") →
+  `connected`; `idle` only for the moment before the first answer.
+- **`receiving` additionally requires data to be flowing.** The disguise
+  answer upgrade now checks the new `sending` flag: a config match with
+  nothing being sent stays `connected` — a match, not a delivery — while
+  `mismatch` still shows regardless, because it is about configuration.
+
+Both ends now follow one law: an indicator claims nothing it has not
+established, and re-establishes it within about a second.

@@ -340,8 +340,12 @@ test('the disguise answer is held on the server, so every screen agrees', () => 
   const manager = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
   assert.match(manager, /this\.disguiseChecks = new Map\(\);/);
-  assert.match(manager, /d\.health = check\.matches \? 'receiving' : 'mismatch';/,
-    'connected is raised or lowered only where there is an answer');
+  const upgrade = manager.slice(manager.indexOf("if (d.health === 'connected')"));
+  const ublock = upgrade.slice(0, upgrade.indexOf('\n      }'));
+  assert.match(ublock, /d\.health = 'mismatch'/,
+    'a mismatch is about configuration and stands on its own');
+  assert.match(ublock, /if \(d\.sending\) d\.health = 'receiving'/,
+    'receiving claims delivery, so it additionally requires data to be flowing');
   assert.match(manager, /if \(!check\) continue;/,
     'and with no answer, connected stands');
 
@@ -567,7 +571,7 @@ test('the network state is evaluated every tick, even while receiving', () => {
   // on the very next tick and the confirmation stops applying by itself.
   const manager = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
-  assert.match(manager, /if \(d\.health === 'connected'\) d\.health = check\.matches \? 'receiving' : 'mismatch';/,
+  assert.match(manager, /if \(d\.health === 'connected'\) \{/,
     'only a connected destination is raised — anything else keeps the network verdict');
 
   const link = fs.readFileSync(

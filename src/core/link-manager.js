@@ -321,7 +321,14 @@ class LinkManager extends EventEmitter {
       const check = this.disguiseChecks.get(d.id);
       if (!check) continue;
       d.confirmed = check.matches;
-      if (d.health === 'connected') d.health = check.matches ? 'receiving' : 'mismatch';
+      // A mismatch is about configuration and stands on its own. `receiving`
+      // claims data is arriving, so it additionally requires that data is
+      // actually being sent — an unplugged encoder must not leave its
+      // destinations wearing `receiving` on a config answer alone.
+      if (d.health === 'connected') {
+        if (!check.matches) d.health = 'mismatch';
+        else if (d.sending) d.health = 'receiving';
+      }
     }
     return t;
   }
