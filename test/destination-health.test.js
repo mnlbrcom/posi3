@@ -121,7 +121,7 @@ test('a second outage is announced again', async (t) => {
     'a fresh failure must re-arm the recovery notice, or the second recovery is silent');
 });
 
-test('a destination is not called receiving until the silence has lasted', async (t) => {
+test('a destination is not called connected until the silence has lasted', async (t) => {
   // The pill read straight off `sink.offline`, so it flipped green for the
   // second or two between a trial resuming sends and the next error arriving —
   // the same false claim the log had just stopped making, in the one place an
@@ -139,11 +139,47 @@ test('a destination is not called receiving until the silence has lasted', async
   sink.offline = false;
   sink.lastErrorAt = Date.now() - 2000;
   let d = link.snapshot().telemetry.destinations[0];
-  assert.notEqual(d.health, 'receiving',
+  assert.notEqual(d.health, 'connected',
     'two seconds of quiet from a host that was just failing proves nothing');
 
   // Quiet for longer than the recovery window: now it counts.
   sink.lastErrorAt = Date.now() - 31000;
   d = link.snapshot().telemetry.destinations[0];
-  assert.equal(d.health, 'receiving');
+  assert.equal(d.health, 'connected',
+    'and `connected` is as far as it goes — the network cannot say more');
+});
+
+test('connected is not receiving, and only disguise can say otherwise', async (t) => {
+  // From the rig: the "US" destination is a laptop, not a disguise server. The
+  // packets leave, nothing objects, and nothing whatsoever is receiving them.
+  // `connected` is the truthful word for that; `receiving` is a claim only a
+  // disguise session can support.
+  const { link } = await deadLink(t);
+  const manager = new (require('../src/core/link-manager').LinkManager)({ logger: { push() {} } });
+  const sink = link._sinks[0];
+  link._state = 'streaming';
+  sink.txErrors = 0;
+
+  const health = () => link.snapshot().telemetry.destinations[0].health;
+  assert.equal(health(), 'connected', 'the network alone can never say more than this');
+
+  // With an answer, the manager raises or lowers it — and only with one.
+  const t1 = link.telemetry();
+  const destId = t1.destinations[0].id;
+
+  manager.disguiseChecks.set(destId, { matches: true, at: Date.now() });
+  const raised = { destinations: [{ id: destId, health: 'connected' }] };
+  for (const d of raised.destinations) {
+    const c = manager.disguiseChecks.get(d.id);
+    if (c && d.health === 'connected') d.health = c.matches ? 'receiving' : 'mismatch';
+  }
+  assert.equal(raised.destinations[0].health, 'receiving');
+
+  manager.disguiseChecks.set(destId, { matches: false, at: Date.now() });
+  const lowered = { destinations: [{ id: destId, health: 'connected' }] };
+  for (const d of lowered.destinations) {
+    const c = manager.disguiseChecks.get(d.id);
+    if (c && d.health === 'connected') d.health = c.matches ? 'receiving' : 'mismatch';
+  }
+  assert.equal(lowered.destinations[0].health, 'mismatch');
 });

@@ -1550,19 +1550,25 @@ function sameValue(a, b) {
 function destinationHealth(sink, running) {
   if (!running) return 'idle';
 
-  // `receiving` has to clear the same bar the log claim does. Reading it off
-  // `offline` alone made the pill flip green for the second or two between a
-  // trial resuming sends and the next error arriving — the same false claim the
-  // log had just stopped making, in the one place an operator actually watches.
+  // The most this can ever say is `connected`: packets are leaving and the
+  // network has not objected. That is the whole of what UDP offers — there is
+  // no delivery confirmation — so calling it `receiving` claimed something
+  // nobody here can know, and a machine that was switched off wore that word
+  // for four thousand suppressed packets.
   //
-  // So: errors recently, or suppressed sends, means not receiving. Silence has
-  // to last RECOVERY_QUIET_MS before it counts, exactly as it does before
-  // anything is announced.
-  const proven = !sink.txErrors || Date.now() - sink.lastErrorAt >= RECOVERY_QUIET_MS;
-  if (sink.offline || !proven) {
+  // `receiving` now means a disguise session has been asked and answered: a
+  // Navigator driver on this port, holding an axis with this device id. The
+  // manager raises `connected` to `receiving` or lowers it to `mismatch` when
+  // there is an answer to go on.
+  //
+  // The silence still has to have lasted. Errors recently, or suppressed sends,
+  // mean not connected — otherwise the pill flipped for the second or two
+  // between a trial resuming sends and the next error arriving.
+  const quiet = !sink.txErrors || Date.now() - sink.lastErrorAt >= RECOVERY_QUIET_MS;
+  if (sink.offline || !quiet) {
     return sink.lastErrorCode === 'ECONNREFUSED' ? 'refused' : 'offline';
   }
-  return 'receiving';
+  return 'connected';
 }
 
 function assertSafeValue(value) {

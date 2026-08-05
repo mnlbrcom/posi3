@@ -322,11 +322,8 @@ function receiverCard(conn, dest) {
       // disguise machine. Only on a real change — this runs every frame.
       const d = (t && (t.destinations || []).find((x) => x.id === dest.id)) || null;
       let state = d ? d.health : 'idle';
-      // Nothing objected to the sends, but disguise has told us they land in no
-      // matching receiver. "receiving" would be the same false claim the
-      // destination pill used to make with a cable pulled.
-      const asked = lastAsked.get(dest.id);
-      if (state === 'receiving' && asked && !asked.matches) state = 'mismatch';
+      // `receiving` and `mismatch` are decided on the server from the last
+      // disguise answer, so every screen and every client says the same thing.
       if (state !== lastState) {
         clear(pillHolder).appendChild(pill(state));
         lastState = state;

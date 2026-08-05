@@ -1253,3 +1253,9 @@ select.unknown-value { border-color: var(--warn); }
    nowhere useful. Warn rather than ok: it is not working, and it is not the
    network's fault either. */
 .pill.mismatch { color: var(--warn); background: var(--warn-wash); }
+
+/* Packets are leaving and the network has not objected — the most UDP can ever
+   say. Not green: a destination can be perfectly connected and receiving
+   nothing, which is what a laptop at the far end looks like. `receiving` is
+   reserved for a disguise session that has answered. */
+.pill.connected { color: var(--text-dim); background: var(--surface-3); }

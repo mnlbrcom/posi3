@@ -37,6 +37,19 @@ class LinkManager extends EventEmitter {
     this._links = new Map();
     this._rates = new Map();
     this.logger = opts.logger || new Logger();
+
+    /**
+     * What a disguise session last said about each destination, by destination
+     * id: `{ matches, at }`.
+     *
+     * Held here rather than in a browser so every screen agrees, and so the
+     * answer survives a re-render, a second client, and navigation. It is the
+     * only *positive* evidence this app can obtain: UDP confirms nothing, so
+     * `connected` — packets leaving, nothing objecting — is the most the network
+     * can ever say. A destination can be perfectly connected and receiving
+     * nothing, which is what a laptop at the far end looks like.
+     */
+    this.disguiseChecks = new Map();
     /**
      * Log delivery must not depend on anything streaming.
      *
@@ -194,7 +207,7 @@ class LinkManager extends EventEmitter {
     for (const link of this._links.values()) {
       if (!link.running) continue;
 
-      const t = link.telemetry();
+      const t = this.applyDisguiseChecks(link.telemetry());
       const rate = this._rates.get(link.id);
       if (rate) {
         // Counters, not deltas: the oldest sample still inside the window and
@@ -251,6 +264,24 @@ class LinkManager extends EventEmitter {
           'log window and are missing above; they are in the exported log'
       });
     }
+  }
+
+  /**
+   * Raise `connected` to `receiving`, or lower it to `mismatch`.
+   *
+   * Only where a disguise session has actually been asked; with no answer,
+   * `connected` stands. A method rather than a few lines in the tick because
+   * `linkSnapshot` returns telemetry too — applying it in one place and not the
+   * other gave two endpoints two different answers about the same destination.
+   */
+  applyDisguiseChecks(t) {
+    for (const d of (t && t.destinations) || []) {
+      const check = this.disguiseChecks.get(d.id);
+      if (!check) continue;
+      d.confirmed = check.matches;
+      if (d.health === 'connected') d.health = check.matches ? 'receiving' : 'mismatch';
+    }
+    return t;
   }
 
   /** Aggregate for the header bar. */
