@@ -3921,3 +3921,43 @@ receiver as not engaged"* — what was said, attributed — rather than asserted
 when the port and id already agree so it is the one remaining explanation.
 
 **247 tests pass.**
+
+---
+
+## 2026-08-05 — Three drivers, and what they exposed
+
+> "i added two more drivers. This still shows some some optimization potentials" / "after and, we have
+> the first driver? but that one is listed again" / "also i want device name not device typ"
+
+    No port match — this connection sends to 6000. posi3 has Navigator drivers
+    nav on 8000 and testdr on 7999.
+
+Three faults, all invisible with one driver.
+
+**It named the first and hid the rest.** `describeDriver` read `drivers[0]`, so "posi3's
+NavigatorDriver on port 8000" read as though that were the only one — the wrong impression exactly
+when the port you want is on another. Every Navigator driver is named now.
+
+**The port match ignored the driver type.** The session also holds a `PosiStageNetDriver` on 56565,
+and matching on port alone would have called that a match if a connection were pointed at it. This
+bridge sends `<devid>:<pos>,<vel>;` — the Navigator format — so only a `NavigatorDriver` can do
+anything with it. The type is part of the join, and non-Navigator drivers are no longer offered as
+candidates.
+
+**The detail line repeated the verdict.** With one driver it looked like context; with three it was
+the same list twice. The verdict already names the receiver, its Navigator drivers and their ports,
+so the per-receiver line underneath is gone. One statement, and it is the one that goes into the log.
+
+### Drivers are named by `description`
+
+Asked of the live session: a driver has **no `name` attribute**. It has `description` — which is what
+the operator typed and what Designer shows — plus `path` carrying the same leaf, and a `uid`:
+
+    NavigatorDriver      description "nav"      objects/navigatordriver/nav.apx
+    NavigatorDriver      description "testdr"   objects/navigatordriver/testdr.apx
+    PosiStageNetDriver   description "testpsn"  objects/posistagenetdriver/testpsn.apx
+
+So the message says `nav on 8000`, not `NavigatorDriver on 8000`. The type is the same for all of
+them and says nothing about which one to open.
+
+**247 tests pass.**
