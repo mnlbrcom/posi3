@@ -35,7 +35,7 @@ const {
   wrapDelta, angleDeg, revolution, stepsPerSecToRpm
 } = require('./protocol');
 const {
-  STATE, TIMEOUTS, RECONNECT, COUNTS_PER_REV
+  STATE, TIMEOUTS, RECONNECT, COUNTS_PER_REV, D3_FACTORY_PORT
 } = require('../shared/constants');
 
 /** Ring of send buffers: dgram may hold one until the write completes. */
@@ -78,6 +78,37 @@ const OFFLINE_RETRY_MS = 5000;
  * objects.
  */
 const PROBE_GRACE_MS = 1000;
+
+/**
+ * What the network actually told us, said in the operator's terms.
+ *
+ * The raw errno was in front of the operator instead — "Cannot reach disguise 1
+ * (10.10.10.4:6000): recvmsg ECONNREFUSED" — which is both wrong and unhelpful:
+ * the machine *was* reached. It answered, saying nothing is listening on that
+ * port. That is the one failure here with an exact cause and an exact fix, and
+ * it was buried under a word meaning the opposite.
+ *
+ * These come from a *connected* UDP socket, which is why they exist at all — an
+ * unconnected `sendto` discards them, as the 2016 driver did.
+ */
+function explainSendError(code, dest) {
+  switch (code) {
+    case 'ECONNREFUSED':
+      return `${dest.host} answered, but nothing is listening on UDP ${dest.port}. ` +
+        'Either disguise is not running, its Navigator driver has not been started, or its ' +
+        `port is not ${dest.port} — that field defaults to ${D3_FACTORY_PORT}.`;
+    case 'EHOSTUNREACH':
+    case 'EHOSTDOWN':
+      return `no answer from ${dest.host} at all — switched off, unplugged, or not on this subnet.`;
+    case 'ENETUNREACH':
+      return `no route to ${dest.host} — check the interface this connection sends from.`;
+    case 'EACCES':
+      return `the operating system refused the send to ${dest.host}:${dest.port} — a firewall rule, ` +
+        'or a broadcast address without permission.';
+    default:
+      return null;
+  }
+}
 
 const LATENCY_WINDOW = 256;
 
@@ -321,7 +352,18 @@ class EncoderLink extends EventEmitter {
           sink.nextWarnAt = now + sink.warnBackoffMs;
 
           const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-          this._warn(`Cannot reach ${where}: ${err.message}. ${sink.txErrors} packets lost so far.`);
+          const why = explainSendError(err.code, dest);
+          // Just the diagnosis. The packet count said nothing — if a
+          // destination is not receiving then packets are being lost, by
+          // definition — and the errno is the app's own vocabulary, already
+          // spent on producing the sentence in front of it. The running total
+          // is on the dashboard, where a figure belongs.
+          //
+          // A code with no explanation keeps the raw message, which is the only
+          // place it can be seen at all.
+          this._warn(why
+            ? `${where}: ${why}`
+            : `Cannot reach ${where}: ${err.message}.`);
         },
         onSent: () => {
           // Recovery is news too. Without this a destination that came back

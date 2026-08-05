@@ -376,6 +376,20 @@ export function dismissBanner(key) {
   if (node) node.remove();
 }
 
-export function toast(kind, text, ms = 4500) {
-  return banner(kind, text, { ttlMs: ms });
+/**
+ * How long a toast stays, by how much there is to take in.
+ *
+ * 4.5s suited "Preset written". It does not suit a diagnosis — *"10.10.10.4
+ * answered, but nothing is listening on UDP 6000. Either disguise is not
+ * running, its Navigator driver has not been started, or its port is not
+ * 6000…"* — which is three sentences naming an address, a port and three
+ * candidate causes, and which was gone before it could be read.
+ *
+ * A confirmation is read at a glance or not at all; a warning has to be read to
+ * be worth raising. The 30s cap in `banner` still applies above these.
+ */
+const TOAST_MS = { info: 4500, warn: 15000, error: 20000 };
+
+export function toast(kind, text, ms) {
+  return banner(kind, text, { ttlMs: ms || TOAST_MS[kind] || TOAST_MS.info });
 }

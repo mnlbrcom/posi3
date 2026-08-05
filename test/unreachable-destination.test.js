@@ -40,7 +40,10 @@ async function linkWithSink(t) {
     destinations: [{ host: '127.0.0.1', port: d3, devid: 1 }],
     reconnect: { enabled: false }
   });
-  l.on('log', (e) => { if (/Cannot reach|reachable again/.test(e.text)) warnings.push(e.text); });
+  // Every warning the link raises about its destination. Filtered per test —
+  // a narrower filter here silently hid the reworded messages when the raw
+  // errno was replaced by a diagnosis.
+  l.on('log', (e) => { if (e.level === 'warn' || /reachable again/.test(e.text)) warnings.push(e.text); });
   t.after(() => l.stop());
   l.start();
 
@@ -78,10 +81,12 @@ test('the warning backoff survives that flapping', async (t) => {
   }
 
   // 0s then 15s: inside one test run only the first warning is due.
+  // `fail()` raises errors with no `code`, so these take the fallback wording.
   const said = warnings.filter((w) => /Cannot reach/.test(w));
   assert.equal(said.length, 1,
     `one warning was due in this window, got ${said.length}: ${said.join(' | ')}`);
-  assert.match(said[0], /packets lost so far/);
+  assert.match(said[0], /send EHOSTUNREACH/,
+    'an error the app cannot explain keeps its raw message, which is the only place it can be seen');
 });
 
 test('a destination that really comes back is announced', async (t) => {
@@ -202,4 +207,42 @@ test('a probe does not count as recovery while errors keep arriving', async (t) 
 
   assert.equal(sink.offline, false, 'nothing has objected for seconds — it is back');
   assert.equal(warnings.filter((w) => /reachable again/.test(w)).length, 1);
+});
+
+test('a refused port is diagnosed, not just reported', async (t) => {
+  // From the rig: "Cannot reach disguise 1 (10.10.10.4:6000): recvmsg
+  // ECONNREFUSED. 215 packets lost so far." — with disguise's Navigator driver
+  // set to port 8000 while the connection sent to 6000.
+  //
+  // The message was wrong as well as unhelpful: the machine *was* reached. It
+  // answered, saying nothing is listening on that port. That is the one failure
+  // here with an exact cause and an exact fix, and "Cannot reach" said the
+  // opposite of what had happened.
+  const { sink, warnings } = await linkWithSink(t);
+
+  const refused = new Error('recvmsg ECONNREFUSED');
+  refused.code = 'ECONNREFUSED';
+  sink.onError(refused);
+
+  const said = warnings.join(' ');
+  assert.match(said, /answered, but nothing is listening on UDP \d+/,
+    'it must say the machine answered, and on which port');
+  assert.match(said, /Navigator driver/, 'and name what is usually not running');
+  assert.match(said, /defaults to 8000/, 'and that the port field defaults elsewhere');
+  assert.doesNotMatch(said, /Cannot reach/, 'because it was reached');
+  // Neither the running total nor the errno: one is obvious from the fact that
+  // a destination is not receiving, the other is the app's own vocabulary and
+  // has already been spent on the sentence in front of it.
+  assert.doesNotMatch(said, /packets lost/);
+  assert.doesNotMatch(said, /\(ECONNREFUSED\)/);
+});
+
+test('a machine that is really absent still says so', async (t) => {
+  const { sink, warnings } = await linkWithSink(t);
+  const down = new Error('send EHOSTUNREACH');
+  down.code = 'EHOSTUNREACH';
+  sink.onError(down);
+
+  assert.match(warnings.join(' '), /no answer from [\d.]+ at all — switched off, unplugged/,
+    'the opposite case must stay distinguishable from a refused port');
 });

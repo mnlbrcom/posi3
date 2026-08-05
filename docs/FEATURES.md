@@ -3659,3 +3659,56 @@ It uses `--mono` now. Same class of miss as the form controls: correct-looking m
 invisible until measured. The headless audit caught it.
 
 **230 tests pass**, every view clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and expanded.
+
+---
+
+## 2026-08-05 — Saying which failure it is
+
+> "also this doest explain why it does not work, Is it possible to tell me that the port is wrong?
+> port in connection is 6000, i set it to 8000 in disguise." / "banner can show a little longer, i can
+> barly make it out, whats the disapearence time for it?" / "200 packets lost so far. (ECONNREFUSED)
+> that part i dont care about"
+
+The message was:
+
+    Cannot reach disguise 1 (10.10.10.4:6000): recvmsg ECONNREFUSED. 263 packets lost so far.
+
+Wrong as well as unhelpful. The machine **was** reached — it answered, saying nothing is listening on
+that port. `ECONNREFUSED` on a connected UDP socket is the one failure here with an exact cause and
+an exact fix, and it was buried under a word meaning the opposite.
+
+    disguise 1 (10.10.10.4:6000): 10.10.10.4 answered, but nothing is listening on UDP 6000.
+    Either disguise is not running, its Navigator driver has not been started, or its port is
+    not 6000 — that field defaults to 8000.
+
+    director (10.10.10.5:6000): no answer from 10.10.10.5 at all — switched off, unplugged,
+    or not on this subnet.
+
+Four codes are translated — refused, host unreachable, no route, and refused-by-the-OS — and they
+stay distinguishable, because they call for different people. Anything unrecognised keeps its raw
+message, which is the only place it can be seen.
+
+**Neither the packet count nor the errno survives.** A destination that is not receiving is losing
+packets by definition, and the code is the app's own vocabulary, already spent on producing the
+sentence in front of it. The running total is on the dashboard, where a figure belongs.
+
+These errors exist at all only because the UDP socket is *connected* — an unconnected `sendto`
+discards them, as the 2016 driver did.
+
+### How long a toast stays
+
+4.5 seconds, which is why it could barely be read. That suited "Preset written"; it does not suit
+three sentences naming an address, a port and three candidate causes. Toasts now last by kind:
+
+    info   4.5s     read at a glance or not at all
+    warn    15s
+    error   20s
+
+The thirty-second banner cap still applies above these.
+
+### A test that failed for the message getting better
+
+`destination-health` asserted `/Cannot reach gone/` — the phrasing, not the fact. It checks that the
+destination is named and that a cause is given, which is what it was for.
+
+**232 tests pass.**
