@@ -332,27 +332,24 @@ test('a driver shared by two receivers is described as one driver', async (t) =>
   assert.match(api, /\.join\(' and '\)/, 'which are listed together under it');
 });
 
-test('a known mismatch stops the card claiming the destination is receiving', () => {
-  // `receiving` on the pill means only that packets are leaving and the network
-  // has not objected — UDP offers nothing stronger. Once disguise has said there
-  // is no receiver on that port, or none with that device id, the packets are
-  // arriving nowhere useful, and continuing to say `receiving` is the same false
-  // claim the pill used to make with a cable pulled.
-  const view = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
+test('the disguise answer is held on the server, so every screen agrees', () => {
+  // It began as a local in the card, which a re-render threw away, then as a
+  // module map in one view — which the dashboard and the connections list could
+  // not see. The answer is about the destination, not about a screen.
+  const manager = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
+  assert.match(manager, /this\.disguiseChecks = new Map\(\);/);
+  assert.match(manager, /d\.health = check\.matches \? 'receiving' : 'mismatch';/,
+    'connected is raised or lowered only where there is an answer');
+  assert.match(manager, /if \(!check\) continue;/,
+    'and with no answer, connected stands');
 
-  assert.match(view, /if \(state === 'receiving' && asked && !asked\.matches\) state = 'mismatch';/,
-    'a known mismatch overrides the health pill');
-  assert.match(view, /lastAsked\.set\(dest\.id, r\);/, 'the answer is remembered');
-  assert.match(view, /lastAsked\.delete\(dest\.id\);/,
-    'and forgotten when the question could not be answered — that says nothing about the destination');
-  // Module scope: a card is rebuilt on every navigation, and a local would be
-  // lost with it — the pill went back to claiming `receiving` the moment the
-  // screen was left and returned to.
-  assert.match(view, /^const lastAsked = new Map\(\);$/m,
-    'what disguise said survives a re-render');
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  assert.match(api, /manager\.disguiseChecks\.set\(dest\.id, \{ matches: !!both/,
+    'asking records the answer');
 
   const css = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'css', 'app.css'), 'utf8');
-  assert.match(css, /\.pill\.mismatch \{/, 'and the state has a colour of its own');
+  assert.match(css, /\.pill\.mismatch \{/);
+  assert.match(css, /\.pill\.connected \{/, 'and connected reads as neither good nor bad');
 });

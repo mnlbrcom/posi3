@@ -529,6 +529,10 @@ function createApi(ctx) {
       }
 
       appLog(conn.id, verdict, level);
+      // Remembered for every screen, not just the one that asked. `matches`
+      // here is the whole point of the question: a driver on this port holding
+      // an axis with this device id.
+      manager.disguiseChecks.set(dest.id, { matches: !!both, at: Date.now() });
       return {
         receivers,
         ports: allPorts,
@@ -688,7 +692,12 @@ function createApi(ctx) {
 
     linkSnapshot: ({ id }) => {
       const link = manager.get(checkId(id));
-      return link ? link.snapshot() : null;
+      if (!link) return null;
+      // Through the same filter the telemetry stream uses, or this endpoint and
+      // that one disagree about the same destination.
+      const snap = link.snapshot();
+      manager.applyDisguiseChecks(snap.telemetry);
+      return snap;
     },
 
     // -- encoder command channel --------------------------------------------

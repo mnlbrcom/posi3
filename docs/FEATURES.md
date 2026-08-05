@@ -4168,3 +4168,42 @@ The exception is a destination that has never failed: with no errors at all ther
 prove, and it reads `receiving` from the first packet.
 
 **254 tests pass.**
+
+---
+
+## 2026-08-05 — `connected` is not `receiving`
+
+> "i would turn that logic around, and say receiving is only when there is a port match and an id
+> match, other wise it needs a state that is saying connected" / "for axemple US is connected but not
+> receiving, since its not even a disguise server but this laptop."
+
+The right way round, and the example settles it: `US` points at a laptop. The packets leave, the
+network raises no objection, and nothing whatsoever is receiving them.
+
+| state | what it means | evidence |
+|---|---|---|
+| `idle` | the link is not running | — |
+| `offline` / `refused` | the network says the packets did not arrive | ICMP, instant |
+| `connected` | packets are leaving and nothing has objected | the most UDP can ever say |
+| `receiving` | a disguise session has a Navigator driver on this port holding an axis with this device id | Designer, on being asked |
+| `mismatch` | it was asked, and it has not | Designer, on being asked |
+
+`receiving` used to mean what `connected` means now, which is how a switched-off machine wore the
+word for four thousand suppressed packets. It is a claim about the far end, and only the far end can
+support it.
+
+**Held on the server**, keyed by destination — it began as a local in a card, which a re-render threw
+away, then as a map in one view, which the dashboard could not see. The answer is about the
+destination, not about a screen. `connected` stands wherever there is no answer.
+
+Applied through one method, because `linkSnapshot` returns telemetry as well as the event stream
+does: filtering in the tick alone gave the two endpoints different answers about the same
+destination. That is how the first live check appeared to fail.
+
+On the rig, after asking about one of the three:
+
+    disguise 1  10.10.10.4:7999  mismatch     asked, and its axis ids are 5, 10 and 2
+    director    10.10.10.5:6000  offline      switched off
+    US          10.10.10.2:6000  connected    a laptop: reachable, receiving nothing
+
+**255 tests pass.**
