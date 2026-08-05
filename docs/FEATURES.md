@@ -4078,3 +4078,52 @@ news — an unreachable Designer says nothing about whether the destination is r
 network's own verdict stands.
 
 **251 tests pass.**
+
+---
+
+## 2026-08-05 — Silence is not evidence
+
+> "the log started going crazy after the changes … director is reachable again after 805 lost packets"
+> / "being offline and no answer is the same thing right?" / "it should only show one, the right one,
+> that fits the situtation"
+
+Two faults, and the first took three attempts because each fix moved the same flawed proof somewhere
+else.
+
+### The false recovery
+
+A switched-off machine announced itself reachable three times in ninety seconds. Measured at the full
+send rate:
+
+    17:56:11  no answer from 10.10.10.5 at all
+    17:56:20  is reachable again after 115 lost packets     <- nine quiet seconds
+    17:56:21  no answer from 10.10.10.5 at all
+
+**Nine seconds without a single error, from a host that was off.** The kernel stops reporting once
+the ARP entry expires during the pause between probes, and says nothing again until re-resolution
+fails — so any window shorter than that failure latency reads as recovery.
+
+Three attempts, all defeated by the same fact:
+
+1. a quiet probe → the probe is one packet every five seconds; the quiet was ours
+2. a quiet probe *plus* a quiet period → the quiet period was ours too
+3. a three-second trial at the full rate → three seconds is inside the host's failure latency
+
+The window is thirty seconds now, longer than any gap observed, and the announcement is left to
+ordinary traffic rather than to a trial. The cost is that a genuine recovery is announced half a
+minute late, while the dashboard pill turns green immediately — a pill reflects state, a log line
+makes a claim, and only the claim has to be certain.
+
+**Result over two minutes against the same switched-off machine: seven lines, zero false claims.**
+Before: fourteen lines, three false claims in ninety seconds.
+
+### One line, the right one
+
+    director (10.10.10.5:6000): no answer from 10.10.10.5 at all — switched off, unplugged, or
+    not on this subnet. Sends paused, retrying every 5s — the encoder connection stays up.
+
+`is not answering` and `no answer from the host` were the same fact two seconds apart — going offline
+**is** the diagnosis. The cause and what follows from it are one sentence, and the periodic warning no
+longer repeats it immediately.
+
+**253 tests pass.**

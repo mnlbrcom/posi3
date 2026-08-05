@@ -93,8 +93,10 @@ test('a destination that really comes back is announced', async (t) => {
   const { sink, warnings } = await linkWithSink(t);
   fail(sink, 10);
 
-  // Sends land, and keep landing, for longer than the quiet period.
-  await sleep(3200);
+  // Sends land, and keep landing, for longer than the quiet period. Wound back
+  // rather than waited out: the window is thirty seconds, because that is how
+  // long a switched-off host can stay silent while sending at the full rate.
+  sink.lastErrorAt = Date.now() - 31000;
   sink.onSent();
 
   const claims = warnings.filter((w) => /reachable again/.test(w));
@@ -144,7 +146,7 @@ test('one probe still goes out while a destination is offline', async (t) => {
   assert.equal(sink.suppressed, suppressedBefore + 1, 'and the next one is suppressed again');
 });
 
-test('a destination recovering through the probe path does not crash the process', async (t) => {
+test('a trial that stays quiet resumes sending without claiming a recovery', async (t) => {
   // Reported from the rig after installing a VPN, which changed the routes
   // under a running link:
   //
@@ -170,11 +172,16 @@ test('a destination recovering through the probe path does not crash the process
 
   link._forward(12345, 0);
 
-  assert.equal(sink.offline, false, 'a trial that drew no objection ends the outage');
-  const claims = warnings.filter((w) => /reachable again/.test(w));
-  assert.equal(claims.length, 1, `expected one recovery claim, got: ${claims.join(' | ')}`);
-  assert.match(claims[0], /127\.0\.0\.1:\d+ is reachable again/,
-    'and it must name the destination, which is what `dest` was for');
+  assert.equal(sink.offline, false, 'sending resumes');
+  assert.deepEqual(warnings.filter((w) => /reachable again/.test(w)), [],
+    'but nothing is claimed: three seconds of quiet is not proof a host is back, ' +
+    'and this exact trial passed three times in ninety seconds against a machine that was off');
+
+  // The claim belongs to ordinary traffic staying clean, which is onSent's job.
+  sink.lastErrorAt = Date.now() - 30000;
+  sink.onSent();
+  assert.equal(warnings.filter((w) => /reachable again/.test(w)).length, 1,
+    'a real recovery is still announced, by the path that can see real traffic');
 });
 
 test('a probe does not count as recovery while errors keep arriving', async (t) => {
@@ -211,8 +218,9 @@ test('a probe does not count as recovery while errors keep arriving', async (t) 
 
   sink.trialUntil = Date.now() - 1;
   link._forward(1002, 0);
-  assert.equal(sink.offline, false, 'the trial ran its course quietly — it is back');
-  assert.equal(warnings.filter((w) => /reachable again/.test(w)).length, 1);
+  assert.equal(sink.offline, false, 'the trial ran its course quietly, so sending resumes');
+  assert.deepEqual(warnings.filter((w) => /reachable again/.test(w)), [],
+    'without announcing anything on the strength of silence alone');
 });
 
 test('a refused port is diagnosed, not just reported', async (t) => {
@@ -298,8 +306,30 @@ test('a trial that stays quiet all the way through is recovery', async (t) => {
   sink.lastErrorAt = Date.now() - 30000;
 
   link._forward(1, 0);
+  assert.equal(sink.offline, false, 'every packet went unremarked, so sending resumes');
 
-  assert.equal(sink.offline, false, 'every packet went unremarked, so it is back');
+  // And only then, once ordinary traffic has stayed clean, is it announced.
+  sink.onSent();
   assert.equal(warnings.filter((w) => /reachable again/.test(w)).length, 1);
   assert.match(warnings.find((w) => /reachable again/.test(w)), /after 42 lost packets/);
+});
+
+test('going offline is said once, with its cause', async (t) => {
+  // "no answer from 10.10.10.5 at all" and "is not answering — pausing sends"
+  // are the same fact two seconds apart: going offline *is* the diagnosis. One
+  // sentence carries the cause and what follows from it.
+  const { sink, warnings } = await linkWithSink(t);
+
+  const down = new Error('send EHOSTUNREACH');
+  down.code = 'EHOSTUNREACH';
+  sink.onError(down);
+  sink.failingSince = Date.now() - 5000;   // long enough to give up
+  sink.onError(down);
+
+  const offlineLines = warnings.filter((w) => /Sends paused/.test(w));
+  assert.equal(offlineLines.length, 1, 'once, not twice');
+  assert.match(offlineLines[0], /no answer from [\d.]+ at all/, 'with the cause in it');
+  assert.match(offlineLines[0], /retrying every 5s/, 'and what happens next');
+  assert.deepEqual(warnings.filter((w) => /is not answering —/.test(w)), [],
+    'and not also as a separate line saying the same thing');
 });
