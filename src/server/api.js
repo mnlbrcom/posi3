@@ -429,12 +429,22 @@ function createApi(ctx) {
       const allPorts = [...new Set(receivers.flatMap((r) => (r.drivers || []).map((d) => Number(d.port))))];
       const allIds = [...new Set(receivers.flatMap((r) => (r.axes || []).map((a) => String(a.id))))];
 
-      // Two independent facts, reported independently. A missing axis is a
-      // whole object nobody created; a wrong port is one field. Folding them
-      // into a single "nothing matches" sentence hid whichever one the operator
-      // was not already thinking about.
+      // Two independent facts, reported independently, and each naming the
+      // thing an operator has to go and look at. A missing axis is a whole
+      // object nobody created; a wrong port is one field. Folding them into a
+      // single "nothing matches" hid whichever one they were not thinking of.
       const idExists = allIds.includes(String(dest.devid));
       const portExists = allPorts.includes(dest.port);
+
+      /** "posi3's NavigatorDriver on 8000" — what to go and look at. */
+      const describeDriver = (r) => {
+        const d = (r.drivers || [])[0];
+        return d ? `${label(r)}'s ${d.type} on port ${d.port}` : `${label(r)} (no driver)`;
+      };
+      const axisList = (r) => {
+        const ids = (r.axes || []).map((a) => a.id);
+        return ids.length ? `axis ids ${ids.join(', ')}` : 'no axes';
+      };
 
       let verdict;
       let level = 'warn';
@@ -453,22 +463,25 @@ function createApi(ctx) {
           'Check that this connection is running and that nothing between them drops the traffic.';
       } else {
         const problems = [];
-        if (!idExists) {
-          problems.push(`no axis with id ${dest.devid} exists in this show` +
-            (allIds.length ? ` — it has id ${allIds.join(', ')}` : ' — it has no axes at all'));
-        }
         if (!portExists) {
-          problems.push(`nothing listens on ${dest.port}` +
-            (allPorts.length ? ` — its driver is on ${allPorts.join(', ')}` : ' — it has no driver'));
+          problems.push(`No port match — this connection sends to ${dest.port}, and ` +
+            (receivers.length
+              ? receivers.map(describeDriver).join('; ')
+              : 'nothing is listening'));
         }
-        // Both halves exist, but not together: two receivers, each with one of
-        // them. Worth saying plainly, because every individual field looks right.
+        if (!idExists) {
+          // Named against the driver, because that is the object whose axes
+          // these are and the one that has to be opened to add another.
+          const home = portOnly[0] || receivers[0];
+          problems.push(`ID mismatch — this connection sends id ${dest.devid}, and ` +
+            `${describeDriver(home)} has ${axisList(home)}`);
+        }
         if (!problems.length) {
-          problems.push(`port ${dest.port} and axis id ${dest.devid} are in different receivers ` +
+          problems.push(`Port ${dest.port} and axis id ${dest.devid} are in different receivers ` +
             `(${portOnly.map(label).join(', ')} and ${axisOnly.map(label).join(', ')}) — ` +
             'they have to be in the same one');
         }
-        verdict = `${problems.join('; and ')}.`;
+        verdict = `${problems.join('. ')}.`;
       }
 
       appLog(conn.id, verdict, level);

@@ -205,8 +205,13 @@ test('a wrong port and a missing axis are two problems, and both are said', asyn
   // The verdict text is built in api.js; this pins the inputs it reasons from,
   // so a change to either half cannot silently drop one of the two statements.
   const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
-  assert.match(api, /no axis with id \$\{dest\.devid\} exists in this show/);
-  assert.match(api, /nothing listens on \$\{dest\.port\}/);
-  assert.match(api, /problems\.join\('; and '\)/,
+  assert.match(api, /No port match — this connection sends to \$\{dest\.port\}/);
+  assert.match(api, /ID mismatch — this connection sends id \$\{dest\.devid\}/);
+  // Each names the object to go and look at, rather than a bare number.
+  assert.match(api, /\$\{label\(r\)\}'s \$\{d\.type\} on port \$\{d\.port\}/,
+    'the driver is named, with its port');
+  assert.match(api, /axis ids \$\{ids\.join\(', '\)\}/,
+    'and an id mismatch lists the ids that do exist');
+  assert.match(api, /problems\.join\('\. '\)/,
     'both are reported together, not one instead of the other');
 });
