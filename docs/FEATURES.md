@@ -4687,3 +4687,21 @@ gates from removed nine dead names — four in `src/`, five in tests:
 The config's header comment — "One rule, and a reason for it" — moved with the
 fact: two rules, and the bar unchanged. Not a style config; these fire only on
 code that cannot work or words that are not true.
+
+## 2026-08-05 — Full-code audit, and the fixes it ordered
+
+**Asked:** "check overall code from this project and tell me if we need other
+fixes?" — three parallel reviews (bridge core, server and security, web UI)
+plus a cross-cutting pass, every finding verified against the code before being
+reported. Then: "start with the first but do all." The entries that follow are
+those fixes, in the reported order.
+
+### The log console froze at exactly 2000 lines
+
+`ingestLog` caps the client buffer at MAX_RENDERED (2000), so once it fills,
+its *length* is pinned there for good — and the repaint guard compared lengths.
+From that moment the console silently stopped showing new lines until the page
+was left and re-entered; during an incident that reads as "nothing is being
+logged". The signal is now the newest line's sequence number, which advances
+even when the length cannot. Pinned by `test/log-view.test.js` at source level,
+since the view needs a browser to run.

@@ -103,7 +103,11 @@ export function renderLog(root) {
 
   root.appendChild(view);
 
-  let lastCount = -1;
+  // The newest sequence number painted, not a count. `buffer` is capped at
+  // MAX_RENDERED, so once it fills its length is pinned there for good and a
+  // length comparison stops seeing new lines entirely — the console froze at
+  // exactly 2000 lines, mid-show, looking like nothing was being logged.
+  let lastSeq = -1;
 
   function visible() {
     return buffer.filter((l) =>
@@ -144,14 +148,15 @@ export function renderLog(root) {
         el('span', { text: l.text })));
     }
     box.scrollTop = box.scrollHeight;
-    lastCount = buffer.length;
+    lastSeq = buffer.length ? buffer[buffer.length - 1].seq : -1;
   }
 
   repaint();
 
   return {
     refreshLive() {
-      if (isPaused() || buffer.length === lastCount) return;
+      const newest = buffer.length ? buffer[buffer.length - 1].seq : -1;
+      if (isPaused() || newest === lastSeq) return;
       const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
       repaint();
       if (!atBottom) box.scrollTop = box.scrollHeight - box.clientHeight - 41;
