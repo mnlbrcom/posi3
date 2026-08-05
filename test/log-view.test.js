@@ -55,3 +55,28 @@ test('no shortcut sits on a browser-owned key, and stop is matched physically', 
   assert.doesNotMatch(desktop, /CmdOrCtrl\+Shift\+R/,
     'the desktop menu answers to the same keys as the web UI');
 });
+
+test('a link state change repaints, but never rebuilds', () => {
+  // The staged values on an encoder card, a half-edited mapping and the "Ask
+  // disguise" answer all live in card closures. Rebuilding the view for a
+  // state change threw them away — an encoder quietly reconnecting erased what
+  // the operator was typing on a different card. Every view seeds its pill at
+  // build time and keeps it live in refreshLive, so state needs no structure.
+  const app = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'app.js'), 'utf8');
+  const handler = app.slice(app.indexOf('function onStoreChange'));
+  const body = handler.slice(0, handler.indexOf('\n}'));
+  assert.match(body, /'linkState'/, 'linkState is handled by the animation loop');
+  assert.ok(body.indexOf("'linkState'") < body.indexOf('renderView'),
+    'and returns before any rebuild');
+});
+
+test('a remembered disguise answer is restored when the card is rebuilt', () => {
+  // `lastAsked` existed to survive navigation and was write-only — stored on
+  // every ask, read by nothing, so the answer vanished with the closure that
+  // held it.
+  const view = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
+  assert.match(view, /if \(lastAsked\.has\(dest\.id\)\) showAnswer\(lastAsked\.get\(dest\.id\)\)/,
+    'the stored answer is rendered at build time');
+});

@@ -253,13 +253,14 @@ test('the answer is one statement, not a statement and a list of the same thing'
   // conspicuous once there were three of them.
   const view = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
-  const handler = view.slice(view.indexOf('askBtn.onclick'));
-  const body = handler.slice(0, handler.indexOf('\n  };'));
+  // One renderer, used by the ask button and by the rebuild-restore path alike.
+  const helper = view.slice(view.indexOf('const showAnswer'));
+  const body = helper.slice(0, helper.indexOf('\n  };'));
 
   assert.match(body, /verdict\.appendChild\(el\('div', \{ text: r\.verdict \}\)\)/,
     'the verdict is shown');
-  assert.doesNotMatch(body, /for \(const rec of r\.receivers\)/,
-    'and nothing enumerates the receivers again underneath it');
+  assert.doesNotMatch(view, /for \(const rec of r\.receivers\)/,
+    'and nothing anywhere enumerates the receivers again underneath it');
 });
 
 test('no engaged or receiving status is read, or reported', () => {
@@ -549,8 +550,12 @@ test('a state change discards the answer and the sentence describing it', () => 
 
   const view = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
-  assert.match(view, /if \(lastState !== null\) clear\(verdict\);/,
-    'and the text describing it is cleared with it');
+  const change = view.slice(view.indexOf('if (lastState !== null)'));
+  const branch = change.slice(0, change.indexOf('lastState = state'));
+  assert.match(branch, /clear\(verdict\)/,
+    'the text describing the old state is cleared with it');
+  assert.match(branch, /lastAsked\.delete\(dest\.id\)/,
+    'and forgotten, or the next rebuild would restore the sentence just cleared');
 });
 
 test('the network state is evaluated every tick, even while receiving', () => {
