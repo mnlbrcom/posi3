@@ -253,7 +253,10 @@ function createApi(ctx) {
           onLog: offlineLogger(conn.id)
         });
         promoteIfAnswered(conn, host);
-        const bad = results.filter((r) => !r.verified);
+        // `verified === null` is "this variable cannot be read back", not a
+        // failure — only `false` is. Treating them alike reported every Preset
+        // write as unconfirmed, including the ones that worked.
+        const bad = results.filter((r) => r.verified === false);
         appLog(conn.id, bad.length
           ? `flash write finished — ${results.length - bad.length} of ${results.length} verified, ` +
             `not confirmed: ${bad.map((r) => r.variable).join(', ')}`
@@ -571,12 +574,34 @@ function createApi(ctx) {
       return requireLink(id).write(w.variable, w.value);
     },
 
-    encoderWriteMany: async ({ id, entries }) => {
+    encoderWriteMany: async ({ id, entries, force }) => {
       if (!Array.isArray(entries) || !entries.length) fail('EINVAL', 'Nothing to write');
       const checked = entries.map((e) => checkVarWrite(e.variable, e.value));
       const conn = store.find(checkId(id));
       if (conn) boundToDevice(conn, checked);
       const link = manager.get(checkId(id));
+
+      // Preset is not an ordinary variable and must not go down the ordinary
+      // path. The firmware refuses to store the same value twice in a row —
+      // FAQ 1, to protect the ~100,000 cycle budget — and the documented way
+      // round costs two cycles, so it is offered rather than taken. `setPreset`
+      // knows all of that; a generic `set` knows none of it, which meant the
+      // Controls popup and this screen behaved differently for the same write.
+      const presets = checked.filter((c) => c.variable === 'Preset');
+      const rest = checked.filter((c) => c.variable !== 'Preset');
+      if (presets.length && link && link.running) {
+        const results = rest.length ? await link.writeMany(rest) : [];
+        for (const p of presets) {
+          const r = await link.setPreset(Number(p.value), { force: !!force });
+          results.push({
+            variable: 'Preset', value: p.value, ok: true,
+            // Never read back, so never `false`: the echo is the confirmation.
+            verified: null, cycles: r.cycles
+          });
+        }
+        await recordPendingAddress(id, results);
+        return results;
+      }
 
       // Rate limiting is shared between both paths, so the device's ~100,000
       // write cycles are counted once however they are spent.

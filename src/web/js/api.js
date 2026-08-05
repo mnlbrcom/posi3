@@ -201,7 +201,7 @@ if (!window.d3d) {
       readMany: (id, variables) => call('encoderReadMany', { id, variables }),
       cached: (id) => call('encoderCached', { id }),
       write: (id, variable, value) => call('encoderWrite', { id, variable, value }),
-      writeMany: (id, entries) => call('encoderWriteMany', { id, entries }),
+      writeMany: (id, entries, force) => call('encoderWriteMany', { id, entries, force }),
       preset: (id, value, force) => call('encoderPreset', { id, value, force }),
       run: (id) => call('encoderRun', { id })
     },

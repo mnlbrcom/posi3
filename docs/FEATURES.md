@@ -3548,3 +3548,51 @@ Only one banner in the app sets a `ttlMs` at all — the unreachable notice, at 
 asked for. Everything else was untimed and now gets thirty.
 
 **222 tests pass.**
+
+---
+
+## 2026-08-05 — Preset routing, and a banner that outlived its own claim
+
+> "lets fix that Preset routing — the config table's Preset still bypasses setPreset" / "the banner
+> Revolve: disguise 1 (10.10.10.5:6000) is offline — sends paused, retrying every 5s does not go away
+> when i click stop all connections."
+
+### Preset goes the way Preset has to go
+
+Two paths wrote it and behaved differently. The Controls popup used `setPreset`, which knows the
+firmware refuses the same value twice in a row and offers the documented two-cycle detour — write
+`value + 1`, await the commit, write `value`. The config table sent it through the generic write,
+which knows none of that.
+
+`encoderWriteMany` now splits Preset out and routes it through `setPreset`, with the rest going the
+ordinary way. The detour stays something asked for rather than assumed: Apply surfaces
+`EPRESET_DUPLICATE` as a confirmation naming the cost — two cycles out of about 100,000 — exactly as
+Controls does.
+
+**And a write-only variable is no longer reported unconfirmed for failing to read back.** Verification
+worked by reading the value back, which for `Preset` answers *"Preset is an unknown variable"* — so
+every Preset write was reported unconfirmed, including the ones that worked. Write-only variables are
+excluded from the read-back and marked `verified: null`, meaning *cannot be checked*, which the
+caller now distinguishes from `false`. The echo of the `set` is the confirmation this variable has,
+and it was always being matched by value.
+
+### A banner that said something the app knew was false
+
+*"…is offline — sends paused, retrying every 5s"* stops being true the moment the link stops: nothing
+is retrying, because nothing is sending. Going idle now clears that connection's destination banner.
+
+The thirty-second cap would have cleared it eventually, but until then the app was stating something
+it knew to be false — which is the same fault as the invented defaults, in a different place.
+
+Reproduced and verified on the rig with the disguise machine unplugged:
+
+    before Stop All   Revolve: disguise 1 (10.10.10.5:6000) is offline — sends paused…
+                      Encoder 2: director (10.10.10.5:6000) is offline — sends paused…
+    after Stop All    []
+
+Two things learnt while reproducing it, both worth keeping in mind: `toast()` is a banner with a
+ttl, so toasts and banners share the strip; and `destinationDown` fires on the *transition*, so a
+client that connects after a destination has already failed never sees the banner at all — the
+dashboard pill is what carries that state.
+
+**226 tests pass.**

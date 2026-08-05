@@ -27,6 +27,22 @@ const net = require('node:net');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
 
+const { ENCODER_VAR_BY_NAME } = require('../shared/constants');
+
+/**
+ * A variable the encoder will not read back.
+ *
+ * `Preset` is the one: `read Preset` answers "Preset is an unknown variable".
+ * Reading it back to confirm a write therefore always fails, which reported
+ * every Preset write as unconfirmed — including the ones that plainly worked.
+ * The echo of the `set` is the only confirmation this variable has, and it is
+ * already checked.
+ */
+const isWriteOnly = (name) => {
+  const spec = ENCODER_VAR_BY_NAME.get(String(name).toLowerCase());
+  return !!(spec && spec.writeOnly);
+};
+
 const ENCODER_PORT = 6000;
 
 /** Hosts probed at once. High enough to finish a /24 in seconds, low enough
@@ -422,8 +438,14 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
       clearTimeout(timer);
       current = null;
       const done = results.filter((r) => r.ok);
-      if (!done.length) return finish(null);
-      verifying = done.slice();
+      // A write-only variable cannot be read back, so asking would produce an
+      // ERROR and mark a good write unconfirmed. Its acknowledgement is the
+      // echo of the `set`, which `next()` has already matched by value.
+      for (const r of done) {
+        if (isWriteOnly(r.variable)) r.verified = null;
+      }
+      verifying = done.filter((r) => !isWriteOnly(r.variable));
+      if (!verifying.length) return finish(null);
       readBack();
     };
 

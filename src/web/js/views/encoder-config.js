@@ -312,7 +312,32 @@ function encoderCard(conn) {
     pendingFlash.set(conn.id, timeout);
 
     try {
-      const results = await window.d3d.encoder.writeMany(conn.id, entries);
+      let results;
+      try {
+        results = await window.d3d.encoder.writeMany(conn.id, entries);
+      } catch (err) {
+        // The encoder will not store the same Preset twice in a row, so
+        // re-applying the value it already holds needs the documented detour:
+        // write value+1, wait for the commit, write value. Two cycles out of
+        // about 100,000, so it is asked for rather than assumed — the same
+        // choice the Controls popup offers.
+        if (err.code !== 'EPRESET_DUPLICATE') throw err;
+        clearTimeout(timeout);
+        pendingFlash.delete(conn.id);
+        dismissBanner('flash');
+        const again = await confirmModal({
+          title: 'Preset Already At That Value',
+          body: el('p', {
+            text: `${err.message} Writing it anyway uses two of the encoder's ` +
+              'flash cycles instead of one.'
+          }),
+          confirmLabel: 'Write anyway (2 cycles)',
+          danger: true
+        });
+        if (!again) { applyBtn.disabled = false; return; }
+        banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: 'flash' });
+        results = await window.d3d.encoder.writeMany(conn.id, entries, true);
+      }
       const failed = results.filter((r) => !r.ok);
       if (failed.length) {
         toast('error', `${failed.length} setting(s) rejected: ` +

@@ -428,3 +428,73 @@ test('a position value is bounded by what the device reports, not the family cei
     (err) => !/must be 0 –/.test(err.message),
     'unknown scaling is not a licence to invent a bound');
 });
+
+// ---------------------------------------------------------------------------
+// Preset is not an ordinary variable
+// ---------------------------------------------------------------------------
+
+test('a Preset written from the config table goes through setPreset', async () => {
+  // Two paths wrote Preset and behaved differently. The Controls popup used
+  // setPreset, which knows the firmware refuses the same value twice in a row
+  // (FAQ 1, protecting the ~100,000 cycle budget) and offers the documented
+  // two-cycle detour. The config table sent it through the generic writeMany,
+  // which knows none of that.
+  const { api, store, manager } = apiWith();
+  const conn = store.upsertConnection({
+    name: 'Revolve', encoder: TEST_ENCODER,
+    encoderMeta: { countsPerRev: 8192, totalCounts: 300000, cycleTimeMs: 10 }
+  });
+  manager.upsert(conn);
+  const link = manager.get(conn.id);
+
+  // Stand in for a running link, so no socket and no device are involved.
+  Object.defineProperty(link, 'running', { get: () => true });
+  const calls = [];
+  link.setPreset = async (value, opts) => { calls.push({ value, opts }); return { written: value, cycles: 1 }; };
+  link.writeMany = async (entries) => entries.map((e) => ({ variable: e.variable, value: e.value, ok: true }));
+
+  const results = await api.encoderWriteMany({
+    id: conn.id,
+    entries: [{ variable: 'CycleTime', value: '10' }, { variable: 'Preset', value: '1000' }]
+  });
+
+  assert.deepEqual(calls, [{ value: 1000, opts: { force: false } }],
+    'Preset must reach setPreset, and nothing else should');
+  const preset = results.find((r) => r.variable === 'Preset');
+  assert.equal(preset.verified, null,
+    'Preset is never read back, so it is unverifiable rather than unverified');
+  assert.ok(results.find((r) => r.variable === 'CycleTime'),
+    'the other variables still go the ordinary way');
+});
+
+test('the two-cycle detour is asked for, not assumed', async () => {
+  const { api, store, manager } = apiWith();
+  const conn = store.upsertConnection({ name: 'Revolve', encoder: TEST_ENCODER });
+  manager.upsert(conn);
+  const link = manager.get(conn.id);
+  Object.defineProperty(link, 'running', { get: () => true });
+
+  const seen = [];
+  link.setPreset = async (value, opts) => { seen.push(opts.force); return { written: value, cycles: opts.force ? 2 : 1 }; };
+
+  await api.encoderWriteMany({ id: conn.id, entries: [{ variable: 'Preset', value: '0' }] });
+  await api.encoderWriteMany({ id: conn.id, entries: [{ variable: 'Preset', value: '0' }], force: true });
+
+  assert.deepEqual(seen, [false, true], 'force only when the caller says so');
+});
+
+test('a write-only variable is not reported unconfirmed for failing to read back', async () => {
+  // `read Preset` answers "Preset is an unknown variable", so verifying a write
+  // by reading it back always failed -- and every Preset write was reported
+  // unconfirmed, including the ones that plainly worked.
+  const discover = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'discover.js'), 'utf8');
+  assert.match(discover, /verifying = done\.filter\(\(r\) => !isWriteOnly\(r\.variable\)\)/,
+    'write-only variables are excluded from the read-back');
+  assert.match(discover, /if \(isWriteOnly\(r\.variable\)\) r\.verified = null;/,
+    'and marked unverifiable rather than unverified');
+
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  assert.match(api, /results\.filter\(\(r\) => r\.verified === false\)/,
+    'only an actual failure counts as not confirmed');
+});
