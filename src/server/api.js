@@ -22,6 +22,7 @@ const {
   scanSubnet, scannableInterfaces, readVariablesOnce, writeVariablesOnce, probe
 } = require('../core/discover');
 const flashBudget = require('../core/flash-budget');
+const { inspectReceivers } = require('../core/disguise-api');
 
 /**
  * Paths that say nothing an operator changed.
@@ -387,6 +388,46 @@ function createApi(ctx) {
     },
 
     // -- mapping helper -----------------------------------------------------
+
+    /**
+     * Ask a disguise machine what it is actually listening on.
+     *
+     * ICMP tells us nothing is bound to the port we send to; it cannot tell us
+     * which port *is*. Designer can, and that turns "nothing is listening on
+     * 6000" into "disguise is listening on 8000".
+     *
+     * On demand only, and deliberately so — disguise's documentation says this
+     * endpoint must not be polled and is not for use during a show. It is wired
+     * to a button and to nothing else.
+     */
+    disguiseInspect: async ({ id, destId }) => {
+      const conn = store.find(checkId(id));
+      if (!conn) fail('ENOENT', 'No such connection');
+      const dest = (conn.destinations || []).find((d) => d.id === destId);
+      if (!dest) fail('ENOENT', 'No such disguise receiver');
+
+      userLog(conn.id, `asked ${dest.name || dest.host} what it is listening on`);
+      let receivers;
+      try {
+        receivers = await inspectReceivers(dest.host);
+      } catch (err) {
+        appLog(conn.id, `${dest.host}: ${err.message}`, 'warn');
+        throw err;
+      }
+
+      const ports = [...new Set(receivers.map((r) => Number(r.port)))];
+      const match = receivers.find((r) => Number(r.port) === dest.port) || null;
+      const verdict = match
+        ? `${dest.host} is listening on ${dest.port} — the ports agree.`
+        : ports.length
+          ? `${dest.host} is listening on ${ports.join(', ')}, but this connection sends to ` +
+            `${dest.port}. Change one of them so they match.`
+          : `${dest.host} has a Designer session, but no UDP receiver in it. Add a Navigator ` +
+            'driver inside a Position Receiver.';
+
+      appLog(conn.id, verdict, match ? 'info' : 'warn');
+      return { receivers, ports, matches: !!match, verdict };
+    },
 
     /**
      * The disguise numbers for one receiver.
