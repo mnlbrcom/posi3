@@ -421,6 +421,31 @@ class EncoderLink extends EventEmitter {
           sink.lastErrorAt = now;
           if (!sink.failingSince) sink.failingSince = now;
 
+          // Failed before the socket ever worked — a hostname that does not
+          // resolve, a local port already taken. That is not a blip to ride
+          // out: nothing was ever sent, and since `_forward` skips a sink that
+          // is not ready, nothing ever will be. Without this branch that
+          // silence was read as health — one setup error, no sends, no further
+          // errors, and thirty seconds later the pill said `connected` for a
+          // destination that could not physically receive a packet.
+          //
+          // No retry loop either: re-running bind/connect is what restarting
+          // the connection does, so the message says exactly that.
+          if (!sink.ready) {
+            sink.offline = true;
+            if (!sink.downAnnounced) {
+              sink.downAnnounced = true;
+              sink.outageSince = now;
+              const place = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
+              const text = `${place}: could not open the sender socket — ${err.message}. ` +
+                'Nothing is being sent; restart the connection to retry.';
+              sink.downCause = text;
+              this._log('warn', 'app', text);
+              this.emit('encoderEvent', { id: this.id, kind: 'destinationDown', text });
+            }
+            return;
+          }
+
           // A trial that draws an error has failed, and silently: the outage
           // never ended, so there is nothing to announce and nothing for an
           // operator to be told twice. Back to one probe every few seconds.
@@ -519,8 +544,10 @@ class EncoderLink extends EventEmitter {
           afterBind();
         }
       } catch (err) {
-        sink.lastError = err.message;
-        this._warn(`Could not bind UDP for ${dest.host}:${dest.port}: ${err.message}`);
+        // The same path as an asynchronous setup failure, so a sink that never
+        // opened is marked offline and announced instead of merely warned
+        // about — a warning alone left health reading `connected` forever.
+        sink.onError(err);
       }
 
       this._sinks.push(sink);

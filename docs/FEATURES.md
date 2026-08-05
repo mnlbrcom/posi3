@@ -4738,3 +4738,19 @@ With rebuilds legitimate again (navigation, config edits), `lastAsked` finally
 does what it was added for: the stored disguise answer is rendered when a card
 is rebuilt, and forgotten when the destination's state changes — so an answer
 survives looking at another screen, but never outlives the state it described.
+
+### A destination that could never receive read `connected`
+
+If UDP setup failed — an unresolvable hostname, a local address or port that
+could not be bound — the sink never became ready, so nothing was ever sent.
+One setup error, then silence; and silence is what the health rule reads as
+recovery, so thirty seconds later the pill said `connected` for a destination
+no packet could physically reach. The synchronous bind failure was even
+gentler: a log warning, health clean from the first frame.
+
+A setup failure now marks the sink offline immediately and announces it once —
+"could not open the sender socket … restart the connection to retry" — through
+both the log and the banner path. No retry loop was added: re-running
+bind/connect is exactly what restarting the connection does, so the message
+names that instead. Behavioural test: a bind to TEST-NET-1 fails on this
+machine without a packet leaving it, and the sink must read offline.
