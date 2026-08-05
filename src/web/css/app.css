@@ -999,8 +999,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 }
 .modal-danger .hint { margin: 0; }
 
-.card-faults { font-size: var(--fs-label); color: var(--text-faint); min-height: 14px; margin-top: 8px; }
-.card-faults.has-faults { color: var(--warn); }
 /* The card's three columns give way in two stages rather than one. The dial is
    the first thing worth sacrificing width for, so the two figure columns merge
    before the dial drops below the text — losing the dial early would take the

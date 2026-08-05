@@ -249,8 +249,6 @@ function buildCard(conn) {
     ['faults', 'Faults']
   ]);
 
-  const faultRow = el('div', { class: 'card-faults' });
-
   const node = el('div', { class: 'card encoder-card' },
     // One row of devices: the encoder first, then every machine it feeds. Each
     // is built the same way — name and indicator on a line, address beneath —
@@ -291,8 +289,7 @@ function buildCard(conn) {
         // instead of counted, and it fills the space the figures leave.
         el('div', { class: 'encoder-trace' },
           el('div', { class: 'col-label', text: `Position, last ${TRACE_SECONDS} s` }),
-          spark.node))),
-    faultRow);
+          spark.node))));
 
   // The travel bar shows the range being sent to disguise. Since schema 4 that
   // belongs to a receiver, and a fan-out has several — the first enabled one is
@@ -414,19 +411,6 @@ function buildCard(conn) {
       setText(stream.cells.faults, groupDigits(ownFaults));
       stream.cells.faults.classList.toggle('bad', ownFaults > 0);
 
-      const faults = [];
-      if (t.errors) faults.push(`${t.errors} error${t.errors > 1 ? 's' : ''}`);
-      if (t.txErrors) faults.push(`${t.txErrors} send failure${t.txErrors > 1 ? 's' : ''}`);
-      if (t.unknownLines) faults.push(`${t.unknownLines} unparsed`);
-      if (t.reconnects) faults.push(`${t.reconnects} reconnect${t.reconnects > 1 ? 's' : ''}`);
-      if (t.wraps) faults.push(`${t.wraps} wrap${t.wraps > 1 ? 's' : ''}`);
-      // Listed, but never counted in Faults: a refused `set` says something
-      // about a command, not about the data reaching disguise.
-      if (t.commandErrors) {
-        faults.push(`${t.commandErrors} rejected command${t.commandErrors > 1 ? 's' : ''}`);
-      }
-      setText(faultRow, faults.join(' · '));
-      faultRow.classList.toggle('has-faults', faults.length > 0);
 
       spark.push(conn.id, t.pos, conn.encoderMeta ? conn.encoderMeta.totalCounts : null);
       return t;
