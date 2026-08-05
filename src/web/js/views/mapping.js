@@ -242,6 +242,21 @@ function receiverCard(conn, dest) {
     }
   };
 
+  const showAnswer = (r) => {
+    verdict.className = `map-verdict ${r.matches ? 'ok' : 'warn'}`;
+    clear(verdict);
+    verdict.appendChild(el('div', { text: r.verdict }));
+    // No second list. The verdict already names the receiver, every Navigator
+    // driver it has and their ports — and, on an id mismatch, the axis ids —
+    // so a per-receiver line underneath printed the same drivers again. One
+    // statement, and it is the same one that goes into the log.
+  };
+  // What `lastAsked` is *for*: navigating away and back rebuilds this card,
+  // and an answer the operator asked for must not vanish because they looked
+  // at another screen. It was stored from the day the map was added and never
+  // read — kept in a closure the rebuild threw away.
+  if (lastAsked.has(dest.id)) showAnswer(lastAsked.get(dest.id));
+
   askBtn.onclick = async () => {
     askBtn.disabled = true;
     setText(verdict, `Asking ${dest.host}…`);
@@ -249,13 +264,7 @@ function receiverCard(conn, dest) {
     try {
       const r = await window.d3d.disguise.inspect(conn.id, dest.id);
       lastAsked.set(dest.id, r);
-      verdict.className = `map-verdict ${r.matches ? 'ok' : 'warn'}`;
-      clear(verdict);
-      verdict.appendChild(el('div', { text: r.verdict }));
-      // No second list. The verdict already names the receiver, every Navigator
-      // driver it has and their ports — and, on an id mismatch, the axis ids —
-      // so a per-receiver line underneath printed the same drivers again. One
-      // statement, and it is the same one that goes into the log.
+      showAnswer(r);
     } catch (err) {
       // An unanswerable question tells us nothing about the destination, so the
       // pill keeps whatever the network says.
@@ -323,7 +332,12 @@ function receiverCard(conn, dest) {
         // matches" above a destination that has gone offline is a sentence
         // about a moment that is over, and it stayed on screen through the
         // change. It is re-established by asking, automatically or by hand.
-        if (lastState !== null) clear(verdict);
+        // Forgotten from the store as well, or the next rebuild would restore
+        // the very sentence being cleared here.
+        if (lastState !== null) {
+          clear(verdict);
+          lastAsked.delete(dest.id);
+        }
         lastState = state;
       }
     }

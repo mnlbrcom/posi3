@@ -4720,3 +4720,21 @@ Both now sit on Cmd/Ctrl+Shift+Comma (start) and Cmd/Ctrl+Shift+Period (stop),
 matched by `ev.code` — the physical key, immune to layout and Shift — and the
 desktop menu carries the same accelerators, so the window and a browser answer
 to the same keys. No browser engine owns either combination.
+
+### A link state change no longer throws away what the operator was typing
+
+Any link changing state — including an encoder quietly reconnecting on its own
+— triggered a full rebuild of the active view. The staged values on an encoder
+card, a half-edited mapping with its Save armed, and the "Ask disguise" answer
+all live in per-card closures, so the rebuild erased them; `openGroups` proves
+surviving rebuilds was considered, but only fold state ever got the treatment.
+
+The rebuild was not needed at all. Every view seeds its state pill at build
+time and keeps it live in `refreshLive`, so `onStoreChange` now treats
+`linkState` like `linkDetail`: the animation loop's job, no structure touched.
+Structure rebuilds on *config* change; state is not config.
+
+With rebuilds legitimate again (navigation, config edits), `lastAsked` finally
+does what it was added for: the stored disguise answer is rendered when a card
+is rebuilt, and forgotten when the destination's state changes — so an answer
+survives looking at another screen, but never outlives the state it described.

@@ -247,7 +247,14 @@ function wireEvents() {
 }
 
 function onStoreChange(reason) {
-  if (reason === 'linkDetail') return; // picked up by the animation loop
+  // Both link reasons are the animation loop's job. Every view seeds its state
+  // pill at build time and keeps it live in refreshLive, so a state-name
+  // change needs no structure rebuilt — and rebuilding anyway was destructive:
+  // the staged values on an encoder card, a half-edited mapping and its Save,
+  // and the "Ask disguise" answer all live in card closures, and an encoder
+  // quietly reconnecting threw all of them away while the operator was typing.
+  // Structure rebuilds on *config* change; state is not config.
+  if (reason === 'linkDetail' || reason === 'linkState') return;
   renderView();
 }
 
