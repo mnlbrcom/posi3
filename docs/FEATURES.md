@@ -3961,3 +3961,31 @@ So the message says `nav on 8000`, not `NavigatorDriver on 8000`. The type is th
 them and says nothing about which one to open.
 
 **247 tests pass.**
+
+---
+
+## 2026-08-05 — The message, laid out
+
+> "so msg should be layed out as follows: Port mismatch: this connection sends to port 6000, disguise
+> ScreenReciever "name" has these drivers: "name" on 8000, "name"r on 7999," / "dont show other
+> drivers besides NavigatorDriver type for now" / "what i ment with name is the discription"
+
+    Port mismatch: this connection sends to port 6000, disguise ScreenPositionReceiver "posi3"
+    has these drivers: "nav" on 8000, "testdr" on 7999.
+
+    ID mismatch: this connection sends id 3, disguise ScreenPositionReceiver "posi3" driver
+    "nav" on 8000 has these axis ids: 10, 1.
+
+Each states what posi3 does, then what disguise has, with every name quoted so it reads as a name and
+not as prose. The other branches follow the same shape — `Split across receivers:`, `Not engaged:`,
+`Everything matches:`.
+
+**Only Navigator drivers appear.** The session also holds a `PosiStageNetDriver` on 56565, which this
+bridge could never feed — listing it invites setting a port that can never work.
+
+**`description` is the name, everywhere.** A driver has no `name` attribute at all; `description` is
+what the operator typed and what Designer shows. A receiver has both, and they agreed on the session
+measured — but `description` leads there too, because if they ever diverge the typed one is the one
+meant.
+
+**247 tests pass.**

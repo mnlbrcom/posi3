@@ -435,26 +435,25 @@ function createApi(ctx) {
       const allPorts = [...new Set(receivers.flatMap((r) => navDrivers(r).map((d) => Number(d.port))))];
       const allIds = [...new Set(receivers.flatMap((r) => (r.axes || []).map((a) => String(a.id))))];
 
-      /** "8000", "8000 and 7999", "8000, 7999 and 6000". */
-      const list = (xs) => (xs.length < 2
-        ? String(xs[0] ?? '')
-        : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+      /** The operator's own name, quoted, so it reads as a name and not as prose. */
+      const q = (name, fallback) => `"${name || fallback}"`;
 
       /**
        * Every Navigator driver a receiver has, not merely its first.
        *
        * Naming one of three read as though it were the only one, which is
-       * exactly the wrong impression when the port you want may be on another.
+       * exactly the wrong impression when the port you want is on another. Each
+       * is named as the operator named it — the type is the same for all of
+       * them and says nothing about which one to open.
        */
       const describeNav = (r) => {
         const ds = navDrivers(r);
-        if (!ds.length) return `${label(r)} has no Navigator driver`;
-        // The operator's own name for each, which is what they will be looking
-        // at in Designer — the type is the same for all of them and says
-        // nothing about which one to open.
-        const named = ds.map((d) => `${d.name || d.type} on ${d.port}`);
-        return `${label(r)} has ${ds.length > 1 ? 'Navigator drivers' : 'a Navigator driver'} ` +
-          `${list(named)}`;
+        if (!ds.length) {
+          return `disguise ScreenPositionReceiver ${q(r.name, r.path)} has no Navigator driver`;
+        }
+        return `disguise ScreenPositionReceiver ${q(r.name, r.path)} has ` +
+          `${ds.length > 1 ? 'these drivers' : 'this driver'}: ` +
+          ds.map((d) => `${q(d.name, d.type)} on ${d.port}`).join(', ');
       };
 
       const idExists = allIds.includes(String(dest.devid));
@@ -466,23 +465,29 @@ function createApi(ctx) {
         verdict = `${dest.host} has a Designer session, but no position receiver in it. ` +
           'Add one, with a Navigator driver and an axis inside.';
       } else if (!portExists) {
-        verdict = `No port match — this connection sends to ${dest.port}. ` +
+        verdict = `Port mismatch: this connection sends to port ${dest.port}, ` +
           `${receivers.map(describeNav).join('; ')}.`;
       } else if (!idExists) {
+        // Named against the driver on our port: that is the object whose axes
+        // these are, and the one to open to add another.
         const home = portOnly[0];
+        const drv = navDrivers(home).find((d) => Number(d.port) === dest.port);
         const ids = (home.axes || []).map((a) => a.id);
-        verdict = `ID mismatch — this connection sends id ${dest.devid}, and ${label(home)} has ` +
-          (ids.length ? `axis ${ids.length > 1 ? 'ids' : 'id'} ${list(ids)}` : 'no axes at all') + '.';
+        verdict = `ID mismatch: this connection sends id ${dest.devid}, ` +
+          `disguise ScreenPositionReceiver ${q(home.name, home.path)} driver ` +
+          `${q(drv && drv.name, 'NavigatorDriver')} on ${dest.port} has ` +
+          (ids.length ? `these axis ids: ${ids.join(', ')}` : 'no axes at all') + '.';
       } else if (!both) {
-        verdict = `Port ${dest.port} and axis id ${dest.devid} are in different receivers ` +
-          `(${portOnly.map(label).join(', ')} and ${axisOnly.map(label).join(', ')}) — ` +
-          'they have to be in the same one.';
+        verdict = `Split across receivers: port ${dest.port} is on ` +
+          `${portOnly.map((r) => q(r.name, r.path)).join(', ')} and axis id ${dest.devid} is on ` +
+          `${axisOnly.map((r) => q(r.name, r.path)).join(', ')} — they have to be in the same one.`;
       } else if (!both.engaged) {
-        verdict = `Port ${dest.port} and axis id ${dest.devid} both match on ${label(both)}, ` +
-          'but Designer reports the receiver as not engaged.';
+        verdict = `Not engaged: port ${dest.port} and axis id ${dest.devid} both match on ` +
+          `disguise ScreenPositionReceiver ${q(both.name, both.path)}, but Designer reports it ` +
+          'as not engaged.';
       } else {
-        verdict = `${label(both)} is engaged on port ${dest.port}, with an axis for id ` +
-          `${dest.devid}. Everything matches.`;
+        verdict = `Everything matches: disguise ScreenPositionReceiver ${q(both.name, both.path)} ` +
+          `is engaged on port ${dest.port}, with an axis for id ${dest.devid}.`;
         level = 'info';
       }
 
