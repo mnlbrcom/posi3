@@ -4446,3 +4446,50 @@ alternative was the same reasoning written twice — the fault this codebase has
 than any other.
 
 **261 tests pass.**
+
+---
+
+## 2026-08-05 — An indicator that keeps up with the world
+
+> "i know changed the id in disguise to 1 but the disguise 1 still says mismatch … This is a structual
+> desgin flaw we need to tackle." / "if we dont pull from disguise, thats fine, but the live update
+> atleast once every sec, should check for offline, once offline becomes true we then also check for
+> connected and mismatch, if all is back up running and receiving, we then go back to just check for
+> offline / disconnect."
+
+A structural flaw, correctly named: the disguise answer was taken **once** and then presented as live
+state, so a rig that had been fixed in Designer went on reading `mismatch` while the shaft plainly
+drove the screen.
+
+**The hard constraint, stated plainly:** posi3 cannot know live what disguise is doing. UDP says
+nothing back, and the Python API is the only other channel — and disguise's documentation forbids
+polling it. So the answer is not "ask more often"; it is "ask when something has changed".
+
+### The state machine
+
+**The network side is evaluated on every tick,** because it costs nothing — ICMP and a clock. Going
+offline, and coming back, are noticed at once.
+
+**A change of network state is what asks disguise.** Something that has just come back may have come
+back different. Debounced, so a flapping destination cannot turn a state machine into a poller.
+
+**A wrong answer is asked again on a backoff** — 8s, 15s, 30s, then a minute — and **a right one
+stops asking.** A destination sitting at `receiving` is never queried again, which is exactly the
+case the documentation protects: a show that is working is left alone. A destination that cannot
+answer at all keeps trying on the same backoff, because a Designer that was not up when the
+connection started is the ordinary case at a get-in.
+
+**An edit in posi3 invalidates the answer too.** A changed port, device id or address is the thing
+the answer was about, so the check is forgotten and the destination establishes itself again.
+
+Proven end to end, with no clicking and without touching Designer — the device id changed in posi3
+to one disguise does not have, then back:
+
+    start                    receiving
+    device id → 77           mismatch
+    device id → 1            receiving
+
+And the verdict is logged only when it changes, because this now runs on a timer and a state that has
+not moved is not news.
+
+**263 tests pass.**

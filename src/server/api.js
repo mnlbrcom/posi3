@@ -352,9 +352,45 @@ function createApi(ctx) {
    * asked so it is not asked twice.
    */
   const checkedOnce = new Set();
+  /** Pending re-checks by destination id, so one is in flight at a time. */
+  const recheckTimers = new Map();
 
-  const establishState = async (conn, dest, { auto = false } = {}) => {
-    if (auto) {
+  /**
+   * A wrong answer is worth asking again; a right one is not.
+   *
+   * The check was a one-shot, so an operator who fixed the axis id in Designer
+   * watched posi3 go on saying `mismatch` while the shaft plainly drove the
+   * screen. A cached result presented as live state is the flaw — an indicator
+   * has to be about now.
+   *
+   * It cannot be live: UDP says nothing back, and the Python API is the only
+   * other channel and must not be polled. So the asymmetry — **while the state
+   * is wrong, ask again on a backoff; the moment it is right, stop asking.** A
+   * healthy destination is never queried again, which is the case disguise's
+   * documentation is protecting: a show that is working is left alone. A broken
+   * one is worth the handful of calls it takes to notice it was fixed.
+   */
+  const RECHECK_MS = [8000, 15000, 30000, 60000];
+
+  const scheduleRecheck = (conn, dest, attempt = 0) => {
+    clearTimeout(recheckTimers.get(dest.id));
+    const wait = RECHECK_MS[Math.min(attempt, RECHECK_MS.length - 1)];
+    const timer = setTimeout(async () => {
+      recheckTimers.delete(dest.id);
+      // Only while it is still running and still configured this way.
+      const live = store.find(conn.id);
+      const still = live && (live.destinations || []).find((d) => d.id === dest.id);
+      if (!still || still.enabled === false) return;
+      if (!manager.has(conn.id) || !manager.get(conn.id).running) return;
+      await establishState(live, still, { auto: true, recheck: attempt + 1 })
+        .catch(() => { /* silent by design */ });
+    }, wait);
+    timer.unref?.();
+    recheckTimers.set(dest.id, timer);
+  };
+
+  const establishState = async (conn, dest, { auto = false, recheck = 0 } = {}) => {
+    if (auto && !recheck) {
       if (checkedOnce.has(dest.id)) return null;
       checkedOnce.add(dest.id);
     }
@@ -371,6 +407,11 @@ function createApi(ctx) {
         appLog(conn.id, `${dest.host}: ${err.message}`, 'warn');
         throw err;
       }
+      // No answer is not an answer: the network's verdict stands and nothing is
+      // recorded. Worth asking again, though — a Designer that was not up when
+      // the connection started is the ordinary case at a get-in — on the same
+      // backoff, which reaches a minute and stays there.
+      scheduleRecheck(conn, dest, recheck);
       return null;
     }
 
@@ -443,8 +484,19 @@ function createApi(ctx) {
       level = 'info';
     }
 
-    appLog(conn.id, verdict, level);
-    manager.disguiseChecks.set(dest.id, { matches: !!both, at: Date.now() });
+    // Said once per state, not once per check: a re-check that finds the same
+    // thing has nothing to add, and this runs on a timer.
+    const previous = manager.disguiseChecks.get(dest.id);
+    if (!previous || previous.verdict !== verdict) appLog(conn.id, verdict, level);
+    manager.disguiseChecks.set(dest.id, { matches: !!both, at: Date.now(), verdict });
+
+    // Wrong: ask again, further off each time. Right: stop.
+    if (both) {
+      clearTimeout(recheckTimers.get(dest.id));
+      recheckTimers.delete(dest.id);
+    } else {
+      scheduleRecheck(conn, dest, recheck);
+    }
     return { receivers, ports: allPorts, ids: allIds, matches: !!both, verdict };
   };
 
@@ -454,6 +506,33 @@ function createApi(ctx) {
    * Staggered, so a fan-out to one machine does not arrive as a burst, and
    * delayed so the link is up first. Failures are silent — see `establishState`.
    */
+  /**
+   * A destination that has just changed network state asks disguise again.
+   *
+   * The state machine, in full: the network side is evaluated every tick, which
+   * costs nothing — a destination going offline or coming back is noticed at
+   * once, from ICMP. Only a *change* triggers a question to disguise, because
+   * something that has just come back may have come back different. A
+   * destination sitting healthily at `receiving` is never queried again, which
+   * is the case disguise's documentation protects.
+   *
+   * Debounced, so a flapping destination cannot turn a state machine into a
+   * poller.
+   */
+  const lastAutoAsk = new Map();
+  const AUTO_ASK_GAP_MS = 8000;
+
+  manager.onDestinationStateChange = (connId, dest) => {
+    const conn = store.find(connId);
+    if (!conn) return;
+    const live = (conn.destinations || []).find((d) => d.id === dest.id);
+    if (!live || live.enabled === false) return;
+    const last = lastAutoAsk.get(dest.id) || 0;
+    if (Date.now() - last < AUTO_ASK_GAP_MS) return;
+    lastAutoAsk.set(dest.id, Date.now());
+    establishState(conn, live, { auto: true, recheck: 1 }).catch(() => { /* silent */ });
+  };
+
   const establishAll = (conn) => {
     let delay = 1500;
     for (const dest of conn.destinations || []) {
@@ -596,7 +675,17 @@ function createApi(ctx) {
         if (edits.length) userLog(saved.id, `edited "${saved.name}": ${edits.join(' · ')}`);
       }
 
+      // An edit can invalidate what disguise told us — a changed port or device
+      // id is exactly the thing the answer was about. Forget it and let the
+      // destination establish itself again, the same as it does on a start.
+      for (const d of saved.destinations || []) {
+        const before = (was && (was.destinations || []).find((x) => x.id === d.id)) || null;
+        if (before && before.port === d.port && before.devid === d.devid && before.host === d.host) continue;
+        manager.disguiseChecks.delete(d.id);
+        checkedOnce.delete(d.id);
+      }
       ctx.syncLink(saved);
+      if (manager.has(saved.id) && manager.get(saved.id).running) establishAll(saved);
       return announce(saved);
     },
 

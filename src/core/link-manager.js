@@ -50,6 +50,21 @@ class LinkManager extends EventEmitter {
      * nothing, which is what a laptop at the far end looks like.
      */
     this.disguiseChecks = new Map();
+
+    /**
+     * The network state each destination was last seen in, by destination id.
+     *
+     * Evaluated on every tick, which costs nothing — it is ICMP and a clock. A
+     * *change* is the signal to ask disguise again, and the only signal that
+     * does not involve polling it: something that has just come back may have
+     * come back different, and something that has just gone is worth knowing
+     * about at once. A destination sitting healthily at `receiving` is never
+     * queried, which is the case disguise's documentation protects.
+     */
+    this._lastDestHealth = new Map();
+
+    /** Set by the host: (connectionId, destination, health) => void. */
+    this.onDestinationStateChange = null;
     /**
      * Log delivery must not depend on anything streaming.
      *
@@ -207,7 +222,9 @@ class LinkManager extends EventEmitter {
     for (const link of this._links.values()) {
       if (!link.running) continue;
 
-      const t = this.applyDisguiseChecks(link.telemetry());
+      const raw = link.telemetry();
+      this._watchDestinationHealth(link.id, raw);
+      const t = this.applyDisguiseChecks(raw);
       const rate = this._rates.get(link.id);
       if (rate) {
         // Counters, not deltas: the oldest sample still inside the window and
@@ -282,6 +299,26 @@ class LinkManager extends EventEmitter {
       if (d.health === 'connected') d.health = check.matches ? 'receiving' : 'mismatch';
     }
     return t;
+  }
+
+  /**
+   * Notice a destination changing network state, and say so once.
+   *
+   * `connected` and `offline` are the two the network can tell us apart without
+   * asking anything. Whichever way it moves, what disguise is doing may have
+   * moved with it — so this is where the check is triggered, rather than on a
+   * timer that would be polling by another name.
+   */
+  _watchDestinationHealth(id, t) {
+    for (const d of (t && t.destinations) || []) {
+      // Before the disguise answer is folded in, so a `receiving` that is really
+      // a confirmed `connected` does not read as a change of its own.
+      const now = d.health === 'receiving' || d.health === 'mismatch' ? 'connected' : d.health;
+      const before = this._lastDestHealth.get(d.id);
+      this._lastDestHealth.set(d.id, now);
+      if (before === undefined || before === now) continue;
+      if (this.onDestinationStateChange) this.onDestinationStateChange(id, d, now);
+    }
   }
 
   /** Aggregate for the header bar. */

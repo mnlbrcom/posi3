@@ -437,13 +437,69 @@ test('a destination establishes its own state when its link starts', async (t) =
   // be polled, so a check is a single call when a connection comes up.
   assert.match(src, /if \(checkedOnce\.has\(dest\.id\)\) return null;/);
   assert.match(src, /checkedOnce\.add\(dest\.id\);/);
+  // The once-per-process guard applies to the first check, not to a re-check:
+  // a re-check is the mechanism by which a fixed rig is noticed.
+  assert.match(src, /if \(auto && !recheck\) \{/);
 
   // A destination that cannot answer says nothing about itself, so no check is
   // recorded and the network's verdict stands — and the operator is not told
   // that their laptop is not running Designer.
-  assert.match(src, /if \(!auto\) \{[\s\S]{0,200}throw err;[\s\S]{0,40}\}\s*\n\s*return null;/,
+  assert.match(src, /if \(!auto\) \{[\s\S]{0,200}throw err;\s*\n\s*\}/,
     'an automatic check fails silently');
 
   // Staggered, so a fan-out to one machine is not a burst.
   assert.match(src, /delay \+= 400;/);
+});
+
+test('a wrong answer is asked again; a right one is not', async (t) => {
+  // The check was a one-shot, so an operator who fixed the axis id in Designer
+  // watched posi3 go on saying `mismatch` while the shaft plainly drove the
+  // screen. A cached result presented as live state is the flaw.
+  //
+  // It cannot be live — UDP says nothing back, and the Python API must not be
+  // polled — so the asymmetry: ask again while it is wrong, stop when it is
+  // right. A working show is never queried; a broken one is worth the calls it
+  // takes to notice it was fixed.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+
+  assert.match(src, /const RECHECK_MS = \[8000, 15000, 30000, 60000\];/,
+    'a backoff that reaches a minute and stays there');
+  assert.match(src, /if \(both\) \{\s*\n\s*clearTimeout\(recheckTimers\.get\(dest\.id\)\);/,
+    'a match cancels the re-check');
+  assert.match(src, /\} else \{\s*\n\s*scheduleRecheck\(conn, dest, recheck\);/,
+    'and anything else schedules another');
+
+  // It stops when the connection stops, or the destination is disabled or gone.
+  assert.match(src, /if \(!still \|\| still\.enabled === false\) return;/);
+  assert.match(src, /if \(!manager\.has\(conn\.id\) \|\| !manager\.get\(conn\.id\)\.running\) return;/,
+    'a stopped connection is not queried on a timer');
+
+  // And a re-check that finds the same thing says nothing: this runs on a
+  // timer, and the log is not where a state that has not changed belongs.
+  assert.match(src, /if \(!previous \|\| previous\.verdict !== verdict\) appLog\(conn\.id, verdict, level\);/);
+});
+
+test('the network state is watched continuously, and only a change asks disguise', () => {
+  // The state machine: the network side costs nothing — ICMP and a clock — so it
+  // is evaluated on every tick and a destination going offline or coming back is
+  // noticed at once. Only a *change* triggers a question to disguise, because
+  // something that has just come back may have come back different. A
+  // destination sitting healthily at `receiving` is never queried again, which
+  // is the case disguise's documentation protects.
+  const manager = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
+
+  assert.match(manager, /_watchDestinationHealth\(id, t\) \{/);
+  assert.match(manager, /this\._watchDestinationHealth\(link\.id, raw\);\s*\n\s*const t = this\.applyDisguiseChecks\(raw\)/,
+    'watched before the disguise answer is folded in');
+  // Or a confirmed `connected` becoming `receiving` would read as a change of
+  // its own, and ask again about the answer that had just been applied.
+  assert.match(manager, /d\.health === 'receiving' \|\| d\.health === 'mismatch' \? 'connected' : d\.health/);
+  assert.match(manager, /if \(before === undefined \|\| before === now\) continue;/,
+    'and only a change is reported');
+
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  assert.match(api, /manager\.onDestinationStateChange = \(connId, dest\) => \{/);
+  assert.match(api, /if \(Date\.now\(\) - last < AUTO_ASK_GAP_MS\) return;/,
+    'debounced, so a flapping destination cannot turn a state machine into a poller');
 });
