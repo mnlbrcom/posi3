@@ -4379,3 +4379,28 @@ filter lives in one method both go through. Verified by removing the snapshot's 
 with *"snapshot said connected, the stream said receiving — for the same destination"*.
 
 **260 tests pass.**
+
+---
+
+## 2026-08-05 — A yellow line that duplicated a tile
+
+> "In the Stream tile on Encoder 2 we already have Faults, it shows the same number. I never asked for
+> a yellow sub text below. That shows details there, in these dashboard cards everything goes in the
+> tiles we have. The yellow text should never have made it there."
+
+Gone. `card-faults` sat under the three columns and restated the Stream tile's Faults figure in
+words — *"1606 send failures"* against a tile already reading 1606 — in warning yellow, at the bottom
+of a card whose whole design is that every figure lives in a tile.
+
+The card is now `card-head`, `card-detail`, `encoder-cols`, and nothing else. The number stays where
+it belongs:
+
+    Stream tile · Faults   113
+
+Its CSS went with it.
+
+It is the same class as the duplicate-connection feature, the raw command box, the "Go to" row and
+the "Derived" velocity policy: something added without being asked for, that then had to be found and
+removed. The count of those in this codebase is the argument for not adding them.
+
+**260 tests pass**, every view clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and expanded.
