@@ -4251,3 +4251,34 @@ had it too, with a Controls button two inches to its right. No card name is a bu
 pointer and hover underline that went with it are gone as well.
 
 **259 tests pass.**
+
+---
+
+## 2026-08-05 — One message, and the address in it once
+
+> "i dont need muliple status msg. One is enough that gives the state. And will log." / "also max
+> mention of the ip once per msg"
+
+    director (10.10.10.5:6000): no answer at all — switched off, unplugged, or not on this
+    subnet. Sends paused, retrying every 5s — the encoder connection stays up.
+
+That is the whole of it. **One message per state**, and nothing further while the state holds — the
+periodic *"still not answering after 17s"*, then *"after 81s"*, added a line every time without
+adding a fact. How long it has been down is a figure, and figures belong on the dashboard rather than
+in a stream. The backoff machinery that spaced those repeats is gone with them.
+
+The one exception is a **cause that changes**: a host that stops answering entirely and later starts
+refusing the port is in a different state, and that is worth a line.
+
+**And the address appears once.** `explainSendError` named the host as well as the caller, so
+"director (10.10.10.5:6000): no answer from 10.10.10.5 at all" said it twice in one sentence. It
+describes the condition now — *"no answer at all"*, *"the machine answered, but nothing is listening
+on that port"* — and the caller says whose condition it is.
+
+Measured across two minutes with the destination switched off, after a stop and a start:
+
+    lines about director: 1
+
+It was fourteen when this began.
+
+**258 tests pass.**

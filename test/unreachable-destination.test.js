@@ -72,7 +72,7 @@ test('a lone success between failures is not recovery', async (t) => {
   assert.equal(claims.length, 0, `no recovery should be claimed, got: ${claims.join(' | ')}`);
 });
 
-test('the warning backoff survives that flapping', async (t) => {
+test('flapping successes do not reopen the announcement', async (t) => {
   const { sink, warnings } = await linkWithSink(t);
 
   // Already failing for longer than the give-up window, so the first error in
@@ -247,10 +247,10 @@ test('a refused port is diagnosed, not just reported', async (t) => {
   sink.onError(refused);
 
   const said = warnings.join(' ');
-  assert.match(said, /answered, but nothing is listening on UDP \d+/,
+  assert.match(said, /answered, but nothing is listening on that port/,
     'it must say the machine answered, and on which port');
   assert.match(said, /Navigator driver/, 'and name what is usually not running');
-  assert.match(said, /defaults to 8000/, 'and that the port field defaults elsewhere');
+  assert.match(said, /defaults it to 8000/, 'and that the port field defaults elsewhere');
   assert.doesNotMatch(said, /Cannot reach/, 'because it was reached');
   // Neither the running total nor the errno: one is obvious from the fact that
   // a destination is not receiving, the other is the app's own vocabulary and
@@ -266,7 +266,7 @@ test('a machine that is really absent still says so', async (t) => {
   sink.failingSince = Date.now() - 5000;
   sink.onError(down);
 
-  assert.match(warnings.join(' '), /no answer from [\d.]+ at all — switched off, unplugged/,
+  assert.match(warnings.join(' '), /no answer at all — switched off, unplugged/,
     'the opposite case must stay distinguishable from a refused port');
 });
 
@@ -337,7 +337,7 @@ test('going offline is said once, with its cause', async (t) => {
 
   const offlineLines = warnings.filter((w) => /Sends paused/.test(w));
   assert.equal(offlineLines.length, 1, 'once, not twice');
-  assert.match(offlineLines[0], /no answer from [\d.]+ at all/, 'with the cause in it');
+  assert.match(offlineLines[0], /no answer at all/, 'with the cause in it');
   assert.match(offlineLines[0], /retrying every 5s/, 'and what happens next');
   assert.deepEqual(warnings.filter((w) => /is not answering —/.test(w)), [],
     'and not also as a separate line saying the same thing');
@@ -369,32 +369,8 @@ test('going offline says one thing, and the banner and the log say the same thin
   assert.equal(bannered.length, 1, 'one banner for the outage');
   assert.equal(logged.length, 1, 'and one log line');
   assert.equal(bannered[0], logged[0], 'and they are the same sentence');
-  assert.match(bannered[0], /no answer from [\d.]+ at all/);
+  assert.match(bannered[0], /no answer at all/);
   assert.match(bannered[0], /retrying every 5s/);
-});
-
-test('a continuing outage says how long, not how often it retries', async (t) => {
-  // "retrying every 5s" was repeated on a backoff that fires at 15s, 60s, 240s —
-  // so the message described a cadence that did not match when it appeared. The
-  // retry interval is in the first message and has not changed; what is new is
-  // how long this has been going on.
-  const { link, sink } = await linkWithSink(t);
-  const warns = [];
-  link.on('log', (e) => { if (e.level === 'warn') warns.push(e.text); });
-
-  const down = new Error('send EHOSTUNREACH');
-  down.code = 'EHOSTUNREACH';
-  sink.failingSince = Date.now() - 40000;
-  sink.onError(down);              // goes offline, one message
-  warns.length = 0;
-
-  sink.nextWarnAt = 0;             // the backoff comes due
-  sink.onError(down);
-
-  assert.equal(warns.length, 1);
-  assert.match(warns[0], /still not answering after \d+s/);
-  assert.doesNotMatch(warns[0], /retrying every/,
-    'the cadence is not restated on a schedule that does not match it');
 });
 
 test('an outage is announced once, however many times sending is retried', async (t) => {
@@ -426,11 +402,11 @@ test('an outage is announced once, however many times sending is retried', async
   assert.equal(said.length, 2, 'a new outage is announced');
 });
 
-test('an outage does not get younger, and its cause is not restated', async (t) => {
-  // "still not answering after 17s", then a minute later "after 7s" — the
-  // elapsed time was measured from `failingSince`, which restarts every time a
-  // trial resumes sending and fails again. And the cause was repeated in full
-  // each time, which is the first message over again.
+test('a destination that stays down stays quiet, unless the reason changes', async (t) => {
+  // One message gives the state. "still not answering after 17s", then "after
+  // 81s", added a line every time without adding a fact — and the elapsed time
+  // came from the current failure run, so it went backwards when a trial
+  // resumed sending and failed again.
   const { link, sink } = await linkWithSink(t);
   const warns = [];
   link.on('log', (e) => { if (e.level === 'warn') warns.push(e.text); });
@@ -438,29 +414,23 @@ test('an outage does not get younger, and its cause is not restated', async (t) 
   const down = new Error('send EHOSTUNREACH');
   down.code = 'EHOSTUNREACH';
   sink.failingSince = Date.now() - 5000;
-  sink.onError(down);                       // outage begins, announced once
-  sink.outageSince = Date.now() - 90000;    // an outage an hour into a show
-  warns.length = 0;
-
-  // A trial resumed and failed again, so the current run is seconds old.
-  sink.offline = false;
-  sink.failingSince = Date.now() - 3000;
-  sink.nextWarnAt = 0;
   sink.onError(down);
-
-  const followUp = warns.find((w) => /still not answering/.test(w));
-  assert.ok(followUp, 'the outage is restated on the backoff');
-  assert.match(followUp, /after 90s/, 'measured from when the outage began');
-  assert.doesNotMatch(followUp, /switched off, unplugged/,
-    'without repeating a cause that has not changed');
-
-  // A cause that does change is worth saying.
+  assert.equal(warns.length, 1, 'the outage is stated once');
   warns.length = 0;
+
+  // It keeps failing, through several resume-and-fail cycles.
+  for (let i = 0; i < 5; i++) {
+    sink.offline = false;
+    sink.failingSince = Date.now() - 5000;
+    sink.onError(down);
+  }
+  assert.deepEqual(warns, [], 'and says nothing more while nothing has changed');
+
+  // A different reason is a different state, and that is worth a line.
   const refused = new Error('recvmsg ECONNREFUSED');
   refused.code = 'ECONNREFUSED';
-  sink.offline = true;
-  sink.nextWarnAt = 0;
   sink.onError(refused);
-  assert.match(warns.join(' '), /Now: .*nothing is listening/,
-    'a host that starts refusing the port instead is news');
+  assert.equal(warns.length, 1);
+  assert.match(warns[0], /nothing is listening on that port/,
+    'a host that starts refusing the port instead of not answering is news');
 });
