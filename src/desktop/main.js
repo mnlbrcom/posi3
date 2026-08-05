@@ -272,6 +272,13 @@ function createWindow() {
       mainWindow.webContents.once('did-finish-load',
         () => mainWindow.webContents.setZoomFactor(factor));
     }
+  } else {
+    // Electron persists the zoom level per origin, so a level set before the
+    // limits existed — or by leaning on Cmd+- — would come back out of range
+    // on the next launch. Clamped once the page is up. The --zoom test hook
+    // above stays unclamped on purpose: zoomcheck proves the titlebar
+    // survives zooms the menu no longer offers.
+    mainWindow.webContents.once('did-finish-load', () => stepZoom(0));
   }
 
   // Nothing here should open a window or navigate off the local UI.
@@ -379,6 +386,17 @@ function refreshTrayMenu() {
 }
 
 /** The token is required off-loopback, so the copied link has to carry it. */
+/** Three steps either side of Cmd+0. Each Electron zoom level is ×1.2. */
+const ZOOM_LEVEL_MIN = -3;
+const ZOOM_LEVEL_MAX = 3;
+
+function stepZoom(direction) {
+  if (!mainWindow) return;
+  const wc = mainWindow.webContents;
+  const next = Math.round(wc.getZoomLevel()) + direction;
+  wc.setZoomLevel(Math.max(ZOOM_LEVEL_MIN, Math.min(ZOOM_LEVEL_MAX, next)));
+}
+
 function webUrlWithToken() {
   return svc.token ? `${svc.url}/?token=${encodeURIComponent(svc.token)}` : svc.url;
 }
@@ -425,7 +443,14 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
-        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+        // Clamped, not the stock roles: three steps either side of 100%
+        // (each step is ×1.2, so 58%–173%). Past that the UI stops being
+        // usable long before it stops being zoomable, and an operator who
+        // leaned on Cmd+- found a window they could not read their way back
+        // out of.
+        { role: 'resetZoom' },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', click: () => stepZoom(1) },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => stepZoom(-1) },
         { type: 'separator' }, { role: 'togglefullscreen' }
       ]
     },
