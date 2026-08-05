@@ -4282,3 +4282,57 @@ Measured across two minutes with the destination switched off, after a stop and 
 It was fourteen when this began.
 
 **258 tests pass.**
+
+---
+
+## 2026-08-05 — Why fixes kept breaking things elsewhere
+
+> "it also feels like we are fixing things at one end, and it breaks things somewhere else, how can we
+> avoid that?"
+
+True, and the escapes in this session fall into four kinds rather than being random.
+
+**1. One fact computed in two places.** Every time, the two drifted.
+
+- the banner text and the log line for the same outage, built separately — the banner said something
+  no log line ever carried
+- `linkSnapshot` and the telemetry stream, filtered in one and not the other, so two endpoints gave
+  different answers about the same destination
+- `drivers[0]` and then `portOnly[0]`: describing the first of a list as though it were the only one,
+  the same fault twice, one level apart
+
+*The measure:* where two things must agree, compute once and call it from both — `applyDisguiseChecks`
+is now a method precisely because it was two copies.
+
+**2. A constant that was secretly a function of another.** `RATE_WINDOW_MS` went from ten seconds to
+one, and the guard `span >= 1` — written when the window was ten — silently made every link report
+0 Hz while sending a hundred packets a second. Nothing failed; the readout just lied.
+
+*The measure:* derive the dependent value (`RATE_WINDOW_MS / 2`), never restate it.
+
+**3. Tests pinned to phrasing rather than to the fact.** Several failed because a message got
+*better*: `/Cannot reach gone/`, `/defaults to 8000/`, `/these axis ids:/`. That trains a reflex of
+fixing the test to match, which is exactly how a real regression gets waved through.
+
+*The measure:* assert the fact — the destination is named, a cause is given — not the sentence.
+
+**4. A seam nobody checked.** `web-api-surface` verified **shim → server**, so `disguiseInspect` was
+known to exist. Nothing verified **views → shim**, and `inspect` sat under `mapping` while the card
+called `window.d3d.disguise.inspect`. It threw the first time a current Designer was there to answer
+it — which is to say at a venue, after the thing it diagnoses had gone wrong.
+
+*The measure, added here:* every `window.d3d.<namespace>.<method>()` in every view must exist in the
+shim, namespace **and** method. Verified by putting `inspect` back under `mapping`, which fails it.
+
+### The one that was not a code problem
+
+The false recoveries took three attempts because each fix moved the same flawed evidence somewhere
+else — a quiet probe, then a quiet probe plus a quiet period, then a quiet trial. All three were
+reasoning about ICMP rather than measuring it. What settled it was watching a switched-off machine
+for ninety seconds and finding nine consecutive silent seconds at full send rate.
+
+*The measure:* when the far end is someone else's system, measure it before designing against it. The
+same applies to the Designer object model, which was three wrong guesses (`state.devices` iterable, a
+driver `name`, one driver per receiver) until it was read off a live session.
+
+**259 tests pass.**
