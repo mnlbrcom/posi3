@@ -503,3 +503,32 @@ test('the network state is watched continuously, and only a change asks disguise
   assert.match(api, /if \(Date\.now\(\) - last < AUTO_ASK_GAP_MS\) return;/,
     'debounced, so a flapping destination cannot turn a state machine into a poller');
 });
+
+test('a destination that cannot answer is not asked forever', () => {
+  // A Designer too old for the Python API will never grow one while running,
+  // and a destination that is not disguise at all — a laptop, a lighting desk —
+  // will never answer however patiently it is asked. Retrying those on a
+  // minute's backoff for the length of a show is a poller with extra steps
+  // aimed at a machine with nothing to say.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+
+  // No API: said once, then never asked again by anything automatic.
+  assert.match(src, /const noApi = new Set\(\);/);
+  assert.match(src, /if \(err\.code === 'EDISGUISE_NO_API'\) \{[\s\S]{0,400}return null;\s*\n\s*\}/,
+    'a version with no API is final, and is not rescheduled');
+  assert.match(src, /if \(auto && noApi\.has\(dest\.id\)\) return null;/,
+    'and nothing automatic asks it again');
+  assert.match(src, /if \(noApi\.has\(dest\.id\)\) return;/,
+    'not even a change of network state, which does not give software an API');
+
+  // Anything else: a few tries, then stop.
+  assert.match(src, /const UNANSWERED_ATTEMPTS = 4;/);
+  assert.match(src, /if \(recheck < UNANSWERED_ATTEMPTS\) scheduleRecheck\(conn, dest, recheck\);/,
+    'bounded, so the routine cannot get stuck');
+
+  // Giving up is not permanent: a state change asks again, and a Designer
+  // starting up is exactly that — its port stops refusing when the driver binds.
+  assert.match(src, /manager\.onDestinationStateChange = /);
+  // And a changed address may be a different machine, which may have an API.
+  assert.match(src, /noApi\.delete\(d\.id\);/);
+});

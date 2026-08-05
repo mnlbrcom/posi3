@@ -372,6 +372,24 @@ function createApi(ctx) {
    */
   const RECHECK_MS = [8000, 15000, 30000, 60000];
 
+  /**
+   * How many times a destination that will not answer is asked before the
+   * routine stops asking.
+   *
+   * Because it must stop. A Designer too old to have the Python API will never
+   * grow one while it is running, and a destination that is not disguise at all
+   * — a laptop, a lighting desk — will never answer however patiently it is
+   * asked. Retrying those on a minute's backoff for the length of a show is a
+   * poller with extra steps, aimed at a machine that has nothing to say.
+   *
+   * Giving up is safe because it is not permanent: a change of network state
+   * asks again, and a Designer starting up is exactly such a change — the port
+   * stops refusing the moment its driver binds.
+   */
+  const UNANSWERED_ATTEMPTS = 4;
+  /** Destinations whose software has no API at all: asked once, never again. */
+  const noApi = new Set();
+
   const scheduleRecheck = (conn, dest, attempt = 0) => {
     clearTimeout(recheckTimers.get(dest.id));
     const wait = RECHECK_MS[Math.min(attempt, RECHECK_MS.length - 1)];
@@ -394,6 +412,8 @@ function createApi(ctx) {
       if (checkedOnce.has(dest.id)) return null;
       checkedOnce.add(dest.id);
     }
+    // Nothing automatic ever asks a version that has no API to ask.
+    if (auto && noApi.has(dest.id)) return null;
 
     let receivers;
     try {
@@ -408,10 +428,22 @@ function createApi(ctx) {
         throw err;
       }
       // No answer is not an answer: the network's verdict stands and nothing is
-      // recorded. Worth asking again, though — a Designer that was not up when
-      // the connection started is the ordinary case at a get-in — on the same
-      // backoff, which reaches a minute and stays there.
-      scheduleRecheck(conn, dest, recheck);
+      // recorded.
+      //
+      // A version with no API is final — it will not grow one while running — so
+      // it is said once and never asked again. Anything else is worth a few more
+      // tries, because a Designer that was not up when the connection started is
+      // the ordinary case at a get-in. Bounded either way: a change of network
+      // state is what asks again, and a Designer starting is such a change.
+      if (err.code === 'EDISGUISE_NO_API') {
+        if (!noApi.has(dest.id)) {
+          noApi.add(dest.id);
+          appLog(conn.id, `${dest.name || dest.host}: ${err.message} ` +
+            'This destination will show the network state only.', 'warn');
+        }
+        return null;
+      }
+      if (recheck < UNANSWERED_ATTEMPTS) scheduleRecheck(conn, dest, recheck);
       return null;
     }
 
@@ -527,6 +559,10 @@ function createApi(ctx) {
     if (!conn) return;
     const live = (conn.destinations || []).find((d) => d.id === dest.id);
     if (!live || live.enabled === false) return;
+    // A change of state is a fresh chance for a destination that had gone
+    // quiet: the attempt count starts again. Not for one with no API — that
+    // does not change because a cable moved.
+    if (noApi.has(dest.id)) return;
     const last = lastAutoAsk.get(dest.id) || 0;
     if (Date.now() - last < AUTO_ASK_GAP_MS) return;
     lastAutoAsk.set(dest.id, Date.now());
@@ -683,6 +719,9 @@ function createApi(ctx) {
         if (before && before.port === d.port && before.devid === d.devid && before.host === d.host) continue;
         manager.disguiseChecks.delete(d.id);
         checkedOnce.delete(d.id);
+        // A changed address may be a different machine, and a different machine
+        // may have an API.
+        noApi.delete(d.id);
       }
       ctx.syncLink(saved);
       if (manager.has(saved.id) && manager.get(saved.id).running) establishAll(saved);

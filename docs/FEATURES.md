@@ -4493,3 +4493,40 @@ And the verdict is logged only when it changes, because this now runs on a timer
 not moved is not news.
 
 **263 tests pass.**
+
+---
+
+## 2026-08-05 — The routine has to be able to stop
+
+> "make sure if we are running againt an older software there still might not be an api request
+> possible and that should be taken into account" / "so the routine doest get stuck"
+
+It would have. As written, a destination that could not answer was rescheduled on the backoff for
+ever — a poller with extra steps, aimed at a machine with nothing to say.
+
+Two ways not to answer, and they end differently:
+
+**No API at all** — a Designer that predates the Python endpoint, or something that is not Designer.
+That is final: software does not grow an API while it is running. Said once, then never asked again
+by anything automatic, including a change of network state, which does not give software an API.
+
+    disguise 1: No API call possible with the disguise version on 10.10.10.4 — it is serving
+    HTTP but has no /api/session/python/execute. … This destination will show the network
+    state only.
+
+**No answer** — Designer not started, machine down, or not disguise at all. Worth a few more tries,
+because a Designer that was not up when the connection started is the ordinary case at a get-in — but
+bounded at four, and then it stops.
+
+Stopping is safe because it is not permanent: **a change of network state asks again**, and a
+Designer starting up is exactly such a change — its port stops refusing the moment the driver binds.
+A changed address clears the no-API mark too, since a different machine may have one.
+
+Ninety seconds with `director` switched off and `US` a laptop, neither able to answer:
+
+    verdict lines logged     1        (the one destination that could answer)
+    final state              disguise 1 receiving · director offline · US connected
+
+No repetition, no accumulating traffic, and nothing stuck.
+
+**264 tests pass.**
