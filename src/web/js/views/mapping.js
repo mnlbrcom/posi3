@@ -245,23 +245,10 @@ function receiverCard(conn, dest) {
       verdict.className = `map-verdict ${r.matches ? 'ok' : 'warn'}`;
       clear(verdict);
       verdict.appendChild(el('div', { text: r.verdict }));
-      // What it found, so an operator can see which receiver is which rather
-      // than taking a single sentence on trust. A receiver holds drivers and
-      // axes, so both are listed under its name — the earlier version read the
-      // old flat shape and printed "undefined — posi3 on port undefined".
-      for (const rec of r.receivers) {
-        const drivers = (rec.drivers || [])
-          .map((d) => `${d.type} on ${d.port}` +
-            (d.multicastAddress ? ` (multicast ${d.multicastAddress})` : '') +
-            (d.ipFromFilter ? ` (from ${d.ipFromFilter})` : ''))
-          .join(', ') || 'no driver';
-        const axes = (rec.axes || []).map((a) => a.id).join(', ') || 'none';
-        // No engaged/receiving here: while anything mismatches, "not
-        // receiving" is a restatement of the mismatch. Where it is the only
-        // thing left, the verdict above says so.
-        verdict.appendChild(el('div', { class: 'hint' },
-          `${rec.name || rec.path}: ${drivers} · axis ids ${axes}`));
-      }
+      // No second list. The verdict already names the receiver, every Navigator
+      // driver it has and their ports — and, on an id mismatch, the axis ids —
+      // so a per-receiver line underneath printed the same drivers again. One
+      // statement, and it is the same one that goes into the log.
     } catch (err) {
       verdict.className = 'map-verdict err';
       setText(verdict, err.message);

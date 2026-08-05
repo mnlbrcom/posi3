@@ -214,9 +214,18 @@ test('while the port is wrong, the device id is not anyone’s next question', a
   assert.doesNotMatch(api, /problems\.join/,
     'the two are never joined into one sentence');
 
-  // Each names the object to go and open, rather than a bare number.
-  assert.match(api, /\$\{label\(r\)\}'s \$\{d\.type\} on port \$\{d\.port\}/);
-  assert.match(api, /axis ids \$\{ids\.join\(', '\)\}/);
+  // Every Navigator driver, by the operator's own name, not just the first:
+  // naming one of three read as though it were the only one.
+  assert.match(api, /const named = ds\.map\(\(d\) => `\$\{d\.name \|\| d\.type\} on \$\{d\.port\}`\)/,
+    'each driver is named, with its port');
+  assert.match(api, /axis \$\{ids\.length > 1 \? 'ids' : 'id'\} \$\{list\(ids\)\}/,
+    'and an id mismatch lists the ids that do exist');
+
+  // The driver type is part of the match, not decoration: this bridge speaks
+  // the Navigator format, and a session here also holds a PosiStageNetDriver.
+  assert.match(api, /const NAVIGATOR = 'NavigatorDriver';/);
+  assert.match(api, /navDrivers\(r\)\.some\(\(d\) => Number\(d\.port\) === dest\.port\)/,
+    'only a Navigator driver can satisfy the port');
 });
 
 test('an unusable API version says exactly that', () => {
@@ -227,15 +236,17 @@ test('an unusable API version says exactly that', () => {
   assert.match(src, /No API call possible with the disguise version on \$\{host\}/);
 });
 
-test('the detail line does not restate the mismatch as "not receiving"', () => {
-  // While anything mismatches, "not receiving" says nothing the verdict has not
-  // already said. Where it is the only thing left, the verdict says so instead.
+test('the answer is one statement, not a statement and a list of the same thing', () => {
+  // The verdict names the receiver, every Navigator driver it has and their
+  // ports, so a per-receiver line underneath printed the same drivers again —
+  // conspicuous once there were three of them.
   const view = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
-  // The emitted string itself, not the comment above it explaining why.
-  const block = view.slice(view.indexOf("class: 'hint' },", view.indexOf('for (const rec of r.receivers)')));
-  const emitted = block.slice(0, block.indexOf('));'));
-  assert.doesNotMatch(emitted, /receiving/, 'the per-receiver line stays to what was found');
-  assert.doesNotMatch(emitted, /engaged/);
-  assert.match(emitted, /axis ids/);
+  const handler = view.slice(view.indexOf('askBtn.onclick'));
+  const body = handler.slice(0, handler.indexOf('\n  };'));
+
+  assert.match(body, /verdict\.appendChild\(el\('div', \{ text: r\.verdict \}\)\)/,
+    'the verdict is shown');
+  assert.doesNotMatch(body, /for \(const rec of r\.receivers\)/,
+    'and nothing enumerates the receivers again underneath it');
 });

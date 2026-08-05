@@ -46,15 +46,17 @@ const DEFAULT_TIMEOUT_MS = 4000;
  *   state.devices                  a DeviceManager, not a list
  *     .devices                     the devices themselves
  *       ScreenPositionReceiver     name, path, uid, started, engaged, receiving
- *         .drivers[]               NavigatorDriver … each with a Port
+ *         .drivers[]               NavigatorDriver … Port, and `description`
+ *                                  for the name the operator gave it
  *         .axes[]                  ScreenPositionAxis … each with an id
  *
  * Which is also how you tell several of anything apart. A **receiver** has a
  * `name` and `path` the operator chose — "posi3",
  * `objects/screenpositionreceiver/posi3.apx` — and a `uid` that survives a
- * rename. A **driver** has no name of its own, so it is identified by the port
- * it listens on within its named receiver. An **axis** is identified by its
- * `id`, which is exactly what this bridge puts in every packet.
+ * rename. A **driver** has no `name` attribute, but it does have a
+ * `description`, which is the name typed into Designer and shown there: "nav",
+ * "testdr". An **axis** is identified by its `id`, which is exactly what this
+ * bridge puts in every packet.
  *
  * So a destination here — host, port, device id — joins to disguise as: on that
  * host, the receiver with a driver on that port, containing an axis with that
@@ -77,6 +79,10 @@ for d in devices:
         for drv in d.drivers:
             drivers.append({
                 'type': type(drv).__name__,
+                # No name attribute on a driver; description is what the
+                # operator typed and what Designer shows: nav, testdr.
+                'name': str(getattr(drv, 'description', '') or ''),
+                'path': str(getattr(drv, 'path', '') or ''),
                 'port': getattr(drv, 'Port', None),
                 'multicastAddress': str(getattr(drv, 'multicastAddress', '') or ''),
                 'ipFromFilter': str(getattr(drv, 'ipFromFilter', '') or ''),

@@ -415,32 +415,50 @@ function createApi(ctx) {
         throw err;
       }
 
-      // The join: on this host, a receiver with a driver on our port, holding
-      // an axis with our device id. Each half can match without the other, and
-      // they are different faults — a port mismatch is one field in disguise, a
-      // missing axis is a whole axis nobody created.
+      // The join: on this host, a receiver with a **Navigator** driver on our
+      // port, holding an axis with our device id.
+      //
+      // The driver type is part of the match, not decoration. This bridge sends
+      // `<devid>:<pos>,<vel>;` — the Navigator format — so only a NavigatorDriver
+      // can do anything with it. A session here also holds a PosiStageNetDriver
+      // on 56565, and matching on port alone would have called that a match if
+      // anyone pointed a connection at it.
+      const NAVIGATOR = 'NavigatorDriver';
       const label = (r) => r.name || r.path || 'a receiver';
-      const hasPort = (r) => (r.drivers || []).some((d) => Number(d.port) === dest.port);
+      const navDrivers = (r) => (r.drivers || []).filter((d) => d.type === NAVIGATOR);
+      const hasPort = (r) => navDrivers(r).some((d) => Number(d.port) === dest.port);
       const hasAxis = (r) => (r.axes || []).some((a) => String(a.id) === String(dest.devid));
 
       const both = receivers.find((r) => hasPort(r) && hasAxis(r)) || null;
       const portOnly = receivers.filter(hasPort);
       const axisOnly = receivers.filter(hasAxis);
-      const allPorts = [...new Set(receivers.flatMap((r) => (r.drivers || []).map((d) => Number(d.port))))];
+      const allPorts = [...new Set(receivers.flatMap((r) => navDrivers(r).map((d) => Number(d.port))))];
       const allIds = [...new Set(receivers.flatMap((r) => (r.axes || []).map((a) => String(a.id))))];
 
-      // One problem at a time, in the order they have to be fixed. While the
-      // port is wrong nothing arrives at all, so the device id cannot be
-      // anyone's next question — reporting both at once just gave an operator
-      // two things to hold when only one was actionable.
+      /** "8000", "8000 and 7999", "8000, 7999 and 6000". */
+      const list = (xs) => (xs.length < 2
+        ? String(xs[0] ?? '')
+        : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+      /**
+       * Every Navigator driver a receiver has, not merely its first.
+       *
+       * Naming one of three read as though it were the only one, which is
+       * exactly the wrong impression when the port you want may be on another.
+       */
+      const describeNav = (r) => {
+        const ds = navDrivers(r);
+        if (!ds.length) return `${label(r)} has no Navigator driver`;
+        // The operator's own name for each, which is what they will be looking
+        // at in Designer — the type is the same for all of them and says
+        // nothing about which one to open.
+        const named = ds.map((d) => `${d.name || d.type} on ${d.port}`);
+        return `${label(r)} has ${ds.length > 1 ? 'Navigator drivers' : 'a Navigator driver'} ` +
+          `${list(named)}`;
+      };
+
       const idExists = allIds.includes(String(dest.devid));
       const portExists = allPorts.includes(dest.port);
-
-      /** "posi3's NavigatorDriver on port 8000" — the object to go and open. */
-      const describeDriver = (r) => {
-        const d = (r.drivers || [])[0];
-        return d ? `${label(r)}'s ${d.type} on port ${d.port}` : `${label(r)} (no driver)`;
-      };
 
       let verdict;
       let level = 'warn';
@@ -448,25 +466,18 @@ function createApi(ctx) {
         verdict = `${dest.host} has a Designer session, but no position receiver in it. ` +
           'Add one, with a Navigator driver and an axis inside.';
       } else if (!portExists) {
-        verdict = `No port match — this connection sends to ${dest.port}, and ` +
-          receivers.map(describeDriver).join('; ') + '.';
+        verdict = `No port match — this connection sends to ${dest.port}. ` +
+          `${receivers.map(describeNav).join('; ')}.`;
       } else if (!idExists) {
-        // Only now, and named against the driver: that is the object whose axes
-        // these are, and the one to open to add another.
         const home = portOnly[0];
         const ids = (home.axes || []).map((a) => a.id);
-        verdict = `ID mismatch — this connection sends id ${dest.devid}, and ` +
-          `${describeDriver(home)} has ` +
-          (ids.length ? `axis ids ${ids.join(', ')}` : 'no axes at all') + '.';
+        verdict = `ID mismatch — this connection sends id ${dest.devid}, and ${label(home)} has ` +
+          (ids.length ? `axis ${ids.length > 1 ? 'ids' : 'id'} ${list(ids)}` : 'no axes at all') + '.';
       } else if (!both) {
         verdict = `Port ${dest.port} and axis id ${dest.devid} are in different receivers ` +
           `(${portOnly.map(label).join(', ')} and ${axisOnly.map(label).join(', ')}) — ` +
           'they have to be in the same one.';
       } else if (!both.engaged) {
-        // Port and id agree, so this is the only thing left that would stop it
-        // moving. Reported as what Designer says rather than as a verdict: the
-        // property is `ScreenPositionReceiver.engaged`, and it is the receiver
-        // that carries it — the axes have no such state of their own.
         verdict = `Port ${dest.port} and axis id ${dest.devid} both match on ${label(both)}, ` +
           'but Designer reports the receiver as not engaged.';
       } else {
