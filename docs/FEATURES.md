@@ -4980,3 +4980,19 @@ handshake state keeps `connected`, the word as it was specified.
 `STOPPING` is removed from the state table: declared for years, entered by
 nothing — `stop()` goes straight to IDLE — and its orphaned pill style went
 with it.
+
+### The card says its state once, and a retry loop wears one name
+
+**Asked:** the text under the dashboard IPs — "connect EHOSTDOWN … retrying
+in 4.2s (attempt 12)" — is unwanted: no state/attempt prose on cards, it
+happens behind the scenes. (And: no new GUI elements without asking.) Then:
+the indicator ping-ponged between `connecting` and `reconnecting`.
+
+**Built:** the `card-detail` line is removed from the dashboard card along
+with everything that fed it — the pill is the card's one statement about
+state, and retry countdowns, attempt numbers and error strings stay where
+they always were, in the log. And the ping-pong is fixed at the state
+machine: every retry attempt used to re-enter `connecting` and every failure
+`reconnecting`, two names for the one condition "a retry loop is running".
+Only the very first attempt announces `connecting`; from then on the loop
+keeps `reconnecting` until it succeeds or is stopped.

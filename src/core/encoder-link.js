@@ -621,7 +621,11 @@ class EncoderLink extends EventEmitter {
 
   _connect() {
     const { encoder } = this.config;
-    this._setState(STATE.CONNECTING,
+    // Only the first attempt is `connecting`. Every retry used to re-enter
+    // CONNECTING and every failure RECONNECTING, so against an unreachable
+    // encoder the indicator ping-ponged between two words every few seconds —
+    // two names for one condition. The condition is: a retry loop is running.
+    this._setState(this._attempt ? STATE.RECONNECTING : STATE.CONNECTING,
       `connecting to ${encoder.host}:${encoder.port}${this._attempt ? ` (attempt ${this._attempt + 1})` : ''}`);
 
     this._assembler.reset();

@@ -832,11 +832,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   letter-spacing: .06em;
 }
 
-.card-detail {
-  font-size: var(--fs-label); color: var(--text-dim); min-height: 15px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
 /* The three columns of a card. minmax(0, …) on the figure columns rather than
    1fr: a flex/grid child defaults to min-width:auto and refuses to shrink below
    its content, which is what pushed the old connection form out of its panel. */
