@@ -3451,3 +3451,30 @@ Worth considering as a permanent gate: this class of defect is invisible to test
 runs, and on a show that is the worst possible time to find out.
 
 **219 tests pass.**
+
+---
+
+## 2026-08-05 — A permanent gate against names that do not exist
+
+Following the crash above. `npm test` now runs `eslint .` first and stops if it fails, so a
+ReferenceError cannot reach a build:
+
+    npm test with the bug -> exit 1     (the suite never runs)
+    npm test clean        -> exit 0     219 tests
+
+**One rule: `no-undef`.** Deliberately not a style config. Everything else is a judgement this
+codebase already makes consistently, and a gate that fails on taste gets switched off. This one only
+ever fires on code that cannot work — which is exactly the class that tests cannot see until the
+branch runs, and on a show that is the worst moment to find out.
+
+It runs **before** the suite, because a name that does not exist cannot be usefully investigated
+through a failing assertion further down.
+
+`eslint.config.mjs` covers both halves of the app: CommonJS on Node for `src/core`, `src/server`,
+`src/shared`, `src/desktop`, `tools`, `bin` and `test`; ES modules in a browser for `src/web`. The
+globals are written out rather than pulled from the `globals` package, so this stays one dependency —
+`eslint` is the only thing added. A name goes in that list when the platform genuinely provides it,
+never to silence a real miss; `CSS` is there because `CSS.escape` builds the banner's `[data-key]`
+selector and is supported in all three engines.
+
+**219 tests pass, lint clean.**
