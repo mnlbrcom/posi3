@@ -575,3 +575,20 @@ test('the network state is evaluated every tick, even while receiving', () => {
   assert.match(link, /health: destinationHealth\(s, this\.running\)/,
     'and health is computed from the sink on every telemetry frame');
 });
+
+test('a body that stalls after 200 headers still hits the deadline', async (t) => {
+  // The abort timer was cleared as soon as headers arrived, so a half-dead
+  // Designer — or a proxy — that answered 200 and then trickled the body hung
+  // this call forever, and with it the Ask button and that destination's
+  // automatic establish chain.
+  const d = await fakeDesigner(t, (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.write('{"status"');
+    // …and never finishes.
+  });
+  const started = Date.now();
+  await assert.rejects(
+    () => inspectReceivers(d.host, { apiPort: d.apiPort, timeoutMs: 500 }),
+    (err) => err.code === 'EDISGUISE_UNREACHABLE' && /did not answer/.test(err.message));
+  assert.ok(Date.now() - started < 5000, 'bounded by the timeout, not by the server');
+});

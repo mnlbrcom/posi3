@@ -1021,8 +1021,21 @@ class EncoderLink extends EventEmitter {
         this._setState(STATE.STALLED,
           'encoder answers Run! but is not streaming — check TimeMode=Cyclic and CycleTime');
       })
-      .catch(() => {
+      .catch((err) => {
         this._probePending = false;
+        // An ERROR settled the probe. The encoder broadcasts every client's
+        // replies and errors down this shared socket, so the error may not
+        // even be ours — but whoever provoked it, a machine that just sent it
+        // is alive and talking. Tearing the link down on that proof cost a
+        // healthy connection whenever another client fumbled a command at the
+        // wrong moment. Only silence — the timeout — means dead.
+        if (err && err.code === 'EENCODER') {
+          if (this._state === STATE.STALLED) {
+            this._setState(STATE.STALLED,
+              'encoder answers but is not streaming — check TimeMode=Cyclic and CycleTime');
+          }
+          return;
+        }
         if (this._state === STATE.STALLED) {
           this._handleDisconnect(new Error('encoder stopped sending and did not answer Run!'));
         }

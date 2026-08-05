@@ -139,3 +139,19 @@ test('both counters describe the current run', async (t) => {
   l.start();
   assert.equal(l.snapshot().telemetry.commandErrors, 0, 'a new run starts clean');
 });
+
+test('an error settling the stall probe proves life, and is not a death', () => {
+  // The encoder broadcasts every client's replies and errors down the shared
+  // TCP socket, and the command queue settles the in-flight request on any
+  // ERROR line. So another client fumbling a command while our Run! probe was
+  // in flight rejected the probe — and the catch tore down a connection to an
+  // encoder that had just audibly answered. Only silence means dead.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'encoder-link.js'), 'utf8');
+  const probe = src.slice(src.indexOf("this._commands.submit('Run!'"));
+  const katch = probe.slice(probe.indexOf('.catch'), probe.indexOf('});', probe.indexOf('.catch')));
+  assert.match(katch, /EENCODER/, 'the encoder-spoke case is distinguished');
+  assert.ok(katch.indexOf('EENCODER') < katch.indexOf('_handleDisconnect'),
+    'and handled before the only-silence-means-dead teardown');
+});

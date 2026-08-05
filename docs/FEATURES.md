@@ -4807,3 +4807,26 @@ which keeps its ids — previously left every destination marked
 already-checked, so none ever established disguise state again. A successful
 inspect also clears `noApi` now: an answer proves the API exists, so a
 Designer upgraded mid-run is no longer muted until restart.
+
+### Four correctness fixes: the hang, the misattributed death, the reverted edit, the wrong banner
+
+- **A stalling Designer hung the inspect forever.** The abort timer was cleared
+  the moment HTTP headers arrived, so a half-dead Designer or a proxy that
+  answered 200 and trickled the body wedged the Ask button and that
+  destination's automatic establish chain. The timeout now covers the body.
+- **Another client's mistake could kill a healthy link.** The encoder
+  broadcasts every client's replies down the shared socket, and the command
+  queue settles the in-flight request on any `ERROR:` line — so a second
+  client fumbling a command while our stall probe was in flight rejected the
+  probe, and the catch tore the link down. An `EENCODER` rejection now counts
+  as proof of life (a machine that sends an error is talking); only silence —
+  the timeout — means dead. Full attribution is impossible on a broadcast
+  channel, so the destructive consequence is what got fixed.
+- **A slow encoder read silently reverted concurrent edits.** Address
+  promotion upserted the connection object captured before a multi-second
+  exchange, wholesale. It now re-finds the live record and touches exactly the
+  two fields it owns, synchronously.
+- **Encoder A's flash confirmation dismissed encoder B's warning.** The
+  "FLASH WRITE IN PROGRESS — do not power off" banner used one global key for
+  every encoder. Keys are per-connection now, and `onFlashConfirmed` dismisses
+  only the banners of the encoder that confirmed.
