@@ -574,6 +574,14 @@ function createApi(ctx) {
     // A change of state is a fresh chance for a destination that had gone
     // quiet: the attempt count starts again. Not for one with no API — that
     // does not change because a cable moved.
+    // The old answer describes a state that has just ended. "Everything
+    // matches" is about a destination that was reachable; it says nothing about
+    // one that has just gone offline, and leaving it there means the card keeps
+    // a verdict that was true a moment ago and is not now. Forgotten first, so
+    // the indicator falls back to what the network says while the new answer is
+    // being obtained — or stays there, if it cannot be.
+    manager.disguiseChecks.delete(dest.id);
+
     if (noApi.has(dest.id)) return;
     const last = lastAutoAsk.get(dest.id) || 0;
     if (Date.now() - last < AUTO_ASK_GAP_MS) return;
