@@ -245,7 +245,7 @@ test('log lines are delivered when nothing is running', () => {
   // read produced lines that were written and never sent. They arrived only
   // after a page reload, which re-reads the ring buffer directly. That is
   // exactly when the log is being read to find out what happened.
-  const { api, store, logger, manager } = apiWith();
+  const { api, store, manager } = apiWith();
   const conn = store.upsertConnection({ name: 'Revolve', encoder: TEST_ENCODER });
   manager.upsert(conn);
 

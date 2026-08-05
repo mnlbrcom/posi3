@@ -15,7 +15,7 @@
 const constants = require('../shared/constants');
 const { computeMapping, d3Fields, suggestedPreset } = require('../shared/mapping');
 const {
-  fail, checkId, checkHost, checkPort, checkVariable, checkValue, checkVarWrite,
+  fail, checkId, checkHost, checkPort, checkVariable, checkVarWrite,
   sanitiseConnection, listInterfaces
 } = require('./validate');
 const {
@@ -448,7 +448,6 @@ function createApi(ctx) {
     }
 
     const NAVIGATOR = 'NavigatorDriver';
-    const label = (r) => r.name || r.path || 'a receiver';
     const q = (name, fallback) => `"${name || fallback}"`;
     const navDrivers = (r) => (r.drivers || []).filter((d) => d.type === NAVIGATOR);
     const hasPort = (r) => navDrivers(r).some((d) => Number(d.port) === dest.port);

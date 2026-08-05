@@ -4649,3 +4649,41 @@ probe and a green pill — the flapping protection is untouched.
 Two tests asserted `/retrying every 5s/` and failed because the message had
 become more accurate. Rewritten to `/every \d+s/`: the message must state the
 interval, not a particular number.
+
+## 2026-08-05 — Names that claim things the code does not do
+
+**Asked:** explain the unused `checkbox` import in the log view and suggest what
+to do; option 2 — remove every dead name and gate against the class — was
+chosen.
+
+**The explanation.** `src/web/js/ui.js` is the shared toolbox of small builders
+(`el`, `toast`, `checkbox`, …) and each view imports the ones it uses. The log
+view's import line listed `checkbox` without a single call to it — inherited
+verbatim from the d3driver migration, dead for the whole life of posi3. Harmless
+at runtime; the damage is that a dead name is a false claim about the code. This
+one advertised a control the screen does not have, and it misled in practice:
+when a checkbox came up in a discussion of the log controls, the operator
+reasonably asked "what checkbox?".
+
+**Why no gate caught it:** the lint gate had exactly one rule, `no-undef` — a
+name used but never defined (the `dest` crash). This is the mirror image, a name
+defined but never used, which is `no-unused-vars`, and it was off.
+
+**Built:** `no-unused-vars` is now on in both config blocks, and the sweep it
+gates from removed nine dead names — four in `src/`, five in tests:
+
+- `checkbox` from the log view's import.
+- The `dt` chain in `link-manager.js` — `dt` was computed every tick and never
+  read, and `_lastTickMs` existed only to feed it, so the honest removal took
+  the whole chain (`dt`, the outer `now`, `_lastTickMs` and both its
+  assignments). The rate block's own `Date.now()` shadowed the outer `now`, so
+  nothing else was touched.
+- In `api.js`: `checkValue` from the validate import (the function itself stays
+  in `validate.js`, used by `checkVarWrite` and tested directly) and an unused
+  `label` helper superseded by `q`.
+- In tests: three `async (t)` callbacks that never used `t`, one destructured
+  `logger`, one trailing `state` parameter on a fake-encoder callback.
+
+The config's header comment — "One rule, and a reason for it" — moved with the
+fact: two rules, and the bar unchanged. Not a style config; these fire only on
+code that cannot work or words that are not true.

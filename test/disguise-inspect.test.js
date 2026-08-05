@@ -89,7 +89,7 @@ test('a script error arrives as HTTP 200 and is not mistaken for an empty sessio
     (err) => err.code === 'EDISGUISE_API' && /Failed to run plugin/.test(err.message));
 });
 
-test('a machine with no Designer session is named as such', async (t) => {
+test('a machine with no Designer session is named as such', async () => {
   // Not "cannot reach disguise": the machine may be perfectly reachable and
   // simply not running Designer, which is a different thing to go and fix.
   await assert.rejects(
@@ -416,7 +416,7 @@ test('linkSnapshot and the telemetry stream report the same health', async (t) =
     'and the snapshot endpoint goes through it');
 });
 
-test('a destination establishes its own state when its link starts', async (t) => {
+test('a destination establishes its own state when its link starts', async () => {
   // An indicator has to know its own state, not inherit one. The answer lives
   // in memory, so restarting the app forgot it and every destination fell back
   // to `connected` — true of the network, and not what the operator had
@@ -451,7 +451,7 @@ test('a destination establishes its own state when its link starts', async (t) =
   assert.match(src, /delay \+= 400;/);
 });
 
-test('a wrong answer is asked again; a right one is not', async (t) => {
+test('a wrong answer is asked again; a right one is not', async () => {
   // The check was a one-shot, so an operator who fixed the axis id in Designer
   // watched posi3 go on saying `mismatch` while the shaft plainly drove the
   // screen. A cached result presented as live state is the flaw.

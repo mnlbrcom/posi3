@@ -116,7 +116,7 @@ test('a write that is accepted but never announced still counts as verified', as
 
 test('a value that does not stick is reported as failed', async (t) => {
   // Accepted at the time, gone on read-back: the write did not take.
-  const enc = await fakeEncoder(t, (sock, name, value, state) => {
+  const enc = await fakeEncoder(t, (sock, name, value) => {
     sock.write(`${name}=${value}\r\n`);   // says yes, stores nothing
   });
   const { results, verified } = await writeVariablesOnce('127.0.0.1',

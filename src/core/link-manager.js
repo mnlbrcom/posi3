@@ -78,7 +78,6 @@ class LinkManager extends EventEmitter {
     this.logger.onFirstPending = () => this._startTimer();
     this._telemetryHz = opts.telemetryHz || DEFAULT_TELEMETRY_HZ;
     this._timer = null;
-    this._lastTickMs = 0;
   }
 
   // -------------------------------------------------------------------------
@@ -201,7 +200,6 @@ class LinkManager extends EventEmitter {
 
   _startTimer() {
     if (this._timer) return;
-    this._lastTickMs = performance.now();
     const interval = Math.round(1000 / this._telemetryHz);
     this._timer = setInterval(() => this._tick(), interval);
     if (this._timer.unref) this._timer.unref();
@@ -214,10 +212,6 @@ class LinkManager extends EventEmitter {
   }
 
   _tick() {
-    const now = performance.now();
-    const dt = (now - this._lastTickMs) / 1000;
-    this._lastTickMs = now;
-
     const links = [];
     for (const link of this._links.values()) {
       if (!link.running) continue;

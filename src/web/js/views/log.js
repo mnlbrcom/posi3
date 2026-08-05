@@ -7,7 +7,7 @@
  * it.
  */
 
-import { el, clear, timeOfDay, toast, select, checkbox } from '../ui.js';
+import { el, clear, timeOfDay, toast, select } from '../ui.js';
 import { store } from '../store.js';
 
 const MAX_RENDERED = 2000;
