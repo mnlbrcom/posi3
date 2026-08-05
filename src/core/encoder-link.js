@@ -1369,22 +1369,26 @@ class EncoderLink extends EventEmitter {
    * Returns `{ written, cycles, previous }`. Throws `EPRESET_DUPLICATE` when
    * the long way round is required and `force` was not set.
    */
-  async setPreset(value, { force = false } = {}) {
-    const target = Number(value);
-    if (!Number.isInteger(target) || target < 0) {
-      const err = new Error('Preset must be a non-negative whole number');
-      err.code = 'EINVAL';
-      throw err;
-    }
-
-    // Read rather than trust the cache: another client may have moved it, and
-    // guessing wrong here either wastes a cycle or silently does nothing.
-    //
-    // On the firmware tested here `read Preset` answers "Preset is an unknown
-    // variable" — it is write-only. When that happens the duplicate cannot be
-    // detected in advance, so the write is attempted and the encoder's own
-    // refusal is surfaced instead. Better an honest "it declined" than a
-    // confident guess.
+  /**
+   * The duplicate rule, askable on its own — and throwable before anything
+   * else in a batch has spent flash.
+   *
+   * `encoderWriteMany` used to write every other variable first and only then
+   * call `setPreset`, whose refusal threw the whole call away: the non-Preset
+   * writes had already burned their flash cycles, the results reporting so
+   * were discarded with the throw, and the natural retry-with-force wrote
+   * them all again. The check is cheap and read-only, so it goes first.
+   *
+   * Read rather than trust the cache: another client may have moved it, and
+   * guessing wrong here either wastes a cycle or silently does nothing.
+   *
+   * On the firmware tested here `read Preset` answers "Preset is an unknown
+   * variable" — it is write-only. When that happens the duplicate cannot be
+   * detected in advance, so the write is attempted and the encoder's own
+   * refusal is surfaced instead. Better an honest "it declined" than a
+   * confident guess.
+   */
+  async assertPresetWritable(target, { force = false } = {}) {
     let current = null;
     let readable = true;
     try {
@@ -1395,6 +1399,28 @@ class EncoderLink extends EventEmitter {
       readable = false;
     }
 
+    if (!force && readable && current === target) {
+      const err = new Error(
+        `Preset is already ${target}. The encoder refuses an identical consecutive value, ` +
+        'so setting it again would need two flash cycles.'
+      );
+      err.code = 'EPRESET_DUPLICATE';
+      err.current = current;
+      throw err;
+    }
+    return { current, readable };
+  }
+
+  async setPreset(value, { force = false } = {}) {
+    const target = Number(value);
+    if (!Number.isInteger(target) || target < 0) {
+      const err = new Error('Preset must be a non-negative whole number');
+      err.code = 'EINVAL';
+      throw err;
+    }
+
+    const { current, readable } = await this.assertPresetWritable(target, { force });
+
     if (!readable && !force) {
       this.beginWriteBatch();
       const r = await this.write('Preset', String(target));
@@ -1403,15 +1429,7 @@ class EncoderLink extends EventEmitter {
     }
 
     if (current === target) {
-      if (!force) {
-        const err = new Error(
-          `Preset is already ${target}. The encoder refuses an identical consecutive value, ` +
-          'so setting it again would need two flash cycles.'
-        );
-        err.code = 'EPRESET_DUPLICATE';
-        err.current = current;
-        throw err;
-      }
+      // Only reachable with force: the assert above throws otherwise.
       this.beginWriteBatch();
       await this.write('Preset', String(target + 1));
       this._armFlash();

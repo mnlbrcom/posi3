@@ -4754,3 +4754,18 @@ both the log and the banner path. No retry loop was added: re-running
 bind/connect is exactly what restarting the connection does, so the message
 names that instead. Behavioural test: a bind to TEST-NET-1 fails on this
 machine without a packet leaving it, and the sink must read offline.
+
+### A refused Preset no longer costs the rest of the batch its flash twice
+
+Apply-changes wrote every other variable to flash first, then called
+`setPreset` — whose duplicate refusal threw the whole call away. The writes
+that had already spent their cycles were reported in results the throw
+discarded, and the natural retry with force wrote them all a second time:
+double flash spend against the ~100,000-cycle budget, for a batch the encoder
+had refused nothing in.
+
+The duplicate rule is now askable on its own — `assertPresetWritable`, the
+same read-and-compare `setPreset` uses — and the server asks it before the
+first write of the batch. A refused batch now costs nothing. The write order
+itself is unchanged (configuration first, then Preset), because Preset's
+meaning depends on the scaling written next to it.
