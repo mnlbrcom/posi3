@@ -254,3 +254,33 @@ test('a refusal counts as proof of life, an unroutable address does not', async 
   assert.equal(gone.aliveAt, 0, 'nothing answered, so nothing is claimed');
   assert.equal(gone.aliveProbe, null, 'and the attempt was cleaned up');
 });
+
+test('a sink that never opened reports the outage instead of clean silence', async (t) => {
+  // A hostname that does not resolve, a local address that is not ours: the
+  // socket never becomes ready, so nothing is ever sent — and the silence
+  // rule read that as health. One setup error, no sends, no further errors,
+  // and the pill said `connected` for a destination that could not physically
+  // receive a packet.
+  const link = new EncoderLink({
+    id: 'setup', name: 'setup',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    // TEST-NET-1: never a local interface, so the bind fails on this machine
+    // without a packet leaving it.
+    destinations: [{ id: 'd', name: 'dead', host: '127.0.0.1', port: 65533, localAddress: '192.0.2.1', devid: 1 }]
+  });
+  t.after(() => link.stop());
+
+  const events = [];
+  link.on('encoderEvent', (e) => events.push(e));
+  link._openUdp();
+
+  const sink = link._sinks[0];
+  await until(() => sink.offline, 3000, 'the setup failure to mark the sink offline');
+  assert.equal(sink.ready, false, 'the socket never opened');
+  assert.equal(sink.downAnnounced, true, 'and the outage was announced');
+
+  const down = events.find((e) => e.kind === 'destinationDown');
+  assert.ok(down, 'the announcement reached the event stream');
+  assert.match(down.text, /restart the connection/i,
+    'and tells the operator the one action that retries a failed setup');
+});
