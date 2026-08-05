@@ -51,12 +51,11 @@ const DEFAULT_TIMEOUT_MS = 4000;
  *         .axes[]                  ScreenPositionAxis … each with an id
  *
  * Which is also how you tell several of anything apart. A **receiver** has a
- * `name` and `path` the operator chose — "posi3",
- * `objects/screenpositionreceiver/posi3.apx` — and a `uid` that survives a
- * rename. A **driver** has no `name` attribute, but it does have a
- * `description`, which is the name typed into Designer and shown there: "nav",
- * "testdr". An **axis** is identified by its `id`, which is exactly what this
- * bridge puts in every packet.
+ * `description` the operator typed — "posi3" — a `path` carrying the same leaf,
+ * and a `uid` that survives a rename. A **driver** has no `name` attribute at
+ * all, but it has the same `description`: "nav", "testdr". So `description` is
+ * the name throughout. An **axis** is identified by its `id`, which is exactly
+ * what this bridge puts in every packet.
  *
  * So a destination here — host, port, device id — joins to disguise as: on that
  * host, the receiver with a driver on that port, containing an axis with that
@@ -95,7 +94,11 @@ for d in devices:
                 'property': str(getattr(ax, 'property', '') or ''),
             })
         out.append({
-            'name': str(getattr(d, 'name', '') or ''),
+            # description first: it is the name the operator typed, it is what
+            # Designer shows, and it is the only one a driver has. On a receiver
+            # both exist and agreed on the session measured, but if they ever
+            # diverge the typed one is the one meant.
+            'name': str(getattr(d, 'description', '') or getattr(d, 'name', '') or ''),
             'path': str(getattr(d, 'path', '') or ''),
             'uid': str(getattr(d, 'uid', '') or ''),
             'started': bool(getattr(d, 'started', False)),

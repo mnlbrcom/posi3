@@ -207,19 +207,24 @@ test('while the port is wrong, the device id is not anyone’s next question', a
   // One problem at a time, in the order they have to be fixed: while the port
   // is wrong nothing arrives at all, so the id cannot be the next question.
   const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
-  assert.match(api, /\} else if \(!portExists\) \{[\s\S]{0,200}No port match/,
+  assert.match(api, /\} else if \(!portExists\) \{[\s\S]{0,200}Port mismatch:/,
     'the port is checked first, on its own');
-  assert.match(api, /\} else if \(!idExists\) \{[\s\S]{0,400}ID mismatch/,
+  assert.match(api, /\} else if \(!idExists\) \{[\s\S]{0,600}ID mismatch:/,
     'and the id only once the port agrees');
   assert.doesNotMatch(api, /problems\.join/,
     'the two are never joined into one sentence');
 
   // Every Navigator driver, by the operator's own name, not just the first:
   // naming one of three read as though it were the only one.
-  assert.match(api, /const named = ds\.map\(\(d\) => `\$\{d\.name \|\| d\.type\} on \$\{d\.port\}`\)/,
-    'each driver is named, with its port');
-  assert.match(api, /axis \$\{ids\.length > 1 \? 'ids' : 'id'\} \$\{list\(ids\)\}/,
+  assert.match(api, /ds\.map\(\(d\) => `\$\{q\(d\.name, d\.type\)\} on \$\{d\.port\}`\)/,
+    'each driver is named, quoted, with its port');
+  assert.match(api, /these axis ids: \$\{ids\.join\(', '\)\}/,
     'and an id mismatch lists the ids that do exist');
+  // Only Navigator drivers are ever shown: a PosiStageNetDriver on 56565 is
+  // nothing this bridge could feed, and offering it invites setting the port
+  // to something that can never work.
+  assert.match(api, /const ds = navDrivers\(r\);/,
+    'the listing is built from Navigator drivers only');
 
   // The driver type is part of the match, not decoration: this bridge speaks
   // the Navigator format, and a session here also holds a PosiStageNetDriver.
