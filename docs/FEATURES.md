@@ -4560,3 +4560,40 @@ the line that clears the timer saying so, because it is exactly the kind of thin
 would replace with a `setInterval`.
 
 **264 tests pass.**
+
+## 2026-08-05 — A verdict must not outlive the state it described
+
+**Asked:** while receiving, keep checking the network every second; reset the
+"Ask disguise" answer when the state changes, because it is then out of date —
+going offline left *Everything matches: disguise PositionReceiver "posi3" has a
+driver on port 7999 and an axis for id 1* on screen. Then: why did receiving →
+offline take so long, if health is recomputed 30×/s. Then: drop the *Live
+position* row from the disguise tile — it is not a disguise value, and it is
+already on the dashboard and the encoder page.
+
+**Built:**
+
+- The network check was already there and needed nothing. `health` is computed
+  from the sink on every telemetry frame, and a disguise answer only ever
+  rewrites `connected`, so a sink that starts failing reports `offline` on the
+  next frame and the confirmation stops applying by itself. Pinned by a test
+  rather than left as an assertion in a commit message.
+- The answer is now discarded on any destination state change
+  (`disguiseChecks.delete` in `src/server/api.js`), before the debounce and
+  before the no-API check — whether a *new* answer can be obtained has no
+  bearing on whether the old one is still true. Dropping it first means the
+  indicator falls back to what the network says while a replacement is fetched,
+  or stays there if none can be. The card clears the sentence with it
+  (`src/web/js/views/mapping.js`), so the text cannot outlive its pill.
+- Removed the *Live position* row from the mapping card. Its styles stay: they
+  are shared with the encoder-config card, where the value does belong.
+
+**The delay is not the tick.** 30 Hz is how often health is re-read; it says
+nothing about how fast the input to it changes, and two things sit in front of
+it. A connected UDP socket only learns a send failed when ICMP comes back, and a
+host that is switched off sends none — measured at nine silent seconds at full
+send rate. Once errors do arrive, `SEND_GIVE_UP_MS = 2000` requires two seconds
+of continuous failure before the sink is declared offline, so a single lost
+packet cannot blank a card mid-show. `ECONNREFUSED` from a live machine with
+nothing bound is near-instant; a dark machine is slow because the network says
+nothing at all.

@@ -532,3 +532,38 @@ test('a destination that cannot answer is not asked forever', () => {
   // And a changed address may be a different machine, which may have an API.
   assert.match(src, /noApi\.delete\(d\.id\);/);
 });
+
+test('a state change discards the answer and the sentence describing it', () => {
+  // "Everything matches: … has a driver on port 7999 and an axis for id 1" stayed
+  // on the card after the destination went offline — a sentence about a moment
+  // that was over, sitting above a pill that had already moved on.
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  const handler = api.slice(api.indexOf('manager.onDestinationStateChange = '));
+  const body = handler.slice(0, handler.indexOf('\n  };'));
+  assert.match(body, /manager\.disguiseChecks\.delete\(dest\.id\);/,
+    'the stored answer goes first, so the indicator falls back to what the network says');
+  // Before the debounce and before the no-API check: those decide whether a new
+  // answer can be obtained, not whether the old one is still true.
+  assert.ok(body.indexOf('disguiseChecks.delete') < body.indexOf('noApi.has'),
+    'and it goes even when no new answer can be had');
+
+  const view = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
+  assert.match(view, /if \(lastState !== null\) clear\(verdict\);/,
+    'and the text describing it is cleared with it');
+});
+
+test('the network state is evaluated every tick, even while receiving', () => {
+  // `receiving` must not mask a destination dropping. The disguise answer only
+  // ever rewrites `connected`, so a sink that starts failing reports `offline`
+  // on the very next tick and the confirmation stops applying by itself.
+  const manager = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
+  assert.match(manager, /if \(d\.health === 'connected'\) d\.health = check\.matches \? 'receiving' : 'mismatch';/,
+    'only a connected destination is raised — anything else keeps the network verdict');
+
+  const link = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'encoder-link.js'), 'utf8');
+  assert.match(link, /health: destinationHealth\(s, this\.running\)/,
+    'and health is computed from the sink on every telemetry frame');
+});

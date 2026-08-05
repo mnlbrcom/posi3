@@ -130,7 +130,6 @@ function receiverCard(conn, dest) {
   const verdict = el('div', { class: 'map-verdict' });
 
   const pillHolder = el('span', { class: 'pill-holder' }, pill('idle'));
-  const livePos = el('span', { class: 'target-pos', text: '—' });
   const resultHolder = el('div', { class: 'map-result' });
 
   const dirty = () => JSON.stringify(m) !== saved;
@@ -228,11 +227,6 @@ function receiverCard(conn, dest) {
       `${where} · id ${dest.devid}` +
       (dest.enabled === false ? ' · disabled' : '') +
       ` · fed by ${conn.name} at ${conn.encoder.host}:${conn.encoder.port}`),
-    el('div', { class: 'cfg-target' },
-      el('span', { class: 'target-live' },
-        el('span', { class: 'target-live-label', text: 'Live position' }),
-        livePos,
-        el('span', { class: 'target-hint', text: 'from the encoder feeding this receiver' }))),
     verdict,
     ...groups);
 
@@ -316,7 +310,6 @@ function receiverCard(conn, dest) {
     markSaved() { saved = JSON.stringify(m); refreshDirty(); },
     refreshLive() {
       const t = store.telemetryOf(conn.id);
-      setText(livePos, t ? groupDigits(t.pos) : null);
 
       // The receiver's own health, not the encoder's: this card is about the
       // disguise machine. Only on a real change — this runs every frame.
@@ -326,6 +319,11 @@ function receiverCard(conn, dest) {
       // disguise answer, so every screen and every client says the same thing.
       if (state !== lastState) {
         clear(pillHolder).appendChild(pill(state));
+        // The verdict described the state that has just ended. "Everything
+        // matches" above a destination that has gone offline is a sentence
+        // about a moment that is over, and it stayed on screen through the
+        // change. It is re-established by asking, automatically or by hand.
+        if (lastState !== null) clear(verdict);
         lastState = state;
       }
     }
