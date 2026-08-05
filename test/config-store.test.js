@@ -50,7 +50,7 @@ test('a new connection claims nothing about a device it has not spoken to', () =
   }
   assert.equal(c.parser.outputType, null, 'the output format is the device\'s to state');
   assert.equal(c.parser.fields, null, 'the field layout is read, never assumed');
-  assert.equal(c.mapping.maxInput, 0, 'no span has been captured yet');
+  assert.equal(c.destinations[0].mapping.maxInput, 0, 'no span has been captured yet');
 
   // And nothing is pretending to be a future value either.
   assert.equal(c.encoder.pendingHost, undefined,
@@ -158,4 +158,39 @@ test('deleting a connection removes it and persists', () => {
   s.deleteConnection(c.id);
   s.flushNow();
   assert.deepEqual(loaded(dir).profile.connections, []);
+});
+
+test('a schema-3 mapping is copied onto every receiver', () => {
+  // Schema 3 -> 4. The mapping was one per connection, and the disguise screen
+  // computed from `conn.d3` -- the mirror of the *first* destination -- so a
+  // fan-out to a director and an understudy produced one set of numbers
+  // describing the director and never mentioned the other machine.
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({
+    version: 3,
+    connections: [{
+      id: 'fan', name: 'Revolve',
+      encoder: { host: '10.10.10.10', port: 6000 },
+      destinations: [
+        { id: 'a', name: 'director', host: '10.10.10.5', port: 6000, devid: 10 },
+        { id: 'b', name: 'US', host: '10.10.10.2', port: 6000, devid: 11 }
+      ],
+      mapping: { mode: 'revolutions', revolutions: 2.5, property: 'rotation.y', maxOutput: 360 }
+    }]
+  }));
+
+  const c = loaded(dir).profile.connections[0];
+  assert.equal(c.mapping, undefined, 'the connection no longer holds one');
+  assert.equal(c.destinations.length, 2);
+  for (const d of c.destinations) {
+    assert.equal(d.mapping.mode, 'revolutions', `${d.name} inherits what was configured`);
+    assert.equal(d.mapping.revolutions, 2.5);
+    assert.equal(d.mapping.property, 'rotation.y');
+    assert.equal(d.mapping.maxOutput, 360);
+  }
+
+  // Separable from now on: changing one leaves the other alone.
+  c.destinations[1].mapping.property = 'offset.x';
+  assert.equal(c.destinations[0].mapping.property, 'rotation.y',
+    'the copies must not share an object');
 });

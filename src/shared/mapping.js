@@ -125,8 +125,26 @@ function suggestedPreset(minInput, countsPerRev = COUNTS_PER_REV) {
  * @param {object} conn  the connection (for devid and destination port)
  * @param {object} mapped result of computeMapping
  */
-function d3Fields(conn, mapped) {
-  const port = conn.d3.port;
+/**
+ * Exactly what to type into disguise for one receiver.
+ *
+ * Per receiver, not per connection. It used to read `conn.d3.port` and
+ * `conn.d3.devid` — the legacy mirror of the first destination — so a fan-out
+ * to three machines produced one set of numbers describing the first, and the
+ * other two were never mentioned. On a redundant rig that is precisely the
+ * machine you are not looking at when it fails to take over.
+ *
+ * @param {object} conn  the connection, for facts that belong to the encoder
+ * @param {object} dest  the receiver these values are for
+ * @param {object} mapped
+ */
+function d3Fields(conn, dest, mapped) {
+  const port = dest.port;
+  // The bridge sends velocity 0 unless told otherwise, and disguise has to be
+  // told which it is: deriving from position when a real velocity is arriving
+  // double-counts, and not deriving when zeroes are arriving leaves the axis
+  // with no velocity at all.
+  const passthrough = conn.velocityPolicy === 'passthrough';
   return [
     {
       section: 'NavigatorDriver',
@@ -145,18 +163,28 @@ function d3Fields(conn, mapped) {
     {
       section: 'ScreenPositionAxis',
       rows: [
-        { key: 'id', value: String(conn.d3.devid), note: 'must match this connection’s device ID' },
+        {
+          key: 'id',
+          value: String(dest.devid),
+          note: dest.name ? `must match ${dest.name}'s device ID` : "must match this receiver's device ID"
+        },
         { key: 'object', value: mapped.object || 'objects/screen2/surface 1.apx', note: 'the object to drive' },
         { key: 'property', value: mapped.property, note: 'a disguise expression, e.g. offset.x' },
-        { key: 'min_input', value: String(mapped.minInput), note: 'encoder counts' },
-        { key: 'max_input', value: String(mapped.maxInput), note: 'encoder counts' },
+        { key: 'min_input', value: String(mapped.minInput), note: 'encoder steps' },
+        { key: 'max_input', value: String(mapped.maxInput), note: 'encoder steps' },
         { key: 'min_output', value: String(mapped.minOutput), note: '' },
         { key: 'max_output', value: String(mapped.maxOutput), note: '' },
-        { key: 'wrapinput', value: mapped.wrapInput ? 'true' : 'false', note: mapped.crossesWrap ? 'required — the span crosses the rollover' : '' },
+        {
+          key: 'wrapinput',
+          value: mapped.wrapInput ? 'true' : 'false',
+          note: mapped.crossesWrap ? 'required — the span crosses the rollover' : ''
+        },
         {
           key: 'velocitycalcmode',
-          value: 'from position',
-          note: 'this bridge sends velocity 0 by default, so disguise must derive it'
+          value: passthrough ? 'from device' : 'from position',
+          note: passthrough
+            ? "this connection forwards the encoder's own velocity"
+            : 'this connection sends velocity 0, so disguise must derive it'
         }
       ]
     }

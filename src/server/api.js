@@ -388,17 +388,29 @@ function createApi(ctx) {
 
     // -- mapping helper -----------------------------------------------------
 
-    mappingCompute: ({ id, mapping }) => {
+    /**
+     * The disguise numbers for one receiver.
+     *
+     * `destId` names which: a fan-out has several, each with its own device ID,
+     * its own port and — since schema 4 — its own mapping. Computing for "the
+     * connection" described only the first and left the rest undocumented.
+     */
+    mappingCompute: ({ id, destId, mapping }) => {
       const conn = store.find(checkId(id));
       if (!conn) fail('ENOENT', 'No such connection');
-      const merged = Object.assign({}, conn.mapping, mapping || {}, {
+      const dest = destId
+        ? (conn.destinations || []).find((d) => d.id === destId)
+        : (conn.destinations || [])[0];
+      if (!dest) fail('ENOENT', 'No such disguise receiver');
+
+      const merged = Object.assign({}, dest.mapping, mapping || {}, {
         countsPerRev: conn.encoderMeta.countsPerRev,
         totalCounts: conn.encoderMeta.totalCounts
       });
       const mapped = computeMapping(merged);
       return {
         mapped,
-        fields: d3Fields(conn, mapped),
+        fields: d3Fields(conn, dest, mapped),
         suggestedPreset: suggestedPreset(mapped.minInput, conn.encoderMeta.countsPerRev)
       };
     },

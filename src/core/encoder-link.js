@@ -1499,7 +1499,6 @@ function normaliseConfig(c) {
     },
     logRaw: !!c.logRaw,
     autoStart: !!c.autoStart,
-    mapping: c.mapping || null,
     notes: c.notes || ''
   };
 }

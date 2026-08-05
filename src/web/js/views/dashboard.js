@@ -276,7 +276,12 @@ function buildCard(conn) {
           spark.node))),
     faultRow);
 
-  const mapping = conn.mapping || { mode: 'full' };
+  // The travel bar shows the range being sent to disguise. Since schema 4 that
+  // belongs to a receiver, and a fan-out has several — the first enabled one is
+  // what the dial describes, which is the same one it described before.
+  const firstDest = (conn.destinations || []).find((d) => d.enabled !== false) ||
+    (conn.destinations || [])[0];
+  const mapping = (firstDest && firstDest.mapping) || { mode: 'full' };
 
   let lastState = null;
   let lastDetailText = null;
