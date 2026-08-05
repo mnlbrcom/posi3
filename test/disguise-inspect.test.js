@@ -415,3 +415,35 @@ test('linkSnapshot and the telemetry stream report the same health', async (t) =
   assert.match(apiSrc, /manager\.applyDisguiseChecks\(snap\.telemetry\)/,
     'and the snapshot endpoint goes through it');
 });
+
+test('a destination establishes its own state when its link starts', async (t) => {
+  // An indicator has to know its own state, not inherit one. The answer lives
+  // in memory, so restarting the app forgot it and every destination fell back
+  // to `connected` — true of the network, and not what the operator had
+  // established a minute earlier.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+
+  // Starting a link, however it is started, runs the check.
+  assert.match(src, /userLog\(key, 'start'\);[\s\S]{0,200}establishAll\(store\.find\(key\)\)/,
+    'starting one connection checks its destinations');
+  assert.match(src, /manager\.startAll\(\);\s*\n\s*for \(const conn of store\.connections\) establishAll\(conn\)/,
+    'and starting all of them checks all of them');
+
+  const service = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'service.js'), 'utf8');
+  assert.match(service, /api\.establishDisguiseState\(\{ id: conn\.id \}\)/,
+    'including the connections started at launch, which nobody clicked');
+
+  // Once per destination per process, and never again: this endpoint must not
+  // be polled, so a check is a single call when a connection comes up.
+  assert.match(src, /if \(checkedOnce\.has\(dest\.id\)\) return null;/);
+  assert.match(src, /checkedOnce\.add\(dest\.id\);/);
+
+  // A destination that cannot answer says nothing about itself, so no check is
+  // recorded and the network's verdict stands — and the operator is not told
+  // that their laptop is not running Designer.
+  assert.match(src, /if \(!auto\) \{[\s\S]{0,200}throw err;[\s\S]{0,40}\}\s*\n\s*return null;/,
+    'an automatic check fails silently');
+
+  // Staggered, so a fan-out to one machine is not a burst.
+  assert.match(src, /delay \+= 400;/);
+});

@@ -336,6 +336,136 @@ function createApi(ctx) {
     return link;
   };
 
+  /**
+   * Establish a destination's real state by asking disguise.
+   *
+   * An indicator has to know its own state rather than inherit one. This answer
+   * lives in memory, so restarting the app forgot it and every destination fell
+   * back to `connected` — true of the network, and not what the operator had
+   * established a minute earlier.
+   *
+   * So a destination checks itself when its link starts: `auto` marks that
+   * call, and it happens **once per destination per process** and never again.
+   * That is not polling — disguise's documentation forbids polling this
+   * endpoint, and this is one call at the moment a connection comes up. A
+   * destination that cannot answer, a laptop or an older Designer, is marked
+   * asked so it is not asked twice.
+   */
+  const checkedOnce = new Set();
+
+  const establishState = async (conn, dest, { auto = false } = {}) => {
+    if (auto) {
+      if (checkedOnce.has(dest.id)) return null;
+      checkedOnce.add(dest.id);
+    }
+
+    let receivers;
+    try {
+      receivers = await inspectReceivers(dest.host);
+    } catch (err) {
+      // An unanswerable question says nothing about the destination, so the
+      // network's own verdict stands and no check is recorded. Quiet when the
+      // app asked on its own behalf: an operator who has not asked anything
+      // should not be told that a laptop is not running Designer.
+      if (!auto) {
+        appLog(conn.id, `${dest.host}: ${err.message}`, 'warn');
+        throw err;
+      }
+      return null;
+    }
+
+    const NAVIGATOR = 'NavigatorDriver';
+    const label = (r) => r.name || r.path || 'a receiver';
+    const q = (name, fallback) => `"${name || fallback}"`;
+    const navDrivers = (r) => (r.drivers || []).filter((d) => d.type === NAVIGATOR);
+    const hasPort = (r) => navDrivers(r).some((d) => Number(d.port) === dest.port);
+    const hasAxis = (r) => (r.axes || []).some((a) => String(a.id) === String(dest.devid));
+
+    const matching = receivers.filter((r) => hasPort(r) && hasAxis(r));
+    const both = matching[0] || null;
+    const portOnly = receivers.filter(hasPort);
+    const axisOnly = receivers.filter(hasAxis);
+    const allPorts = [...new Set(receivers.flatMap((r) => navDrivers(r).map((d) => Number(d.port))))];
+    const allIds = [...new Set(receivers.flatMap((r) => (r.axes || []).map((a) => String(a.id))))];
+
+    const describeNav = (r) => {
+      const ds = navDrivers(r);
+      if (!ds.length) {
+        return `disguise PositionReceiver ${q(r.name, r.path)} has no Navigator driver`;
+      }
+      return `disguise PositionReceiver ${q(r.name, r.path)} has ` +
+        `${ds.length > 1 ? 'these drivers' : 'this driver'}: ` +
+        ds.map((d) => `${q(d.name, d.type)} on ${d.port}`).join(', ');
+    };
+
+    const idExists = allIds.includes(String(dest.devid));
+    const portExists = allPorts.includes(dest.port);
+
+    let verdict;
+    let level = 'warn';
+    if (!receivers.length) {
+      verdict = `${dest.host} has a Designer session, but no PositionReceiver in it. ` +
+        'Add one, with a Navigator driver and an axis inside.';
+    } else if (!portExists) {
+      verdict = `Port mismatch: this connection sends to port ${dest.port}, ` +
+        `${receivers.map(describeNav).join('; ')}.`;
+    } else if (!idExists) {
+      const axesOf = (r) => {
+        const ids = (r.axes || []).map((a) => a.id);
+        return ids.length ? `axis ${ids.length > 1 ? 'ids' : 'id'} ${ids.join(', ')}` : 'no axes';
+      };
+      const groups = new Map();
+      for (const r of portOnly) {
+        const drv = navDrivers(r).find((d) => Number(d.port) === dest.port);
+        const key = (drv && drv.uid) || `${drv && drv.name}:${dest.port}`;
+        if (!groups.has(key)) groups.set(key, { drv, rs: [] });
+        groups.get(key).rs.push(r);
+      }
+      const parts = [...groups.values()].map(({ drv, rs }) =>
+        `driver ${q(drv && drv.name, 'NavigatorDriver')} on ${dest.port} feeds ` +
+        rs.map((r) => `disguise PositionReceiver ${q(r.name, r.path)} (${axesOf(r)})`).join(' and '));
+      for (const r of receivers.filter((r2) => !portOnly.includes(r2))) {
+        parts.push(`disguise PositionReceiver ${q(r.name, r.path)} has ${axesOf(r)}`);
+      }
+      verdict = `ID mismatch: this connection sends id ${dest.devid}, ${parts.join('; ')}.`;
+    } else if (!both) {
+      verdict = `Split across receivers: port ${dest.port} is on ` +
+        `${portOnly.map((r) => q(r.name, r.path)).join(', ')} and axis id ${dest.devid} is on ` +
+        `${axisOnly.map((r) => q(r.name, r.path)).join(', ')} — they have to be in the same one.`;
+    } else if (matching.length > 1) {
+      verdict = `Matches ${matching.length} receivers: port ${dest.port} with axis id ` +
+        `${dest.devid} is in ${matching.map((r) => q(r.name, r.path)).join(', ')} — ` +
+        'this connection drives all of them.';
+      level = 'info';
+    } else {
+      verdict = `Everything matches: disguise PositionReceiver ${q(both.name, both.path)} ` +
+        `has a driver on port ${dest.port} and an axis for id ${dest.devid}.`;
+      level = 'info';
+    }
+
+    appLog(conn.id, verdict, level);
+    manager.disguiseChecks.set(dest.id, { matches: !!both, at: Date.now() });
+    return { receivers, ports: allPorts, ids: allIds, matches: !!both, verdict };
+  };
+
+  /**
+   * Every enabled destination of a connection checks itself, once.
+   *
+   * Staggered, so a fan-out to one machine does not arrive as a burst, and
+   * delayed so the link is up first. Failures are silent — see `establishState`.
+   */
+  const establishAll = (conn) => {
+    let delay = 1500;
+    for (const dest of conn.destinations || []) {
+      if (dest.enabled === false) continue;
+      const at = delay;
+      delay += 400;
+      setTimeout(() => {
+        establishState(conn, dest, { auto: true }).catch(() => { /* silent by design */ });
+      }, at).unref?.();
+    }
+  };
+
   return {
     // -- app ----------------------------------------------------------------
 
@@ -400,146 +530,20 @@ function createApi(ctx) {
      * endpoint must not be polled and is not for use during a show. It is wired
      * to a button and to nothing else.
      */
+    /** Run each destination's own state check — used after an auto-start. */
+    establishDisguiseState: ({ id }) => {
+      const conn = store.find(checkId(id));
+      if (conn) establishAll(conn);
+      return true;
+    },
+
     disguiseInspect: async ({ id, destId }) => {
       const conn = store.find(checkId(id));
       if (!conn) fail('ENOENT', 'No such connection');
       const dest = (conn.destinations || []).find((d) => d.id === destId);
       if (!dest) fail('ENOENT', 'No such disguise receiver');
-
       userLog(conn.id, `asked ${dest.name || dest.host} what it is listening on`);
-      let receivers;
-      try {
-        receivers = await inspectReceivers(dest.host);
-      } catch (err) {
-        appLog(conn.id, `${dest.host}: ${err.message}`, 'warn');
-        throw err;
-      }
-
-      // The join: on this host, a receiver with a **Navigator** driver on our
-      // port, holding an axis with our device id.
-      //
-      // The driver type is part of the match, not decoration. This bridge sends
-      // `<devid>:<pos>,<vel>;` — the Navigator format — so only a NavigatorDriver
-      // can do anything with it. A session here also holds a PosiStageNetDriver
-      // on 56565, and matching on port alone would have called that a match if
-      // anyone pointed a connection at it.
-      const NAVIGATOR = 'NavigatorDriver';
-      const label = (r) => r.name || r.path || 'a receiver';
-      const navDrivers = (r) => (r.drivers || []).filter((d) => d.type === NAVIGATOR);
-      const hasPort = (r) => navDrivers(r).some((d) => Number(d.port) === dest.port);
-      const hasAxis = (r) => (r.axes || []).some((a) => String(a.id) === String(dest.devid));
-
-      // Plural on purpose. Ports and axis ids may both repeat across receivers,
-      // so a packet on this port with this id is taken by *every* receiver that
-      // has both — which is how a redundant rig is built, and also how the same
-      // encoder ends up driving something nobody meant. Picking the first would
-      // report one of them and hide the rest.
-      const matching = receivers.filter((r) => hasPort(r) && hasAxis(r));
-      const both = matching[0] || null;
-      const portOnly = receivers.filter(hasPort);
-      const axisOnly = receivers.filter(hasAxis);
-      const allPorts = [...new Set(receivers.flatMap((r) => navDrivers(r).map((d) => Number(d.port))))];
-      const allIds = [...new Set(receivers.flatMap((r) => (r.axes || []).map((a) => String(a.id))))];
-
-      /** The operator's own name, quoted, so it reads as a name and not as prose. */
-      const q = (name, fallback) => `"${name || fallback}"`;
-
-      /**
-       * Every Navigator driver a receiver has, not merely its first.
-       *
-       * Naming one of three read as though it were the only one, which is
-       * exactly the wrong impression when the port you want is on another. Each
-       * is named as the operator named it — the type is the same for all of
-       * them and says nothing about which one to open.
-       */
-      const describeNav = (r) => {
-        const ds = navDrivers(r);
-        if (!ds.length) {
-          return `disguise PositionReceiver ${q(r.name, r.path)} has no Navigator driver`;
-        }
-        return `disguise PositionReceiver ${q(r.name, r.path)} has ` +
-          `${ds.length > 1 ? 'these drivers' : 'this driver'}: ` +
-          ds.map((d) => `${q(d.name, d.type)} on ${d.port}`).join(', ');
-      };
-
-      const idExists = allIds.includes(String(dest.devid));
-      const portExists = allPorts.includes(dest.port);
-
-      let verdict;
-      let level = 'warn';
-      if (!receivers.length) {
-        verdict = `${dest.host} has a Designer session, but no PositionReceiver in it. ` +
-          'Add one, with a Navigator driver and an axis inside.';
-      } else if (!portExists) {
-        verdict = `Port mismatch: this connection sends to port ${dest.port}, ` +
-          `${receivers.map(describeNav).join('; ')}.`;
-      } else if (!idExists) {
-        // Every receiver in the session, not merely the first one on our port.
-        // A show can hold several, and an id that exists nowhere is only
-        // provable by looking at all of them — naming one read as though it
-        // were the only place an axis could be.
-        //
-        // The receivers carrying our port come first, since that is where the
-        // axis has to be added; each is named with the driver that matched.
-        const axesOf = (r) => {
-          const ids = (r.axes || []).map((a) => a.id);
-          return ids.length ? `axis ${ids.length > 1 ? 'ids' : 'id'} ${ids.join(', ')}` : 'no axes';
-        };
-
-        // One driver object can be referenced by several receivers — measured on
-        // the rig, where "testdr" carries the same uid in two of them. Naming it
-        // once per receiver read as two drivers that happen to share a name and
-        // a port, which is a different rig entirely. Grouped by the object's own
-        // identity, so a shared driver is described as shared.
-        const groups = new Map();
-        for (const r of portOnly) {
-          const drv = navDrivers(r).find((d) => Number(d.port) === dest.port);
-          const key = (drv && drv.uid) || `${drv && drv.name}:${dest.port}`;
-          if (!groups.has(key)) groups.set(key, { drv, rs: [] });
-          groups.get(key).rs.push(r);
-        }
-
-        const parts = [...groups.values()].map(({ drv, rs }) =>
-          `driver ${q(drv && drv.name, 'NavigatorDriver')} on ${dest.port} feeds ` +
-          rs.map((r) => `disguise PositionReceiver ${q(r.name, r.path)} (${axesOf(r)})`).join(' and '));
-
-        // Receivers with no driver on this port still matter: the id may not be
-        // anywhere, and that is only visible by naming them all.
-        for (const r of receivers.filter((r2) => !portOnly.includes(r2))) {
-          parts.push(`disguise PositionReceiver ${q(r.name, r.path)} has ${axesOf(r)}`);
-        }
-
-        verdict = `ID mismatch: this connection sends id ${dest.devid}, ${parts.join('; ')}.`;
-      } else if (!both) {
-        verdict = `Split across receivers: port ${dest.port} is on ` +
-          `${portOnly.map((r) => q(r.name, r.path)).join(', ')} and axis id ${dest.devid} is on ` +
-          `${axisOnly.map((r) => q(r.name, r.path)).join(', ')} — they have to be in the same one.`;
-      } else if (matching.length > 1) {
-        // Worth stating rather than calling it a match: this feed drives every
-        // one of them, which is either the point of a redundant rig or a
-        // surprise.
-        verdict = `Matches ${matching.length} receivers: port ${dest.port} with axis id ` +
-          `${dest.devid} is in ${matching.map((r) => q(r.name, r.path)).join(', ')} — ` +
-          'this connection drives all of them.';
-        level = 'info';
-      } else {
-        verdict = `Everything matches: disguise PositionReceiver ${q(both.name, both.path)} ` +
-          `has a driver on port ${dest.port} and an axis for id ${dest.devid}.`;
-        level = 'info';
-      }
-
-      appLog(conn.id, verdict, level);
-      // Remembered for every screen, not just the one that asked. `matches`
-      // here is the whole point of the question: a driver on this port holding
-      // an axis with this device id.
-      manager.disguiseChecks.set(dest.id, { matches: !!both, at: Date.now() });
-      return {
-        receivers,
-        ports: allPorts,
-        ids: allIds,
-        matches: !!both,
-        verdict
-      };
+      return establishState(conn, dest);
     },
 
     /**
@@ -660,7 +664,10 @@ function createApi(ctx) {
       // Before the state lines, so the log reads as cause then effect: somebody
       // pressed Start, and here is what the link then did about it.
       userLog(key, 'start');
-      return manager.start(key).snapshot();
+      const snap = manager.start(key).snapshot();
+      // The indicator establishes its own state rather than inheriting one.
+      establishAll(store.find(key));
+      return snap;
     },
 
     linkStop: ({ id }) => {
@@ -680,6 +687,7 @@ function createApi(ctx) {
       const idle = store.connections.length - manager.runningCount;
       userLog(null, idle ? `start all — starting ${idle}` : 'start all — everything was already running');
       manager.startAll();
+      for (const conn of store.connections) establishAll(conn);
       return manager.ids();
     },
 
