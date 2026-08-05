@@ -26,7 +26,16 @@ import { openControls } from './detail.js';
 
 /** Seconds of position history kept per encoder for the sparkline. */
 const TRACE_SECONDS = 12;
-const TRACE_POINTS = 120;
+/**
+ * A ceiling on memory, not the window — the window is time.
+ *
+ * This was 120, while telemetry arrives at 30 Hz: a moving encoder produced 360
+ * points in twelve seconds and the oldest 240 were thrown away, so a graph
+ * labelled "last 12 s" held about four and stretched them across the full
+ * width. Sized for the fastest telemetry the settings allow (120 Hz) with room
+ * to spare; trimming is by age.
+ */
+const TRACE_POINTS = 2048;
 
 /**
  * Position history, keyed by connection id. Lives at module scope so it
@@ -43,7 +52,16 @@ function pushTrace(id, pos) {
     last.t = Date.now(); // idle: extend the flat run rather than growing forever
     return t;
   }
-  t.push({ t: Date.now(), pos });
+  const now = Date.now();
+  t.push({ t: now, pos });
+
+  // By age, so the buffer holds the window the graph claims. One point older
+  // than the cutoff is kept deliberately: it is the one the leftmost segment is
+  // drawn from, and dropping it made the line start partway across.
+  const cutoff = now - TRACE_SECONDS * 1000;
+  let keepFrom = 0;
+  while (keepFrom + 1 < t.length && t[keepFrom + 1].t < cutoff) keepFrom++;
+  if (keepFrom > 0) t.splice(0, keepFrom);
   if (t.length > TRACE_POINTS) t.splice(0, t.length - TRACE_POINTS);
   return t;
 }
@@ -521,8 +539,13 @@ function sparkline() {
       if (t.length < 2) return;
 
       const now = Date.now();
-      const cutoff = now - TRACE_SECONDS * 1000;
-      const pts = t.filter((p) => p.t >= cutoff);
+      const windowMs = TRACE_SECONDS * 1000;
+      const cutoff = now - windowMs;
+      // Everything in the window, plus the one point before it: without that
+      // the line begins wherever the oldest sample happens to be rather than at
+      // the left edge.
+      const first = t.findIndex((p) => p.t >= cutoff);
+      const pts = first <= 0 ? t.slice() : t.slice(first - 1);
       if (pts.length < 2) return;
 
       // Scale to the range actually visited, not the encoder's full 33.5M
@@ -536,11 +559,14 @@ function sparkline() {
       const mid = (min + max) / 2;
       const lo = mid - span / 2;
 
-      const t0 = pts[0].t;
-      const dt = Math.max(1, now - t0);
+      // A fixed window: `now - 12s` at the left edge, `now` at the right,
+      // always. It was scaled to `now - pts[0].t` — the age of the oldest point
+      // held — so the whole trace stretched while the buffer filled and jumped
+      // sideways every time a point aged out. That is the squeezing and
+      // stuttering: the data was fine, the axis was elastic.
       const out = new Array(pts.length);
       for (let i = 0; i < pts.length; i++) {
-        const x = ((pts[i].t - t0) / dt) * W;
+        const x = Math.max(0, ((pts[i].t - cutoff) / windowMs) * W);
         const y = H - ((pts[i].pos - lo) / span) * (H - 4) - 2;
         out[i] = `${x.toFixed(1)},${y.toFixed(1)}`;
       }
