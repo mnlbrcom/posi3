@@ -126,6 +126,33 @@ function createApi(ctx) {
    * where the banner is raised, because a line logged in a browser exists only
    * in that browser.
    */
+  /**
+   * Bound a position value by what the device actually reports.
+   *
+   * `Preset` and `Offset` live inside `TotalScaledRes`, which is programmable —
+   * the static table can only carry the family ceiling of 1,073,741,824, and
+   * the encoders here are scaled to 300,000 and 100,000. The UI already shows
+   * the real bound under the field; without this the server would still accept
+   * anything under the family limit, and the value reaches flash before the
+   * encoder gets to object. A refused write is a spent cycle either way.
+   *
+   * Only enforced once the device has told us. Guessing a bound would be the
+   * same mistake as the defaults that used to be invented for encoderMeta.
+   */
+  const boundToDevice = (conn, checked) => {
+    const total = conn.encoderMeta && conn.encoderMeta.totalCounts;
+    if (!Number.isFinite(total) || total <= 0) return;
+    for (const c of checked) {
+      const spec = constants.ENCODER_VARS.find((v) => v.name === c.variable);
+      if (!spec || spec.rangeFrom !== 'TotalScaledRes') continue;
+      const n = Number(c.value);
+      if (Number.isFinite(n) && n > total - 1) {
+        fail('EINVAL', `${c.variable} must be 0 – ${(total - 1).toLocaleString('en-US')} ` +
+          `on this encoder (one less than its TotalScaledRes of ${total.toLocaleString('en-US')})`);
+      }
+    }
+  };
+
   const appLog = (id, text, level = 'info') =>
     manager.logger.push({
       id: id || null, name: nameOf(id), level, dir: 'app', text, ts: Date.now()
@@ -547,6 +574,8 @@ function createApi(ctx) {
     encoderWriteMany: async ({ id, entries }) => {
       if (!Array.isArray(entries) || !entries.length) fail('EINVAL', 'Nothing to write');
       const checked = entries.map((e) => checkVarWrite(e.variable, e.value));
+      const conn = store.find(checkId(id));
+      if (conn) boundToDevice(conn, checked);
       const link = manager.get(checkId(id));
 
       // Rate limiting is shared between both paths, so the device's ~100,000

@@ -169,3 +169,37 @@ test('a destination recovering through the probe path does not crash the process
   assert.match(claims[0], /127\.0\.0\.1:\d+ is reachable again/,
     'and it must name the destination, which is what `dest` was for');
 });
+
+test('a probe does not count as recovery while errors keep arriving', async (t) => {
+  // From the rig, with the disguise machine's cable pulled: 404 send errors and
+  // 4,148 suppressed packets, and the dashboard reading `receiving` throughout.
+  //
+  // The probe test asked only "did an error arrive in the second after this
+  // probe". A pulled cable's ICMP can take longer than that, so the probe looked
+  // clean, the sink was declared recovered, the next samples failed, and two
+  // seconds later it was offline again — flapping, while the pill claimed the
+  // data was arriving.
+  const { link, sink, warnings } = await linkWithSink(t);
+
+  sink.offline = true;
+  sink.txErrors = 400;
+  sink.recovered = false;
+  // A probe sent long enough ago, with no error *since* it went out — but an
+  // error only a moment before, which is what a failing destination looks like.
+  sink.probeSentAt = Date.now() - 1500;
+  sink.lastErrorAt = sink.probeSentAt - 10;
+
+  link._forward(1000, 0);
+
+  assert.equal(sink.offline, true,
+    'errors were arriving right up to the probe, so this is not recovery');
+  assert.deepEqual(warnings.filter((w) => /reachable again/.test(w)), []);
+
+  // Genuinely quiet for long enough: that is recovery.
+  sink.lastErrorAt = Date.now() - 6000;
+  sink.probeSentAt = Date.now() - 1500;
+  link._forward(1001, 0);
+
+  assert.equal(sink.offline, false, 'nothing has objected for seconds — it is back');
+  assert.equal(warnings.filter((w) => /reachable again/.test(w)).length, 1);
+});

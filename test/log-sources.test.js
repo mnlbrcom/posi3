@@ -136,6 +136,20 @@ function apiWith() {
   return { api, store, logger, manager };
 }
 
+/**
+ * An address that cannot be an encoder, and answers instantly.
+ *
+ * Every fixture here reaches the API, and the API reaches `writeOffline`, which
+ * opens a real socket. A fixture that omits the address gets
+ * `defaultConnection()`'s `10.10.10.10` — **a live encoder on this rig** — and
+ * a test asserting that an in-range Preset passes validation duly wrote Preset
+ * to it and moved its zero point.
+ *
+ * Loopback with a closed port rather than an unroutable one: ECONNREFUSED comes
+ * back at once, where TEST-NET-1 would sit on the connect timeout instead.
+ */
+const TEST_ENCODER = { host: '127.0.0.1', port: 65534 };
+
 /** Lines the operator caused, newest last. */
 const userLines = (logger) => logger.tail({ limit: 200 }).filter((l) => l.dir === 'user');
 
@@ -161,7 +175,7 @@ test('a stop that cannot happen is not written down as though it did', () => {
   // has never heard of produced a "stop" in the record and then an error to the
   // caller. Same rule as everywhere else here: only what actually happened.
   const { api, store, logger } = apiWith();
-  const conn = store.upsertConnection({ name: 'Never started' });
+  const conn = store.upsertConnection({ name: 'Never started', encoder: TEST_ENCODER });
 
   assert.throws(() => api.linkStop({ id: conn.id }), /No such connection/);
   assert.deepEqual(userLines(logger), [], 'nothing happened, so nothing is logged');
@@ -190,7 +204,7 @@ test('deleting a connection is logged, and keeps its name', () => {
 test('an edit records both values', () => {
   const { api, store, logger } = apiWith();
   const conn = store.upsertConnection({
-    name: 'Revolve', encoder: { host: '10.10.10.10', port: 6000 },
+    name: 'Revolve', encoder: TEST_ENCODER,
     destinations: [{ host: '127.0.0.1', port: 6000, devid: 1 }]
   });
 
@@ -209,8 +223,8 @@ test('stopping what is already stopped does nothing and says nothing', () => {
   // what existed rather than what was running, so the same line appeared with
   // nothing to stop.
   const { api, store, logger, manager } = apiWith();
-  const a = store.upsertConnection({ name: 'Revolve' });
-  const b = store.upsertConnection({ name: 'Encoder 2' });
+  const a = store.upsertConnection({ name: 'Revolve', encoder: TEST_ENCODER });
+  const b = store.upsertConnection({ name: 'Encoder 2', encoder: TEST_ENCODER });
   manager.upsert(a);
   manager.upsert(b);
 
@@ -232,7 +246,7 @@ test('log lines are delivered when nothing is running', () => {
   // after a page reload, which re-reads the ring buffer directly. That is
   // exactly when the log is being read to find out what happened.
   const { api, store, logger, manager } = apiWith();
-  const conn = store.upsertConnection({ name: 'Revolve' });
+  const conn = store.upsertConnection({ name: 'Revolve', encoder: TEST_ENCODER });
   manager.upsert(conn);
 
   const delivered = [];
@@ -377,4 +391,40 @@ test('a rate readout holds still without lying', () => {
     assert.ok((src.match(/steady/g) || []).length >= count,
       `${file} must run its rate through steady()`);
   }
+});
+
+test('a position value is bounded by what the device reports, not the family ceiling', async () => {
+  // Preset and Offset live inside TotalScaledRes, which is programmable. The
+  // static table can only carry the family ceiling of 1,073,741,824; the
+  // encoders here are scaled to 300,000 and 100,000. Without this the caption
+  // under the field stated the real bound while the server accepted anything
+  // under the family limit -- and the value reaches flash before the encoder
+  // gets to object, which is a spent cycle either way.
+  const { api, store } = apiWith();
+  // TEST_ENCODER, never the default: the default encoder address is a live
+  // device on the reference rig, and writeOffline will happily open a socket to
+  // it. A fixture that omits the address wrote Preset to real hardware.
+  const conn = store.upsertConnection({
+    name: 'Revolve', encoder: TEST_ENCODER,
+    encoderMeta: { countsPerRev: 8192, totalCounts: 300000, cycleTimeMs: 10 }
+  });
+
+  await assert.rejects(
+    () => api.encoderWriteMany({ id: conn.id, entries: [{ variable: 'Preset', value: '500000' }] }),
+    /Preset must be 0 – 299,999 on this encoder/);
+
+  // The bound is the device's, so a value inside it passes this check and
+  // fails later for want of a link -- not for being out of range.
+  await assert.rejects(
+    () => api.encoderWriteMany({ id: conn.id, entries: [{ variable: 'Preset', value: '299999' }] }),
+    (err) => !/must be 0 –/.test(err.message));
+
+  // Unknown scaling is not a licence to guess a bound: before the encoder has
+  // been read, the static range is all there is.
+  const fresh = store.upsertConnection({ name: 'Unread', encoder: TEST_ENCODER });
+  assert.equal(fresh.encoderMeta.totalCounts, null);
+  await assert.rejects(
+    () => api.encoderWriteMany({ id: fresh.id, entries: [{ variable: 'Preset', value: '500000' }] }),
+    (err) => !/must be 0 –/.test(err.message),
+    'unknown scaling is not a licence to invent a bound');
 });

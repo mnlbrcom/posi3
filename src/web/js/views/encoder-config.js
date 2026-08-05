@@ -208,9 +208,12 @@ function encoderCard(conn) {
       const ctl = controls.get(spec.name);
       if (!ctl || !ctl.setRange) continue;
       const n = Number(current.get(spec.rangeFrom));
-      ctl.setRange(Number.isFinite(n) && n > 0
-        ? `0 – ${(n - 1).toLocaleString('en-US')}  (one less than ${spec.rangeFrom})`
-        : spec.range);
+      const known = Number.isFinite(n) && n > 0;
+      ctl.setRange(
+        known
+          ? `0 – ${(n - 1).toLocaleString('en-US')}  (one less than ${spec.rangeFrom})`
+          : spec.range,
+        known ? n - 1 : undefined);
     }
   }
 
@@ -532,8 +535,17 @@ function buildControl(spec, onChange) {
       node: el('div', {}, box, range, hint),
       set: (v) => { box.value = v; updateHint(v); },
       setRateHint: updateHint,
-      /** Replace the stated range once the value it depends on is known. */
-      setRange: (text) => { if (range) setText(range, text); }
+      /**
+       * Replace the stated range once the value it depends on is known.
+       *
+       * The field's own limit moves with it. Saying "0 – 299,999" under a box
+       * that accepts 1,073,741,823 states a bound and then declines to hold to
+       * it, and the value goes to flash before the encoder gets to object.
+       */
+      setRange: (text, max) => {
+        if (range) setText(range, text);
+        box.max = Number.isFinite(max) ? String(max) : String(spec.max);
+      }
     };
   }
 
