@@ -43,7 +43,10 @@ test('a new connection claims nothing about a device it has not spoken to', () =
   // an encoder with 300,000 steps, and claimed ASCII_SHORT on devices that were
   // never asked.
   const s = loaded(tmpDir());
-  const c = s.upsertConnection({ name: 'Fresh' });
+  // Loopback, explicitly: a fixture that omits the address inherits
+  // defaultConnection()'s 10.10.10.10 — the live encoder on this rig — and a
+  // fixture exactly like that once wrote Preset=299999 to real hardware.
+  const c = s.upsertConnection({ name: 'Fresh', encoder: { host: '127.0.0.1', port: 65534 } });
 
   for (const key of ['countsPerRev', 'totalCounts', 'cycleTimeMs']) {
     assert.equal(c.encoderMeta[key], null, `encoderMeta.${key} must start unknown`);
@@ -62,8 +65,8 @@ test('a saved profile round-trips', () => {
   const a = loaded(dir);
   a.upsertConnection({
     name: 'Revolve',
-    encoder: { host: '10.10.10.20', port: 6000 },
-    destinations: [{ host: '10.10.10.47', port: 6000, devid: 3 }]
+    encoder: { host: '192.0.2.20', port: 6000 },
+    destinations: [{ host: '192.0.2.47', port: 6000, devid: 3 }]
   });
   a.flushNow();
 
@@ -80,8 +83,8 @@ test('a schema-1 profile on disk is upgraded on load', () => {
     settings: { telemetryHz: 30 },
     connections: [{
       id: 'old', name: 'Legacy',
-      encoder: { host: '10.10.10.10', port: 6000 },
-      d3: { host: '10.10.10.47', port: 6000, devid: 7 }
+      encoder: { host: '192.0.2.10', port: 6000 },
+      d3: { host: '192.0.2.47', port: 6000, devid: 7 }
     }]
   }));
 
@@ -110,8 +113,8 @@ test('a corrupt profile falls back to the backup', () => {
   const a = loaded(dir);
   a.upsertConnection({
     name: 'Important',
-    encoder: { host: '10.10.10.20', port: 6000 },
-    destinations: [{ host: '10.0.0.1', port: 6000, devid: 1 }]
+    encoder: { host: '192.0.2.20', port: 6000 },
+    destinations: [{ host: '192.0.2.1', port: 6000, devid: 1 }]
   });
   a.flushNow();
   // A second save rotates the first into .bak.
@@ -140,8 +143,8 @@ test('a write leaves no temporary file behind', () => {
   const dir = tmpDir();
   const s = loaded(dir);
   s.upsertConnection({
-    name: 'A', encoder: { host: '10.0.0.9', port: 6000 },
-    destinations: [{ host: '10.0.0.1', port: 6000, devid: 1 }]
+    name: 'A', encoder: { host: '192.0.2.9', port: 6000 },
+    destinations: [{ host: '192.0.2.1', port: 6000, devid: 1 }]
   });
   s.flushNow();
   const stray = fs.readdirSync(dir).filter((f) => f.includes('tmp') || f.endsWith('.swp'));
@@ -152,8 +155,8 @@ test('deleting a connection removes it and persists', () => {
   const dir = tmpDir();
   const s = loaded(dir);
   const c = s.upsertConnection({
-    name: 'A', encoder: { host: '10.0.0.9', port: 6000 },
-    destinations: [{ host: '10.0.0.1', port: 6000, devid: 1 }]
+    name: 'A', encoder: { host: '192.0.2.9', port: 6000 },
+    destinations: [{ host: '192.0.2.1', port: 6000, devid: 1 }]
   });
   s.deleteConnection(c.id);
   s.flushNow();
@@ -170,10 +173,10 @@ test('a schema-3 mapping is copied onto every receiver', () => {
     version: 3,
     connections: [{
       id: 'fan', name: 'Revolve',
-      encoder: { host: '10.10.10.10', port: 6000 },
+      encoder: { host: '192.0.2.10', port: 6000 },
       destinations: [
-        { id: 'a', name: 'director', host: '10.10.10.5', port: 6000, devid: 10 },
-        { id: 'b', name: 'US', host: '10.10.10.2', port: 6000, devid: 11 }
+        { id: 'a', name: 'director', host: '192.0.2.5', port: 6000, devid: 10 },
+        { id: 'b', name: 'US', host: '192.0.2.2', port: 6000, devid: 11 }
       ],
       mapping: { mode: 'revolutions', revolutions: 2.5, property: 'rotation.y', maxOutput: 360 }
     }]

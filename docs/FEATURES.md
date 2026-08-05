@@ -4908,3 +4908,15 @@ Designer upgraded mid-run is no longer muted until restart.
 - **Per-frame paints go idempotent**: the header aggregate, the CycleTime rate
   hint and the faults tooltip only write on change, instead of replacing the
   same text ~60 times a second.
+
+### No test fixture points at the encoder subnet any more
+
+The audit found one fixture creating a connection with no address — which
+inherits `defaultConnection()`'s `10.10.10.10`, the live encoder on this rig,
+the exact pattern that once wrote `Preset=299999` to real hardware. It now
+names loopback explicitly. Every other `10.x` fixture (all persistence-only or
+pure-function data, none reachable by a socket today) moved to TEST-NET-1
+(`192.0.2.0/24` — reserved by RFC 5737, routed nowhere), so a future refactor
+cannot promote one into a dial. Comments citing rig measurements keep their
+addresses; they are history, not fixtures. A tripwire test now scans every
+test file and fails on any fixture host in `10.x`, `172.16.x` or `192.168.x`.
