@@ -74,10 +74,10 @@ export function renderConnections(root) {
 
     const card = el('div', { class: 'card conn-card' },
       el('div', { class: 'card-head' },
-        el('button', {
-          class: 'card-name', text: conn.name, title: 'Open the controls',
-          onclick: () => openControls(conn)
-        }),
+        // A label, not a button. There is a Controls button two inches to its
+        // right, and a name that opens something is a promise the name should
+        // not be making.
+        el('span', { class: 'card-name', text: conn.name }),
         pillHolder,
         // Grouped, not spaced apart with a filler element: a spacer only
         // right-aligns the row it happens to sit on, so once the buttons

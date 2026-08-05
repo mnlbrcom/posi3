@@ -4207,3 +4207,47 @@ On the rig, after asking about one of the three:
     US          10.10.10.2:6000  connected    a laptop: reachable, receiving nothing
 
 **255 tests pass.**
+
+---
+
+## 2026-08-05 — One outage, one message, and it never gets younger
+
+> "the banner: Encoder 2: director (…) is offline — sends paused, retrying every 5s never wrote a log
+> entry … is partilly redudant to it … It says retrying every 5s but the log entry gets written 27s or
+> so? If you stop and start Encoder 2 you get both banners." / "the encoder name in connections should
+> not be a link to controls."
+
+**The banner and the log line were built in different places, with different words.** The banner said
+*"is offline — sends paused, retrying every 5s"* and no log line ever carried that sentence — so the
+one message an operator was interrupted by left no trace in the record, against the rule that anything
+worth a banner is worth a log line. They are one sentence now, written once and used for both.
+
+**A blip says nothing.** Before giving up, a failure might still clear inside two seconds; announcing
+it puts a banner in front of somebody for something already over. That is where the second banner came
+from.
+
+**An outage is announced once, however many times sending is retried.** Sending resumes every few
+seconds to test whether the host is back, so going offline again is the same outage continuing — and
+it was announced identically each time, twelve seconds apart, for a machine that had never come back.
+
+**And it does not get younger.** The elapsed time came from `failingSince`, which restarts with every
+resumed attempt, so a follow-up read *"still not answering after 17s"* and then, a minute later,
+*"after 7s"*. It is measured from when the outage began. The cause is not repeated either — only a
+cause that has actually changed, such as a host that starts refusing the port instead of not
+answering at all.
+
+Stop, start, and 110 seconds against the switched-off machine:
+
+    19:31:13  director (10.10.10.5:6000): no answer from 10.10.10.5 at all — switched off,
+              unplugged, or not on this subnet. Sends paused, retrying every 5s — the encoder
+              connection stays up.
+    19:31:29  director (10.10.10.5:6000): still not answering after 17s.
+    19:32:33  director (10.10.10.5:6000): still not answering after 81s.
+
+Three lines. It was fourteen.
+
+**The connection name is a label.** Said before and scoped to the Dashboard at the time; Connections
+had it too, with a Controls button two inches to its right. No card name is a button now, so the
+pointer and hover underline that went with it are gone as well.
+
+**259 tests pass.**

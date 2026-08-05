@@ -796,17 +796,16 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   margin-left: auto; display: flex; align-items: center; gap: 8px;
   flex-wrap: wrap; justify-content: flex-end;
 }
-/* A name is a label. Only where it is genuinely a button does it get the
-   affordances — a span with `cursor: pointer` and a hover underline promises a
-   click that does not happen. */
+/* A name is a label, everywhere. It was a button on the Connections card, with
+   a Controls button beside it doing the same thing — a name that opens
+   something is a promise the name should not be making. No card name is a
+   button now, so the affordances that went with it are gone too. */
 .card-name {
   font: inherit; font-weight: 600; font-size: var(--fs-head);
   background: none; border: none; padding: 0;
   color: var(--text); text-align: left;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-button.card-name { cursor: pointer; }
-button.card-name:hover { color: var(--accent-text); text-decoration: underline; }
 
 /* The encoder's address, on its own line under the name. Quieter than the name,
    so the name and its indicator stay the line the eye scans down the page. */

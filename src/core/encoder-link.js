@@ -366,6 +366,17 @@ class EncoderLink extends EventEmitter {
         probeSentAt: 0,
         /** While proving itself at the normal rate: when the trial ends. */
         trialUntil: 0,
+        /** Whether this outage has already been announced. Cleared on recovery. */
+        downAnnounced: false,
+        /**
+         * When this outage began, and what was said about it.
+         *
+         * Not `failingSince`: that restarts every time a trial resumes sending
+         * and fails again, so a follow-up said "still not answering after 17s"
+         * and then, a minute later, "after 7s". An outage does not get younger.
+         */
+        outageSince: 0,
+        downCause: null,
         onError: (err) => {
           if (!err) return;
           sink.txErrors++;
@@ -394,47 +405,60 @@ class EncoderLink extends EventEmitter {
 
           // Long enough to rule out a blip, short enough that a show does not
           // spend a minute shouting into a hole.
+          const place = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
+          const why = explainSendError(err.code, dest);
+
           if (!sink.offline && now - sink.failingSince >= SEND_GIVE_UP_MS) {
             sink.offline = true;
             sink.nextProbeAt = now + OFFLINE_RETRY_MS;
-            const place = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-            // One line, not two. "is not answering" and "no answer from the
-            // host" are the same fact — going offline *is* the diagnosis — and
-            // saying both left an operator reading the same news twice, two
-            // seconds apart. The cause and what follows from it belong in one
-            // sentence.
-            const cause = explainSendError(sink.lastErrorCode, dest);
-            this._log('warn', 'app',
-              `${place}: ${cause || 'not answering'} Sends paused, retrying every ` +
-              `${OFFLINE_RETRY_MS / 1000}s — the encoder connection stays up.`);
-            // And the periodic warning does not immediately repeat it.
-            sink.nextWarnAt = now + (sink.warnBackoffMs || 15000);
-            this.emit('encoderEvent', {
-              id: this.id, kind: 'destinationDown',
-              text: `${place} is offline — sends paused, retrying every ${OFFLINE_RETRY_MS / 1000}s`
-            });
+
+            // Announced once per outage, not once per attempt to leave one.
+            // Sending resumes every few seconds to test whether the host is
+            // back, so going offline again is the *same* outage continuing — and
+            // it was announced identically each time, twelve seconds apart, for
+            // a machine that had never come back. Falling through rather than
+            // returning, so the periodic update below still comes due.
+            if (!sink.downAnnounced) {
+              sink.downAnnounced = true;
+              sink.outageSince = now;
+              sink.downCause = why || null;
+
+              // One sentence, written once, and used for both the log line and
+              // the banner. They were built separately and said different
+              // things: the banner claimed "is offline — sends paused, retrying
+              // every 5s" and no log line ever carried those words, so the one
+              // message an operator was interrupted by left no trace in the
+              // record at all.
+              const text = `${place}: ${why || 'not answering.'} Sends paused, ` +
+                `retrying every ${OFFLINE_RETRY_MS / 1000}s — the encoder connection stays up.`;
+              this._log('warn', 'app', text);
+              this.emit('encoderEvent', { id: this.id, kind: 'destinationDown', text });
+
+              sink.warnBackoffMs = 15000;
+              sink.nextWarnAt = now + sink.warnBackoffMs;
+              return;
+            }
           }
 
-          if (now < sink.nextWarnAt) return;
-          // 0s, 15s, 60s, 240s, then every 15 minutes.
-          sink.warnBackoffMs = sink.warnBackoffMs
-            ? Math.min(sink.warnBackoffMs * 4, 900000)
-            : 15000;
+          // Before giving up, say nothing: a failure that clears inside
+          // SEND_GIVE_UP_MS is a blip, and reporting it would put a banner in
+          // front of somebody for something already over. While offline, repeat
+          // on the backoff — 15s, then 60s, 240s, then every 15 minutes — and
+          // say how long it has been rather than restating the retry interval,
+          // which has not changed and is in the message above.
+          if (!sink.offline || now < sink.nextWarnAt) return;
+          sink.warnBackoffMs = Math.min(sink.warnBackoffMs * 4, 900000);
           sink.nextWarnAt = now + sink.warnBackoffMs;
 
-          const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-          const why = explainSendError(err.code, dest);
-          // Just the diagnosis. The packet count said nothing — if a
-          // destination is not receiving then packets are being lost, by
-          // definition — and the errno is the app's own vocabulary, already
-          // spent on producing the sentence in front of it. The running total
-          // is on the dashboard, where a figure belongs.
-          //
-          // A code with no explanation keeps the raw message, which is the only
-          // place it can be seen at all.
-          this._warn(why
-            ? `${where}: ${why}`
-            : `Cannot reach ${where}: ${err.message}.`);
+          const downFor = Math.round((now - (sink.outageSince || sink.failingSince)) / 1000);
+          const forHow = downFor >= 120 ? `${Math.round(downFor / 60)} minutes` : `${downFor}s`;
+          // The cause only if it has changed — a host that went from refusing
+          // the port to not answering at all is news; the same cause restated
+          // every few minutes is the first message again.
+          const changed = why && why !== sink.downCause;
+          if (changed) sink.downCause = why;
+          this._warn(`${place}: still not answering after ${forHow}.` +
+            (changed ? ` Now: ${why}` : ''));
         },
         onSent: () => {
           // Recovery is news too. Without this a destination that came back
@@ -788,6 +812,8 @@ class EncoderLink extends EventEmitter {
   _announceRecovery(sink, dest) {
     if (sink.recovered) return;
     sink.recovered = true;
+    // The outage is over, so the next one is news again.
+    sink.downAnnounced = false;
     const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
     this._log('info', 'app', `${where} is reachable again after ${sink.txErrors} lost packets`);
     this.emit('encoderEvent', {
