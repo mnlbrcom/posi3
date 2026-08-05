@@ -58,10 +58,11 @@ const POOL_SIZE = 8;
  * claims in ninety, whether the three seconds were spent in a trial or in
  * ordinary traffic afterwards.
  *
- * Thirty seconds is longer than any gap observed, and the cost of the choice is
- * only that a genuine recovery is announced half a minute late — while the
- * dashboard pill turns green immediately, because that reflects state rather
- * than making a claim.
+ * Thirty seconds is longer than any gap observed. It is the fallback, not the
+ * usual path: it applies only when nothing better is available, because silence
+ * is weak evidence and half a minute of it is what makes it worth anything. A
+ * host that answers TCP has proven itself alive outright, and `hostProvenBack`
+ * takes that instead — see `_probeHostAlive`.
  */
 const RECOVERY_QUIET_MS = 30000;
 
@@ -77,7 +78,30 @@ const RECOVERY_QUIET_MS = 30000;
  * on the network, ECONNREFUSED means it is but nothing is bound to the port.
  */
 const SEND_GIVE_UP_MS = 2000;
-const OFFLINE_RETRY_MS = 5000;
+// Once a second. The probe is a single datagram, so the old five-second gap
+// bought nothing and cost up to five seconds of an outage that was already over
+// — nothing was even attempted until the next one came due.
+const OFFLINE_RETRY_MS = 1000;
+
+/**
+ * Proof that a host is up, rather than the absence of proof that it is down.
+ *
+ * UDP can only ever report failure, so recovery had to be inferred from silence
+ * — and silence is exactly what a switched-off machine also produces, measured
+ * at nine consecutive seconds at full send rate. Hence thirty seconds of quiet
+ * before believing it, and hence a replugged cable sitting on `offline` for
+ * half a minute while disguise was visibly receiving.
+ *
+ * TCP settles it in one round trip. A completed handshake proves the host is
+ * up; so does a refusal, because only a live machine sends RST. Either answer
+ * is proof of life, and the port is the destination's own, so nothing new has
+ * to be configured and nothing has to be listening on it.
+ *
+ * This is not the Designer Python API and runs no script: it is a connect and
+ * an immediate close, the reachability test `ping` would give if raw sockets
+ * did not need root. It runs only while a destination is already offline.
+ */
+const HOST_ALIVE_TIMEOUT_MS = 800;
 
 /**
  * How long a probe must go unanswered before the destination counts as back.
@@ -363,6 +387,10 @@ class EncoderLink extends EventEmitter {
         suppressed: 0,
         nextProbeAt: 0,
         probeSentAt: 0,
+        /** When TCP last proved this host alive. Stale once an error is newer. */
+        aliveAt: 0,
+        /** The in-flight liveness connect, so only one is ever open. */
+        aliveProbe: null,
         /** While proving itself at the normal rate: when the trial ends. */
         trialUntil: 0,
         /** Whether this outage has already been announced. Cleared on recovery. */
@@ -465,7 +493,7 @@ class EncoderLink extends EventEmitter {
           // While offline, the probe path decides — a send callback returning
           // success proves nothing, because ICMP has not had time to arrive.
           if (sink.offline) return;
-          if (Date.now() - sink.lastErrorAt < RECOVERY_QUIET_MS) return;
+          if (!hostProvenBack(sink)) return;
 
           sink.failingSince = 0;
           sink.lastErrorCode = null;
@@ -506,6 +534,12 @@ class EncoderLink extends EventEmitter {
   _closeUdp() {
     for (const sink of this._sinks) {
       try { sink.udp.close(); } catch { /* already closed */ }
+      // A liveness connect outlives the link that opened it otherwise, and
+      // stopping mid-outage is when one is most likely to be open.
+      if (sink.aliveProbe) {
+        sink.aliveProbe.destroy();
+        sink.aliveProbe = null;
+      }
     }
     this._sinks = [];
   }
@@ -779,6 +813,9 @@ class EncoderLink extends EventEmitter {
         } else {
           sink.nextProbeAt = nowMs + OFFLINE_RETRY_MS;
           sink.probeSentAt = nowMs;
+          // Asked at the same moment, answered independently: the datagram
+          // tests our path, the connect tests whether the machine is there.
+          this._probeHostAlive(sink);
         }
       }
 
@@ -796,6 +833,38 @@ class EncoderLink extends EventEmitter {
       sink.tx++;
       this.counters.tx++;
     }
+  }
+
+  /**
+   * Ask TCP whether the machine is there. One attempt, never more than one open.
+   *
+   * Both a handshake and a refusal count: a host that RSTs is a host that is
+   * running an IP stack. Only a timeout, or the network saying the address is
+   * unreachable, leaves the question open — and then the thirty-second silence
+   * rule carries it, as before. So a firewall that drops everything degrades to
+   * exactly the old behaviour rather than to a wrong answer.
+   */
+  _probeHostAlive(sink) {
+    if (sink.aliveProbe) return;
+
+    const socket = net.connect({ host: sink.dest.host, port: sink.dest.port });
+    sink.aliveProbe = socket;
+    socket.setTimeout(HOST_ALIVE_TIMEOUT_MS);
+
+    const settle = (alive) => {
+      if (sink.aliveProbe !== socket) return;
+      sink.aliveProbe = null;
+      socket.destroy();
+      if (alive) sink.aliveAt = Date.now();
+    };
+    socket.on('connect', () => settle(true));
+    socket.on('timeout', () => settle(false));
+    // ECONNRESET as well as ECONNREFUSED: a port that accepts and drops is
+    // still a live machine.
+    socket.on('error', (err) => settle(err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET'));
+    // Never the reason a process stays up — this runs during an outage, which
+    // is exactly when someone is likely to be quitting.
+    socket.unref();
   }
 
   /** Said once per outage, whichever path noticed the destination was back. */
@@ -1561,6 +1630,23 @@ function sameValue(a, b) {
  * to the screen, because they call for different people: one is "start
  * disguise", the other is "check the machine or the cable".
  */
+/**
+ * Has this destination stopped being in trouble?
+ *
+ * Three ways, in descending order of how much they prove. It has never failed;
+ * TCP has since proved the machine alive; or it has simply been quiet long
+ * enough that a dead host would have said something by now.
+ *
+ * One function because the pill and the "reachable again" line both need the
+ * answer, and when they each carried their own copy the pill went green while
+ * the log stayed silent for another twenty seconds.
+ */
+function hostProvenBack(sink) {
+  if (!sink.txErrors) return true;
+  if (sink.aliveAt > sink.lastErrorAt) return true;
+  return Date.now() - sink.lastErrorAt >= RECOVERY_QUIET_MS;
+}
+
 function destinationHealth(sink, running) {
   if (!running) return 'idle';
 
@@ -1578,7 +1664,7 @@ function destinationHealth(sink, running) {
   // The silence still has to have lasted. Errors recently, or suppressed sends,
   // mean not connected — otherwise the pill flipped for the second or two
   // between a trial resuming sends and the next error arriving.
-  const quiet = !sink.txErrors || Date.now() - sink.lastErrorAt >= RECOVERY_QUIET_MS;
+  const quiet = hostProvenBack(sink);
   if (sink.offline || !quiet) {
     return sink.lastErrorCode === 'ECONNREFUSED' ? 'refused' : 'offline';
   }
@@ -1662,4 +1748,4 @@ function normaliseConfig(c) {
   };
 }
 
-module.exports = { EncoderLink, normaliseConfig, assertSafeValue };
+module.exports = { EncoderLink, normaliseConfig, assertSafeValue, hostProvenBack };

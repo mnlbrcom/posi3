@@ -190,3 +190,67 @@ test('connected is not receiving, and only disguise can say otherwise', async (t
   }
   assert.equal(lowered.destinations[0].health, 'mismatch');
 });
+
+// ---------------------------------------------------------------------------
+// Getting back
+// ---------------------------------------------------------------------------
+
+const { hostProvenBack } = require('../src/core/encoder-link');
+
+/** A sink with only the fields the recovery rule reads. */
+function sink(over) {
+  return Object.assign({ txErrors: 0, lastErrorAt: 0, aliveAt: 0 }, over);
+}
+
+test('a host proven alive by TCP does not also have to wait out the silence', () => {
+  // The reported delay: a cable was replugged, disguise was visibly receiving
+  // for seconds, and the indicator stayed offline. Silence was the only
+  // evidence UDP could offer, so thirty seconds of it was the bar — and every
+  // recovery paid it, including the ones that were obviously over.
+  const now = Date.now();
+
+  assert.equal(hostProvenBack(sink()), true,
+    'a destination that has never failed is not recovering from anything');
+
+  assert.equal(hostProvenBack(sink({ txErrors: 5, lastErrorAt: now - 1000, aliveAt: now - 200 })), true,
+    'the machine answered TCP after the last error — that settles it');
+
+  assert.equal(hostProvenBack(sink({ txErrors: 5, lastErrorAt: now - 1000, aliveAt: now - 4000 })), false,
+    'proof older than the error proves nothing about now');
+
+  assert.equal(hostProvenBack(sink({ txErrors: 5, lastErrorAt: now - 1000 })), false,
+    'and with no proof at all, one second of quiet is still just one second');
+
+  assert.equal(hostProvenBack(sink({ txErrors: 5, lastErrorAt: now - 31000 })), true,
+    'the silence rule still carries it when TCP cannot answer — a firewall that ' +
+    'drops everything degrades to the old behaviour, not to a wrong answer');
+});
+
+test('a refusal counts as proof of life, an unroutable address does not', async (t) => {
+  // Only a live machine sends RST. This is the case that matters most, because
+  // a disguise host with nothing on the UDP port is exactly the rig that was
+  // sitting on `offline` while the show ran.
+  const probe = dgram.createSocket('udp4');
+  const port = await new Promise((r) => probe.bind(0, '127.0.0.1', () => r(probe.address().port)));
+  await new Promise((r) => probe.close(r));
+
+  const link = new EncoderLink({
+    id: 'alive', name: 'alive',
+    // Never a real encoder address: this link is never started, but a fixture
+    // that could reach hardware has cost flash writes here before.
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ id: 'd', host: '127.0.0.1', port }]
+  });
+  t.after(() => link.stop());
+
+  const refused = sink({ dest: { host: '127.0.0.1', port } });
+  link._probeHostAlive(refused);
+  await until(() => refused.aliveAt > 0, 3000, 'a refusal to be read as alive');
+
+  // 192.0.2.0/24 is TEST-NET-1, reserved by RFC 5737 and routed nowhere.
+  const gone = sink({ dest: { host: '192.0.2.1', port: 6000 } });
+  link._probeHostAlive(gone);
+  await sleep(1200);
+  assert.equal(gone.aliveAt, 0, 'nothing answered, so nothing is claimed');
+  assert.equal(gone.aliveProbe, null, 'and the attempt was cleaned up');
+});
