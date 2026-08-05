@@ -45,7 +45,7 @@ const DEFAULT_TIMEOUT_MS = 4000;
  *
  *   state.devices                  a DeviceManager, not a list
  *     .devices                     the devices themselves
- *       ScreenPositionReceiver     name, path, uid, started, engaged, receiving
+ *       ScreenPositionReceiver     description, path, uid
  *         .drivers[]               NavigatorDriver … Port, and `description`
  *                                  for the name the operator gave it
  *         .axes[]                  ScreenPositionAxis … each with an id
@@ -60,6 +60,13 @@ const DEFAULT_TIMEOUT_MS = 4000;
  * So a destination here — host, port, device id — joins to disguise as: on that
  * host, the receiver with a driver on that port, containing an axis with that
  * id. Each half can match without the other, and each failure is different.
+ *
+ * `started`, `engaged` and `receiving` are deliberately **not** read. The
+ * receiver carries all three and the axes carry none of them, and on the
+ * reference rig `engaged` reported False for a receiver whose axes the operator
+ * had engaged. Whatever that property tracks, it is not the thing an operator is
+ * looking at — and a status nobody can act on, reported confidently, is worse
+ * than no status at all.
  *
  * Defensive throughout: it runs against whatever version a venue has, so a
  * missing attribute skips one field rather than failing the call.
@@ -101,9 +108,6 @@ for d in devices:
             'name': str(getattr(d, 'description', '') or getattr(d, 'name', '') or ''),
             'path': str(getattr(d, 'path', '') or ''),
             'uid': str(getattr(d, 'uid', '') or ''),
-            'started': bool(getattr(d, 'started', False)),
-            'engaged': bool(getattr(d, 'engaged', False)),
-            'receiving': bool(getattr(d, 'receiving', False)),
             'drivers': drivers,
             'axes': axes,
         })

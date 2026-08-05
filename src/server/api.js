@@ -481,13 +481,9 @@ function createApi(ctx) {
         verdict = `Split across receivers: port ${dest.port} is on ` +
           `${portOnly.map((r) => q(r.name, r.path)).join(', ')} and axis id ${dest.devid} is on ` +
           `${axisOnly.map((r) => q(r.name, r.path)).join(', ')} — they have to be in the same one.`;
-      } else if (!both.engaged) {
-        verdict = `Not engaged: port ${dest.port} and axis id ${dest.devid} both match on ` +
-          `disguise ScreenPositionReceiver ${q(both.name, both.path)}, but Designer reports it ` +
-          'as not engaged.';
       } else {
         verdict = `Everything matches: disguise ScreenPositionReceiver ${q(both.name, both.path)} ` +
-          `is engaged on port ${dest.port}, with an axis for id ${dest.devid}.`;
+          `has a driver on port ${dest.port} and an axis for id ${dest.devid}.`;
         level = 'info';
       }
 
@@ -496,7 +492,7 @@ function createApi(ctx) {
         receivers,
         ports: allPorts,
         ids: allIds,
-        matches: !!both && both.engaged && both.receiving,
+        matches: !!both,
         verdict
       };
     },

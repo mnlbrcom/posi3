@@ -3989,3 +3989,29 @@ measured — but `description` leads there too, because if they ever diverge the
 meant.
 
 **247 tests pass.**
+
+---
+
+## 2026-08-05 — Dropping a status that could not be read
+
+> "the whole engaged thing we can drop if it does not work. The axis is engaged, if you cant read
+> that drop the whole engeged status reports"
+
+`ScreenPositionReceiver` carries `started`, `engaged` and `receiving`; the axes carry none of them.
+On the reference rig `engaged` read `False` for a receiver whose axes the operator had engaged — so
+whatever that property tracks, it is not the thing an operator is looking at.
+
+All three are gone: not read by the script, not carried in the payload, not mentioned in any verdict.
+**A status nobody can act on, reported confidently, is worse than no status at all** — the same fault
+as the fabricated defaults and the destination that called itself `receiving` while a cable was out.
+
+What is read is now only what can be matched against: the receiver's name, its Navigator drivers and
+their ports, and the axis ids.
+
+    Everything matches: disguise ScreenPositionReceiver "posi3" has a driver on port 8000
+    and an axis for id 1.
+
+Measured with the connection's port set to 8000, which it now is.
+
+**248 tests pass**, one of which fails if `engaged`, `receiving` or `started` reappears in the query
+or in a verdict.
