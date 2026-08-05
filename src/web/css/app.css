@@ -1239,3 +1239,11 @@ select.unknown-value { border-color: var(--warn); }
   border: 1px solid var(--warn); border-radius: var(--radius);
 }
 .map-warn.error { border-color: var(--err); }
+
+/* What disguise answered when asked what it is listening on. Empty until the
+   button is pressed, and taking no space until then. */
+.map-verdict { margin: 6px 0 2px; font-size: var(--fs-body); color: var(--text-dim); }
+.map-verdict:empty { display: none; }
+.map-verdict.ok { color: var(--ok-text); }
+.map-verdict.warn { color: var(--warn); }
+.map-verdict.err { color: var(--err-text); }

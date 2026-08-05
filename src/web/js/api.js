@@ -208,6 +208,7 @@ if (!window.d3d) {
 
     mapping: {
       compute: (id, destId, mapping) => call('mappingCompute', { id, destId, mapping }),
+      inspect: (id, destId) => call('disguiseInspect', { id, destId }),
     },
 
     net: {

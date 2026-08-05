@@ -3712,3 +3712,56 @@ The thirty-second banner cap still applies above these.
 destination is named and that a cause is given, which is what it was for.
 
 **232 tests pass.**
+
+---
+
+## 2026-08-05 — Asking disguise what it is listening on
+
+> "can you change the port via disguise api of the navigator driver?" / "agree" (to reading first)
+
+**Yes — the port is a writable property.** From the reference, rendered rather than guessed at:
+
+    UdpReceiverDriver
+      Base class: ScreenPositionDriver
+      Subclasses: … NavigatorDriver …
+      Properties:  Port : int
+                   ipFromFilter : str       Filter by sender IP. Leave blank for any IP.
+                   multicastAddress : str   Multicast Address. Leave blank for broadcast.
+
+`NavigatorDriver` inherits all of it and defines nothing of its own, so `Port` is a documented, typed
+property of exactly the object being configured.
+
+Reading first, by agreement. ICMP tells us a machine is there and nothing is bound to the port we
+send to; it cannot say which port *is* bound. Designer can, and that turns *"nothing is listening on
+6000"* into *"disguise is listening on 8000"* — the whole answer.
+
+    POST http://<host>/api/session/python/execute   { "script": "…" }
+
+The script filters `state.devices` by `UdpReceiverDriver` and returns each one's kind, name, port,
+multicast address and IP filter. Its `return` value comes back as JSON.
+
+### On demand, and only on demand
+
+disguise's own documentation is explicit: *"this endpoint MUST NOT be polled"* and *"calling this
+endpoint too frequently or during a show is not a supported workflow — this is intended for show
+programming tasks, not during production."*
+
+So it is wired to a button on the receiver's card and to nothing else — not the send-error path, not
+a timer, not a screen that happens to be open. The first instinct was to answer the ECONNREFUSED
+automatically, which would have broken that contract on every failure. **A diagnosis that
+destabilises the machine being diagnosed is not worth having.**
+
+The failure modes are kept apart, because they send you to different places: no Designer session on
+that machine, an error from Designer itself, a session with no receiver in it, and a session whose
+receiver simply sits on another port. Six tests cover them against a stub HTTP server — never a real
+machine, for the reason above.
+
+### What it found on the rig
+
+    disguise 1 → 10.10.10.4:  answered 404 — Route not found
+
+Which is itself the answer. `10.10.10.4` serves a web page on port 80 and returns JSON 404s for every
+`/api/*` path, so **whatever is at that address, it is not a Designer session** — while UDP 6000 is
+refused by the same host. `10.10.10.5` does not answer HTTP at all.
+
+**240 tests pass.**

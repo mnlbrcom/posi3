@@ -113,6 +113,10 @@ function receiverCard(conn, dest) {
   const groupKey = (g) => `${dest.id}:${g}`;
 
   const saveBtn = el('button', { class: 'btn primary', text: 'Save', disabled: true });
+  // On demand only: disguise's documentation says the Python endpoint must not
+  // be polled and is not for use during a show. A button, and nothing else.
+  const askBtn = el('button', { class: 'btn', text: 'Ask disguise' });
+  const verdict = el('div', { class: 'map-verdict' });
   const pillHolder = el('span', { class: 'pill-holder' }, pill('idle'));
   const livePos = el('span', { class: 'target-pos', text: '—' });
   const resultHolder = el('div', { class: 'map-result' });
@@ -206,7 +210,7 @@ function receiverCard(conn, dest) {
     el('div', { class: 'card-head' },
       el('span', { class: 'card-name', text: title }),
       pillHolder,
-      el('div', { class: 'card-actions' }, saveBtn)),
+      el('div', { class: 'card-actions' }, askBtn, saveBtn)),
     // Same shape as an encoder card: what this is, and where, under the name.
     el('div', { class: 'card-addr' },
       `${where} · id ${dest.devid}` +
@@ -217,6 +221,7 @@ function receiverCard(conn, dest) {
         el('span', { class: 'target-live-label', text: 'Live position' }),
         livePos,
         el('span', { class: 'target-hint', text: 'from the encoder feeding this receiver' }))),
+    verdict,
     ...groups);
 
   saveBtn.onclick = async () => {
@@ -228,6 +233,31 @@ function receiverCard(conn, dest) {
     } catch (err) {
       toast('error', err.message);
       saveBtn.disabled = false;
+    }
+  };
+
+  askBtn.onclick = async () => {
+    askBtn.disabled = true;
+    setText(verdict, `Asking ${dest.host}…`);
+    verdict.className = 'map-verdict';
+    try {
+      const r = await window.d3d.disguise.inspect(conn.id, dest.id);
+      verdict.className = `map-verdict ${r.matches ? 'ok' : 'warn'}`;
+      clear(verdict);
+      verdict.appendChild(el('div', { text: r.verdict }));
+      // What it found, so an operator can see which driver is which rather than
+      // taking a single sentence on trust.
+      for (const rec of r.receivers) {
+        verdict.appendChild(el('div', { class: 'hint' },
+          `${rec.kind}${rec.name ? ` — ${rec.name}` : ''} on port ${rec.port}` +
+          (rec.multicastAddress ? `, multicast ${rec.multicastAddress}` : '') +
+          (rec.ipFromFilter ? `, filtered to ${rec.ipFromFilter}` : '')));
+      }
+    } catch (err) {
+      verdict.className = 'map-verdict err';
+      setText(verdict, err.message);
+    } finally {
+      askBtn.disabled = false;
     }
   };
 
