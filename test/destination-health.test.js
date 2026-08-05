@@ -83,7 +83,7 @@ test('the warning names the destination and what is wrong', async (t) => {
   assert.match(warnings[0], /\bgone\b/, 'the destination must be named');
   // What is wrong, not how many packets: the count is on the dashboard, and a
   // destination that is not receiving is losing them by definition.
-  assert.match(warnings[0], /nothing is listening|no answer from|no route to/,
+  assert.match(warnings[0], /nothing is listening|no answer at all|no route to it/,
     'the cause must be stated');
 });
 

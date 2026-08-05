@@ -142,21 +142,26 @@ const TRIAL_MS = 3000;
  *
  * These come from a *connected* UDP socket, which is why they exist at all — an
  * unconnected `sendto` discards them, as the 2016 driver did.
+ *
+ * The address is deliberately absent: every caller has already named the
+ * destination, and "director (10.10.10.5:6000): no answer from 10.10.10.5 at
+ * all" said it twice in one sentence. This describes the condition; the caller
+ * says whose it is.
  */
-function explainSendError(code, dest) {
+function explainSendError(code) {
   switch (code) {
     case 'ECONNREFUSED':
-      return `${dest.host} answered, but nothing is listening on UDP ${dest.port}. ` +
-        'Either disguise is not running, its Navigator driver has not been started, or its ' +
-        `port is not ${dest.port} — that field defaults to ${D3_FACTORY_PORT}.`;
+      return 'the machine answered, but nothing is listening on that port. Either disguise is ' +
+        'not running, its Navigator driver has not been started, or the port does not match — ' +
+        `disguise defaults it to ${D3_FACTORY_PORT}.`;
     case 'EHOSTUNREACH':
     case 'EHOSTDOWN':
-      return `no answer from ${dest.host} at all — switched off, unplugged, or not on this subnet.`;
+      return 'no answer at all — switched off, unplugged, or not on this subnet.';
     case 'ENETUNREACH':
-      return `no route to ${dest.host} — check the interface this connection sends from.`;
+      return 'no route to it — check the interface this connection sends from.';
     case 'EACCES':
-      return `the operating system refused the send to ${dest.host}:${dest.port} — a firewall rule, ` +
-        'or a broadcast address without permission.';
+      return 'the operating system refused the send — a firewall rule, or a broadcast address ' +
+        'without permission.';
     default:
       return null;
   }
@@ -349,12 +354,6 @@ class EncoderLink extends EventEmitter {
         txErrors: 0,
         lastError: null,
         lastErrorCode: null,
-        // Announced on a backing-off schedule, not per N failures. A dead
-        // destination fails once per sample: at 125 Hz a "every 500 errors"
-        // rule shouts every four seconds, indefinitely, about a situation that
-        // has not changed — which buries anything that has.
-        nextWarnAt: 0,
-        warnBackoffMs: 0,
         lastErrorAt: 0,
         /** First failure of the current run of them, or 0 when sending is fine. */
         failingSince: 0,
@@ -406,7 +405,7 @@ class EncoderLink extends EventEmitter {
           // Long enough to rule out a blip, short enough that a show does not
           // spend a minute shouting into a hole.
           const place = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-          const why = explainSendError(err.code, dest);
+          const why = explainSendError(err.code);
 
           if (!sink.offline && now - sink.failingSince >= SEND_GIVE_UP_MS) {
             sink.offline = true;
@@ -434,31 +433,22 @@ class EncoderLink extends EventEmitter {
               this._log('warn', 'app', text);
               this.emit('encoderEvent', { id: this.id, kind: 'destinationDown', text });
 
-              sink.warnBackoffMs = 15000;
-              sink.nextWarnAt = now + sink.warnBackoffMs;
               return;
             }
           }
 
-          // Before giving up, say nothing: a failure that clears inside
-          // SEND_GIVE_UP_MS is a blip, and reporting it would put a banner in
-          // front of somebody for something already over. While offline, repeat
-          // on the backoff — 15s, then 60s, 240s, then every 15 minutes — and
-          // say how long it has been rather than restating the retry interval,
-          // which has not changed and is in the message above.
-          if (!sink.offline || now < sink.nextWarnAt) return;
-          sink.warnBackoffMs = Math.min(sink.warnBackoffMs * 4, 900000);
-          sink.nextWarnAt = now + sink.warnBackoffMs;
-
-          const downFor = Math.round((now - (sink.outageSince || sink.failingSince)) / 1000);
-          const forHow = downFor >= 120 ? `${Math.round(downFor / 60)} minutes` : `${downFor}s`;
-          // The cause only if it has changed — a host that went from refusing
-          // the port to not answering at all is news; the same cause restated
-          // every few minutes is the first message again.
-          const changed = why && why !== sink.downCause;
-          if (changed) sink.downCause = why;
-          this._warn(`${place}: still not answering after ${forHow}.` +
-            (changed ? ` Now: ${why}` : ''));
+          // Nothing further while it stays down. One message gives the state,
+          // and the state has not changed — "still not answering after 17s",
+          // then "after 81s", added a line to the log every time without adding
+          // a fact. The dashboard carries how long, because that is a figure
+          // and it belongs on a screen rather than in a stream.
+          //
+          // The one exception is a cause that actually changes: a host that
+          // stops answering entirely and later starts refusing the port is in a
+          // different state, and that is worth a line.
+          if (!sink.offline || !why || why === sink.downCause) return;
+          sink.downCause = why;
+          this._warn(`${place}: ${why}`);
         },
         onSent: () => {
           // Recovery is news too. Without this a destination that came back
@@ -820,8 +810,6 @@ class EncoderLink extends EventEmitter {
       id: this.id, kind: 'destinationUp',
       text: `${where} is reachable again`
     });
-    sink.nextWarnAt = 0;
-    sink.warnBackoffMs = 0;
   }
 
   _resolveVelocity(r, pos, nowMs, total) {
