@@ -4920,3 +4920,14 @@ pure-function data, none reachable by a socket today) moved to TEST-NET-1
 cannot promote one into a dial. Comments citing rig measurements keep their
 addresses; they are history, not fixtures. A tripwire test now scans every
 test file and fails on any fixture host in `10.x`, `172.16.x` or `192.168.x`.
+
+### AltGr must not start the show
+
+Asked how the new shortcuts behave in the Windows portable exe. The desktop
+window is covered by real menu accelerators (`Ctrl+Shift+,` / `Ctrl+Shift+.`,
+mapped to the physical comma and period keys, which sit in the same places on
+QWERTZ), and browsers on Windows leave both combinations free. But the
+in-page handler only required Ctrl+Shift — and on Windows **AltGr arrives as
+Ctrl+Alt**, so an AltGr+Shift chord on the comma key, a typing gesture on
+several European layouts, would have read as the start-all shortcut. Alt now
+disqualifies the chord.

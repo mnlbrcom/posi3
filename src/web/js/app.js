@@ -107,7 +107,11 @@ async function boot() {
 function wireShortcuts() {
   window.addEventListener('keydown', (ev) => {
     const mod = ev.metaKey || ev.ctrlKey;
-    if (!mod || !ev.shiftKey) return;
+    // altKey excluded because of Windows: AltGr arrives as Ctrl+Alt, so an
+    // AltGr+Shift chord on the comma key — a typing gesture on several
+    // European layouts — would otherwise read as Ctrl+Shift+Comma and start
+    // every encoder mid-keystroke.
+    if (!mod || !ev.shiftKey || ev.altKey) return;
     if (ev.code === 'Comma') {
       ev.preventDefault();
       window.d3d.link.startAll().catch((err) => toast('error', err.message));

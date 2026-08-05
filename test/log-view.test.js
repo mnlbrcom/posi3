@@ -49,6 +49,8 @@ test('no shortcut sits on a browser-owned key, and stop is matched physically', 
     'physical-key match, so the shortcut works on every layout');
   assert.doesNotMatch(handler, /ev\.key/,
     'ev.key is layout- and Shift-dependent; ev.code is not');
+  assert.match(handler, /ev\.altKey/,
+    'AltGr arrives as Ctrl+Alt on Windows, so Alt must disqualify the chord');
 
   const desktop = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'desktop', 'main.js'), 'utf8');
