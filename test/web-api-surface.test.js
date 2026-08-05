@@ -43,6 +43,46 @@ test('every operation the browser shim calls exists on the server', () => {
   assert.deepEqual(missing, [], `shim calls operations the server does not expose: ${missing.join(', ')}`);
 });
 
+test('every operation a view calls exists on the shim', () => {
+  // The other half of the seam, and the half that was missing. The shim was
+  // checked against the server, so `disguiseInspect` was known to exist — but
+  // nothing checked the *views* against the shim, and `inspect` had been added
+  // under `mapping` while the Disguise Mapping card called
+  // `window.d3d.disguise.inspect`. It threw "Cannot read properties of
+  // undefined" the first time a current Designer was available to answer it,
+  // which is to say: at a venue, after the thing it diagnoses had gone wrong.
+  const views = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.js')) views.push(full);
+    }
+  };
+  walk(path.join(__dirname, '..', 'src', 'web', 'js'));
+
+  const used = new Map(); // "namespace.method" -> the file that calls it
+  for (const file of views) {
+    if (path.basename(file) === 'api.js') continue;      // the shim itself
+    const src = fs.readFileSync(file, 'utf8');
+    for (const m of src.matchAll(/window\.d3d\.([a-zA-Z]+)\.([a-zA-Z]+)\s*\(/g)) {
+      used.set(`${m[1]}.${m[2]}`, path.basename(file));
+    }
+  }
+  assert.ok(used.size > 10, `expected the views to call many operations, found ${used.size}`);
+
+  const missing = [];
+  for (const [name, file] of used) {
+    const [ns, method] = name.split('.');
+    // The namespace, and the method inside it — a namespace that exists with
+    // the method missing is the same failure.
+    const block = new RegExp(`\\b${ns}:\\s*\\{([\\s\\S]*?)\\n    \\}`).exec(SHIM);
+    if (!block || !new RegExp(`\\b${method}\\s*:`).test(block[1])) missing.push(`${name}  (${file})`);
+  }
+  assert.deepEqual(missing, [],
+    `views call operations the shim does not define:\n  ${missing.join('\n  ')}`);
+});
+
 test('the shim never sends the token in a URL it leaves behind', () => {
   // A token in the address bar gets pasted into tickets and chat messages, so
   // the shim moves it to sessionStorage and rewrites the URL. Guard the intent.
