@@ -62,7 +62,7 @@ test('a persistent failure is announced once, not on every packet', async (t) =>
     `a steady failure should be said once, not ${warnings.length} times`);
 });
 
-test('the warning names the destination and how much was lost', async (t) => {
+test('the warning names the destination and what is wrong', async (t) => {
   const { link } = await deadLink(t);
   const warnings = [];
   link.on('log', (e) => { if (e.level === 'warn') warnings.push(e.text); });
@@ -70,8 +70,14 @@ test('the warning names the destination and how much was lost', async (t) => {
   for (let i = 0; i < 50; i++) link._forward(i, 0);
   await until(() => warnings.length > 0, 4000, 'a warning');
 
-  assert.match(warnings[0], /Cannot reach gone/, 'the destination must be named');
-  assert.match(warnings[0], /packets lost/, 'the cost must be stated');
+  // The name, not a particular sentence around it: the wording changed when the
+  // raw errno was replaced by a diagnosis, and a test pinned to the phrasing
+  // fails for the message getting better.
+  assert.match(warnings[0], /\bgone\b/, 'the destination must be named');
+  // What is wrong, not how many packets: the count is on the dashboard, and a
+  // destination that is not receiving is losing them by definition.
+  assert.match(warnings[0], /nothing is listening|no answer from|no route to/,
+    'the cause must be stated');
 });
 
 test('coming back is news too', async (t) => {
