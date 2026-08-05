@@ -120,3 +120,30 @@ test('a second outage is announced again', async (t) => {
   assert.equal(sink.recovered, false,
     'a fresh failure must re-arm the recovery notice, or the second recovery is silent');
 });
+
+test('a destination is not called receiving until the silence has lasted', async (t) => {
+  // The pill read straight off `sink.offline`, so it flipped green for the
+  // second or two between a trial resuming sends and the next error arriving —
+  // the same false claim the log had just stopped making, in the one place an
+  // operator actually watches.
+  const { link } = await deadLink(t);
+  const sink = link._sinks[0];
+
+  for (let i = 0; i < 50; i++) link._forward(i, 0);
+  await until(() => sink.txErrors > 0, 4000, 'a failure');
+  // A stopped link reports `idle` for every destination, which would pass this
+  // test without testing anything.
+  link._state = 'streaming';
+
+  // Sends resumed — as a trial does — but the last error is seconds old.
+  sink.offline = false;
+  sink.lastErrorAt = Date.now() - 2000;
+  let d = link.snapshot().telemetry.destinations[0];
+  assert.notEqual(d.health, 'receiving',
+    'two seconds of quiet from a host that was just failing proves nothing');
+
+  // Quiet for longer than the recovery window: now it counts.
+  sink.lastErrorAt = Date.now() - 31000;
+  d = link.snapshot().telemetry.destinations[0];
+  assert.equal(d.health, 'receiving');
+});

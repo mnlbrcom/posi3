@@ -1549,8 +1549,20 @@ function sameValue(a, b) {
  */
 function destinationHealth(sink, running) {
   if (!running) return 'idle';
-  if (!sink.offline) return 'receiving';
-  return sink.lastErrorCode === 'ECONNREFUSED' ? 'refused' : 'offline';
+
+  // `receiving` has to clear the same bar the log claim does. Reading it off
+  // `offline` alone made the pill flip green for the second or two between a
+  // trial resuming sends and the next error arriving — the same false claim the
+  // log had just stopped making, in the one place an operator actually watches.
+  //
+  // So: errors recently, or suppressed sends, means not receiving. Silence has
+  // to last RECOVERY_QUIET_MS before it counts, exactly as it does before
+  // anything is announced.
+  const proven = !sink.txErrors || Date.now() - sink.lastErrorAt >= RECOVERY_QUIET_MS;
+  if (sink.offline || !proven) {
+    return sink.lastErrorCode === 'ECONNREFUSED' ? 'refused' : 'offline';
+  }
+  return 'receiving';
 }
 
 function assertSafeValue(value) {
