@@ -345,8 +345,12 @@ function refreshTrayMenu() {
       { label: 'Open web UI in browser', click: () => shell.openExternal(webUrlWithToken()) },
       { label: 'Copy web UI address', click: () => clipboard.writeText(webUrlWithToken()) },
       { type: 'separator' },
-      { label: 'Start all connections', click: () => svc.manager.startAll() },
-      { label: 'Stop all connections', click: () => svc.manager.stopAll() },
+      // Through the api, not the manager: the api is where "who did what"
+      // gets logged and where destinations establish their disguise state. A
+      // tray start used to do neither — no record, and pills that never
+      // learned what they were sending to.
+      { label: 'Start all connections', click: () => svc.api.linkStartAll() },
+      { label: 'Stop all connections', click: () => svc.api.linkStopAll() },
       { type: 'separator' },
       { label: 'Quit posi3', click: quit }
     ]));
@@ -385,8 +389,8 @@ function buildMenu() {
         // browser answer to the same keys. Not Shift+R: that is the browser's
         // hard reload, and refreshing a misbehaving page must never engage
         // every encoder.
-        { label: 'Start all connections', accelerator: 'CmdOrCtrl+Shift+,', click: () => svc.manager.startAll() },
-        { label: 'Stop all connections', accelerator: 'CmdOrCtrl+Shift+.', click: () => svc.manager.stopAll() },
+        { label: 'Start all connections', accelerator: 'CmdOrCtrl+Shift+,', click: () => svc.api.linkStartAll() },
+        { label: 'Stop all connections', accelerator: 'CmdOrCtrl+Shift+.', click: () => svc.api.linkStopAll() },
         { type: 'separator' },
         { label: 'Open web UI in browser', click: () => shell.openExternal(webUrlWithToken()) },
         { label: 'Copy web UI address', click: () => clipboard.writeText(webUrlWithToken()) },

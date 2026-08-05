@@ -94,3 +94,16 @@ test('liveness: our own pid is alive, an absurd one is not', () => {
   assert.equal(alive(-1), false);
   assert.equal(alive(undefined), false);
 });
+
+test('the claim is an exclusive create, not a check followed by a write', () => {
+  // Two processes starting in the same instant — a login item and a
+  // double-click — both passed the liveness check and both wrote the lock, so
+  // both ran: the rival-encoder-sockets condition the lock exists to prevent,
+  // with the second write silently winning. `wx` makes the filesystem the
+  // referee; the loser re-reads and finds a live holder.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'instance-lock.js'), 'utf8');
+  assert.match(src, /flag: 'wx'/, 'the first write must be an exclusive create');
+  const claim = src.slice(src.indexOf('function acquire'));
+  assert.ok(claim.indexOf("flag: 'wx'") < claim.indexOf('alive(held.pid)'),
+    'and the liveness check happens after losing the create, not before writing');
+});

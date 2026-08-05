@@ -4830,3 +4830,25 @@ Designer upgraded mid-run is no longer muted until restart.
   "FLASH WRITE IN PROGRESS — do not power off" banner used one global key for
   every encoder. Keys are per-connection now, and `onFlashConfirmed` dismisses
   only the banners of the encoder that confirmed.
+
+### Reconnects catch up, ids cannot collide, the lock cannot split, the tray leaves a record
+
+- **A stream drop no longer loses history.** The EventSource reconnects by
+  itself, but the gap's log lines and config edits were never re-sent: the log
+  showed a hole until reload, and config stayed stale indefinitely. The shim
+  now announces every reconnect (the first open is not one), and the app
+  re-fetches config and merges the log tail by sequence number — nothing
+  doubles, and a tail whose newest line is older than ours means the bridge
+  restarted, so the buffer and any freeze point start over instead of letting
+  restarted sequence numbers slip past the pause filter.
+- **Destination ids are random, never positional.** `dest-${i}` collided
+  across connections created through the raw API, and verdicts, re-check
+  timers and health history are keyed by that id alone — one connection's
+  answer displayed for another's destination.
+- **The instance lock claims by exclusive create.** Check-then-write let two
+  processes starting in the same instant both pass the liveness check and both
+  run — rival sockets to an encoder that accepts only a handful of clients.
+  `wx` makes the filesystem the referee; the loser re-reads and defers.
+- **Tray and menu Start/Stop go through the api layer**, so they write the
+  same operator log line as every other actor and their destinations establish
+  disguise state. A tray start used to do neither.

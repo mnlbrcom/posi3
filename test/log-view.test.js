@@ -80,3 +80,25 @@ test('a remembered disguise answer is restored when the card is rebuilt', () => 
   assert.match(view, /if \(lastAsked\.has\(dest\.id\)\) showAnswer\(lastAsked\.get\(dest\.id\)\)/,
     'the stored answer is rendered at build time');
 });
+
+test('a stream reconnect closes its own gap', () => {
+  // The event stream only carries lines produced while it is connected, so a
+  // reconnect means a hole: lines and config edits from the outage were never
+  // sent and never will be. Telemetry heals on the next frame; log and config
+  // need re-fetching, and the log is merged by sequence so nothing doubles.
+  const shim = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'api.js'), 'utf8');
+  assert.match(shim, /everOpened/, 'the first open is not a reconnect');
+  assert.match(shim, /onReconnected/, 'later opens are, and are subscribable');
+
+  const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'app.js'), 'utf8');
+  const hook = app.slice(app.indexOf('onReconnected'));
+  const body = hook.slice(0, hook.indexOf('});'));
+  assert.match(body, /config\.get\(\)/, 'config is re-fetched');
+  assert.match(body, /mergeLog\(/, 'and the log tail is merged, not re-ingested');
+
+  const merge = src.slice(src.indexOf('export function mergeLog'));
+  const mbody = merge.slice(0, merge.indexOf('\n}'));
+  assert.match(mbody, /line\.seq > newest/, 'only lines newer than the newest held are appended');
+  assert.match(mbody, /pausedAtSeq = null/,
+    'a restarted bridge resets the freeze point — the frozen stream no longer exists');
+});

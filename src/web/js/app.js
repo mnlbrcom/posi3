@@ -21,7 +21,7 @@ import { renderDashboard } from './views/dashboard.js';
 import { renderConnections } from './views/connections.js';
 import { renderEncoderConfig, onFlashConfirmed } from './views/encoder-config.js';
 import { renderMapping } from './views/mapping.js';
-import { renderLog, ingestLog } from './views/log.js';
+import { renderLog, ingestLog, mergeLog } from './views/log.js';
 import { renderSettings } from './views/settings.js';
 
 const content = document.getElementById('content');
@@ -183,6 +183,17 @@ function wireEvents() {
   });
 
   window.d3d.events.onLog((batch) => ingestLog(batch));
+
+  // A reconnect is a gap: config edits and log lines from the outage were
+  // never sent. Telemetry heals itself on the next frame; these two do not,
+  // so they are re-fetched. The log is merged by sequence number, not
+  // re-ingested — most of the tail is already on screen.
+  window.d3d.events.onReconnected(async () => {
+    try {
+      store.setProfile(await window.d3d.config.get());
+      mergeLog(await window.d3d.log.tail({ limit: 500 }));
+    } catch { /* still down; the next reconnect tries again */ }
+  });
 
   // Several browsers can now be open at once. Without this, every client except
   // the one that made an edit shows stale config until it is reloaded by hand.

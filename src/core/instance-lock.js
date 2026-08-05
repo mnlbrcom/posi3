@@ -48,28 +48,52 @@ function read(dir) {
  * @throws {Error & {code: 'EALREADYRUNNING', holder: object}}
  */
 function acquire(dir, info, force = false) {
-  const held = read(dir);
-  if (held && alive(held.pid) && held.pid !== process.pid && !force) {
-    const err = new Error(
-      `posi3 is already running (${held.mode || 'unknown'}, pid ${held.pid})` +
-      `${held.url ? ` — its interface is at ${held.url}` : ''}. ` +
-      'Two bridges on one profile would open rival connections to the same encoder.'
-    );
-    err.code = 'EALREADYRUNNING';
-    err.holder = held;
-    throw err;
+  const file = path.join(dir, LOCK_FILE);
+  const payload = (extra) => JSON.stringify(
+    Object.assign({ pid: process.pid, startedAt: Date.now() }, info, extra), null, 2
+  );
+
+  // Exclusive create, not check-then-write. Two processes starting in the same
+  // instant — a login item and a double-click — both used to read no live
+  // holder and both write the lock, which is precisely the rival-sockets
+  // condition the lock exists to prevent, with the second write silently
+  // winning. `wx` makes the filesystem the referee: exactly one create
+  // succeeds, and the loser goes back to reading who won.
+  let claimed = false;
+  for (let attempt = 0; attempt < 3 && !claimed; attempt++) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, payload(), { flag: 'wx' });
+      claimed = true;
+    } catch (err) {
+      // An unwritable profile is already reported elsewhere; running unlocked
+      // matches what the old code did there.
+      if (err.code !== 'EEXIST') break;
+
+      const held = read(dir);
+      if (held && alive(held.pid) && held.pid !== process.pid && !force) {
+        const e = new Error(
+          `posi3 is already running (${held.mode || 'unknown'}, pid ${held.pid})` +
+          `${held.url ? ` — its interface is at ${held.url}` : ''}. ` +
+          'Two bridges on one profile would open rival connections to the same encoder.'
+        );
+        e.code = 'EALREADYRUNNING';
+        e.holder = held;
+        throw e;
+      }
+      // The holder is dead, or this is a forced takeover: clear the file and
+      // claim again. A rival clearing at the same moment loses the next `wx`
+      // and re-reads a holder that is alive.
+      try { fs.rmSync(file, { force: true }); } catch { break; }
+    }
   }
 
-  const file = path.join(dir, LOCK_FILE);
   const write = (extra) => {
     try {
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(
-        Object.assign({ pid: process.pid, startedAt: Date.now() }, info, extra), null, 2
-      ));
+      fs.writeFileSync(file, payload(extra));
     } catch { /* an unwritable profile is already reported elsewhere */ }
   };
-  write();
 
   let released = false;
   const release = () => {
