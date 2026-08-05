@@ -18,6 +18,23 @@ const {
   fail, checkId, checkHost, checkPort, checkVariable, checkVarWrite,
   sanitiseConnection, listInterfaces
 } = require('./validate');
+const { migrateConnection, SCHEMA_VERSION } = require('../core/config-store');
+
+/**
+ * Remove the three keys that read or write the prototype chain, at every
+ * depth. Imported profiles are the only config that arrives as a raw file.
+ */
+function stripUnsafeKeys(value) {
+  if (Array.isArray(value)) {
+    for (const v of value) stripUnsafeKeys(v);
+  } else if (value && typeof value === 'object') {
+    for (const key of ['__proto__', 'constructor', 'prototype']) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) delete value[key];
+    }
+    for (const v of Object.values(value)) stripUnsafeKeys(v);
+  }
+  return value;
+}
 const {
   scanSubnet, scannableInterfaces, readVariablesOnce, writeVariablesOnce, probe
 } = require('../core/discover');
@@ -390,6 +407,23 @@ function createApi(ctx) {
   /** Destinations whose software has no API at all: asked once, never again. */
   const noApi = new Set();
 
+  /**
+   * Everything above is *about* a destination, and none of it may outlive one.
+   * Deleting a connection used to leave all of it behind: a pending re-check
+   * timer firing for a destination that no longer existed, `checkedOnce`
+   * silencing a recreated one's first check, `noApi` muting a machine that had
+   * long since been replaced — and re-importing an exported profile, which
+   * keeps its ids, meant no destination ever established disguise state again.
+   */
+  const forgetDestination = (destId) => {
+    checkedOnce.delete(destId);
+    noApi.delete(destId);
+    lastAutoAsk.delete(destId);
+    clearTimeout(recheckTimers.get(destId));
+    recheckTimers.delete(destId);
+    manager.forgetDestination(destId);
+  };
+
   const scheduleRecheck = (conn, dest, attempt = 0) => {
     clearTimeout(recheckTimers.get(dest.id));
     const wait = RECHECK_MS[Math.min(attempt, RECHECK_MS.length - 1)];
@@ -418,6 +452,11 @@ function createApi(ctx) {
     let receivers;
     try {
       receivers = await inspectReceivers(dest.host);
+      // An answer proves the API exists, whatever it says. `noApi` is the
+      // memory of a 404, and a Designer upgraded mid-run — or a manual Ask
+      // that plainly succeeded — must lift it, or the automatic path stays
+      // muted against a machine that has long since learned to answer.
+      noApi.delete(dest.id);
     } catch (err) {
       // An unanswerable question says nothing about the destination, so the
       // network's own verdict stands and no check is recorded. Quiet when the
@@ -736,11 +775,10 @@ function createApi(ctx) {
       for (const d of saved.destinations || []) {
         const before = (was && (was.destinations || []).find((x) => x.id === d.id)) || null;
         if (before && before.port === d.port && before.devid === d.devid && before.host === d.host) continue;
-        manager.disguiseChecks.delete(d.id);
-        checkedOnce.delete(d.id);
-        // A changed address may be a different machine, and a different machine
-        // may have an API.
-        noApi.delete(d.id);
+        // Everything concluded about the old address, the pending re-check
+        // included. A changed address may be a different machine, and a
+        // different machine may have an API.
+        forgetDestination(d.id);
       }
       ctx.syncLink(saved);
       if (manager.has(saved.id) && manager.get(saved.id).running) establishAll(saved);
@@ -752,6 +790,13 @@ function createApi(ctx) {
       const gone = store.find(key);
       manager.remove(key);
       const ok = store.deleteConnection(key);
+      if (gone) {
+        for (const d of gone.destinations || []) forgetDestination(d.id);
+        // The budget follows the device, and the device follows the config: a
+        // connection recreated for a different encoder must not inherit this
+        // one's spend, and this one is no longer spending.
+        flashBudget.forget(key);
+      }
       if (ok && gone) {
         // Named explicitly: the connection is already out of the store, so
         // nameOf() cannot find it — and this is the line whose name matters
@@ -788,9 +833,40 @@ function createApi(ctx) {
 
     configImport: (data) => {
       if (!data || !Array.isArray(data.connections)) fail('EINVAL', 'That file is not a posi3 profile');
+      if (Number(data.version) > SCHEMA_VERSION) {
+        fail('EINVAL', 'That profile was written by a newer posi3 — importing it here would lose settings. ' +
+          'Update this build, or export from the newer one at this version.');
+      }
+
+      // Imported JSON is the one config path that arrives from a *file*, so it
+      // gets what the editing routes get from their validators — and one thing
+      // more. `JSON.parse` hands back `__proto__` as an ordinary own key, and
+      // the store's `Object.assign` merge would then write it through the
+      // prototype chain: values readable from the live config yet invisible to
+      // `JSON.stringify`, present in memory and absent from the saved file.
+      stripUnsafeKeys(data);
+
+      // Refuse before replacing. Each connection is run through the same
+      // migration the store will apply and then through sanitiseConnection, so
+      // a profile with an invalid host, port, device id or destination count
+      // is rejected whole — not discovered halfway through a replacement that
+      // has already stopped every link.
+      const from = Number(data.version) || 1;
+      for (const c of data.connections) {
+        sanitiseConnection(migrateConnection(JSON.parse(JSON.stringify(c)), from));
+      }
+
       const had = store.connections.length;
       manager.stopAll();
       for (const id of manager.ids()) manager.remove(id);
+      // Nothing concluded about the old profile's destinations survives it —
+      // and an exported profile keeps its ids, so without this a re-import
+      // left every destination marked already-checked and none of them ever
+      // established disguise state again.
+      for (const c of store.connections) {
+        for (const d of c.destinations || []) forgetDestination(d.id);
+        flashBudget.forget(c.id);
+      }
       const profile = store.replaceProfile(data);
       for (const conn of profile.connections) ctx.syncLink(conn);
       userLog(null, `imported a profile — replaced ${had} connection(s) with ` +

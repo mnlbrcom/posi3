@@ -4784,3 +4784,26 @@ whole purpose is to be opened. The lock lives in the profile directory, which
 is the user's own; the token guards the LAN, not the machine's owner.
 Behavioural test: with a token set, the bare URL answers 401, the tokened one
 200, and the lock's URL carries the token.
+
+### Imports are validated, and nothing concluded outlives its destination
+
+`configImport` went straight into the store: no field validation, no
+destination cap, and `JSON.parse`'s own-property `__proto__` merged through
+`Object.assign`'s [[Set]] — values readable from the live config yet invisible
+to `JSON.stringify`. An import now strips prototype keys at every depth, runs
+every connection through the same migration and `sanitiseConnection` the
+editing routes use *before* anything is replaced (a bad profile is refused
+whole, not discovered halfway through), refuses profiles from a newer build
+outright, and clears the stale "written by a newer build" load warning that
+`replaceProfile` used to leave in `appInfo`.
+
+And the server now forgets. `checkedOnce`, `noApi`, `lastAutoAsk`, pending
+re-check timers, the manager's verdicts and health history, and the flash
+budget are all *about* a destination or connection — deleting one, or
+replacing the profile, releases all of it through one `forgetDestination`
+helper (`link-manager` gained the matching `forgetDestination` /
+`forgetAllDestinations` for its own maps). Re-importing an exported profile —
+which keeps its ids — previously left every destination marked
+already-checked, so none ever established disguise state again. A successful
+inspect also clears `noApi` now: an answer proves the API exists, so a
+Designer upgraded mid-run is no longer muted until restart.

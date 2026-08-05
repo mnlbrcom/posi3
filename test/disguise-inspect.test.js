@@ -530,8 +530,11 @@ test('a destination that cannot answer is not asked forever', () => {
   // Giving up is not permanent: a state change asks again, and a Designer
   // starting up is exactly that — its port stops refusing when the driver binds.
   assert.match(src, /manager\.onDestinationStateChange = /);
-  // And a changed address may be a different machine, which may have an API.
-  assert.match(src, /noApi\.delete\(d\.id\);/);
+  // And a changed address may be a different machine, which may have an API:
+  // the save path forgets everything concluded about it, noApi included.
+  assert.match(src, /forgetDestination\(d\.id\);/);
+  const helper = src.slice(src.indexOf('const forgetDestination'));
+  assert.match(helper.slice(0, helper.indexOf('};')), /noApi\.delete\(destId\)/);
 });
 
 test('a state change discards the answer and the sentence describing it', () => {

@@ -285,6 +285,22 @@ class LinkManager extends EventEmitter {
    * `linkSnapshot` returns telemetry too — applying it in one place and not the
    * other gave two endpoints two different answers about the same destination.
    */
+  /**
+   * Drop everything this manager has concluded about a destination. Called
+   * when the destination itself goes — deleted, or replaced by an import.
+   * Conclusions outliving their subject is how a recreated destination
+   * inherited a dead one's verdict.
+   */
+  forgetDestination(id) {
+    this.disguiseChecks.delete(id);
+    this._lastDestHealth.delete(id);
+  }
+
+  forgetAllDestinations() {
+    this.disguiseChecks.clear();
+    this._lastDestHealth.clear();
+  }
+
   applyDisguiseChecks(t) {
     for (const d of (t && t.destinations) || []) {
       const check = this.disguiseChecks.get(d.id);

@@ -241,6 +241,10 @@ class ConfigStore {
     this._adopt(data);
     for (const c of this.profile.connections) if (!c.id) c.id = crypto.randomUUID();
     this.readOnly = false;
+    // The warning described the file this replacement just superseded.
+    // Clearing readOnly but not the warning left appInfo repeating "written
+    // by a newer build" about a profile that no longer existed.
+    this.loadWarning = null;
     this.save({ immediate: true });
     return this.profile;
   }
