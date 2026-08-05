@@ -207,8 +207,19 @@ if (!window.d3d) {
     },
 
     mapping: {
-      compute: (id, destId, mapping) => call('mappingCompute', { id, destId, mapping }),
-      inspect: (id, destId) => call('disguiseInspect', { id, destId }),
+      compute: (id, destId, mapping) => call('mappingCompute', { id, destId, mapping })
+    },
+
+    /**
+     * Reading from disguise, and only reading.
+     *
+     * posi3 never changes anything in a Designer session. What it asks for is
+     * diagnostic — which port a receiver is bound to, so a mismatch can be
+     * named instead of guessed at — and that is the whole of it. There is no
+     * write call here and there is not meant to be one.
+     */
+    disguise: {
+      inspect: (id, destId) => call('disguiseInspect', { id, destId })
     },
 
     net: {

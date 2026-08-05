@@ -3792,3 +3792,64 @@ what the reference documents, and the response unwrapping already tries several 
 insisting on one.
 
 **241 tests pass.**
+
+---
+
+## 2026-08-05 — Reading a live Designer, and what it turned out to expose
+
+> "new disguise software is installed, Ask disguise gives: Cannot read properties of undefined
+> (reading 'inspect')" / "We never want to send any changes from posi3 to disguise through the api,
+> only read information" / "if our app sends to an ID that doesnt exist in disguise, It should also
+> state that there is no device/Axes with this id in your disguise show"
+
+**The button threw because `inspect` was added to the wrong namespace** — under `mapping`, while the
+view called `window.d3d.disguise.inspect`. It has its own namespace now, which is also where the
+read-only rule is written down. A test walks every `window.d3d.x.y()` in the view and fails if the
+shim has no such namespace, so the next one cannot ship unnoticed.
+
+### Read-only, enforced rather than promised
+
+posi3 never changes anything in a Designer session. The Python API sets `Port` as readily as it reads
+it, and that is deliberately unused: a show machine's configuration belongs to whoever is running the
+show, and a bridge that quietly reconfigures the thing it feeds is a bridge nobody can trust.
+
+The script is a string, so nothing else would notice it changing. A test forbids assignment to any
+device attribute, `setattr`, `del`, collection mutation and resource creation, and asserts the only
+names assigned are the script's own locals.
+
+### The object model, read off the running session
+
+The first attempt failed against real Designer — `TypeError: 'DeviceManager' object is not iterable`:
+
+    state.devices                  a DeviceManager, not a list
+      .devices                     the devices
+        ScreenPositionReceiver     name, path, uid, started, engaged, receiving
+          .drivers[]               NavigatorDriver … each with a Port
+          .axes[]                  ScreenPositionAxis … each with an id
+
+Which answers how to tell several of anything apart. A **receiver** has a `name` and `path` the
+operator chose, and a `uid` that survives a rename. A **driver** has no name of its own, so it is
+identified by its port within its named receiver. An **axis** is identified by its `id` — which is
+exactly what this bridge puts in every packet.
+
+So a destination joins to disguise as: *on that host, the receiver with a driver on that port,
+holding an axis with that id.* Each half can match without the other, and they are different faults —
+a missing axis is a whole object nobody created, a wrong port is one field. Both are now reported,
+independently, rather than folded into one "nothing matches":
+
+    no axis with id 1 exists in this show — it has id 10; and nothing listens on 6000 — its
+    driver is on 8000.
+
+Also decoded: **Designer returns the script's value as a JSON *string*** inside `returnValue`, and a
+script error comes back as **HTTP 200** with a status code set — which reads as an empty session
+unless you look.
+
+### What it found on the rig
+
+    posi3   engaged=false  receiving=false   NavigatorDriver:8000   axes: id 10, id 1
+    → nothing listens on 6000 — its driver is on 8000.
+
+Two problems, not one: the port disagrees, and the receiver is not engaged, so nothing would move
+even once it agrees. The axes are already there for both device IDs.
+
+**245 tests pass.**

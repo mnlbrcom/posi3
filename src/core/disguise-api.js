@@ -13,6 +13,14 @@
  * The script's `return` value comes back as JSON. Python 2.7, and the `d3`
  * package is imported for you on this endpoint.
  *
+ * **posi3 never writes to disguise.** Everything here reads. The Python API can
+ * set `Port` as readily as read it — it is a plain property — and that is
+ * deliberately not used: a show machine's configuration belongs to whoever is
+ * running the show, and a bridge that quietly reconfigures the thing it feeds is
+ * a bridge nobody can trust. What is wanted from Designer is *information*, so
+ * that a port mismatch can be named rather than guessed at. `test/disguise-inspect`
+ * fails if a mutating statement ever appears in the script below.
+ *
  * **This is on demand and never polled.** disguise's own documentation is
  * explicit: *"this endpoint MUST NOT be polled"* and *"calling this endpoint too
  * frequently or during a show is not a supported workflow — this is intended for
@@ -23,32 +31,72 @@
  */
 
 const DEFAULT_API_PORT = 80;
+
+/** JSON if it is JSON, otherwise the string itself. */
+function tryParse(v) {
+  try { return JSON.parse(v); } catch { return v; }
+}
 const DEFAULT_TIMEOUT_MS = 4000;
 
 /**
- * Every UDP receiver in the session, with the port it is bound to.
+ * Every position receiver in the session, and what is inside it.
  *
- * Defensive by construction: it runs against whatever version the venue has, so
- * a missing attribute skips one device rather than failing the call. `Port`,
- * `ipFromFilter` and `multicastAddress` are the documented properties of
- * `UdpReceiverDriver`, which `NavigatorDriver` inherits and adds nothing to.
+ * The object model, read off the running Designer rather than assumed:
+ *
+ *   state.devices                  a DeviceManager, not a list
+ *     .devices                     the devices themselves
+ *       ScreenPositionReceiver     name, path, uid, started, engaged, receiving
+ *         .drivers[]               NavigatorDriver … each with a Port
+ *         .axes[]                  ScreenPositionAxis … each with an id
+ *
+ * Which is also how you tell several of anything apart. A **receiver** has a
+ * `name` and `path` the operator chose — "posi3",
+ * `objects/screenpositionreceiver/posi3.apx` — and a `uid` that survives a
+ * rename. A **driver** has no name of its own, so it is identified by the port
+ * it listens on within its named receiver. An **axis** is identified by its
+ * `id`, which is exactly what this bridge puts in every packet.
+ *
+ * So a destination here — host, port, device id — joins to disguise as: on that
+ * host, the receiver with a driver on that port, containing an axis with that
+ * id. Each half can match without the other, and each failure is different.
+ *
+ * Defensive throughout: it runs against whatever version a venue has, so a
+ * missing attribute skips one field rather than failing the call.
  */
 const SCRIPT = `
 out = []
 try:
-    devices = state.devices
+    devices = state.devices.devices
 except Exception:
     devices = []
 for d in devices:
     try:
-        if not isinstance(d, UdpReceiverDriver):
+        if not hasattr(d, 'drivers'):
             continue
+        drivers = []
+        for drv in d.drivers:
+            drivers.append({
+                'type': type(drv).__name__,
+                'port': getattr(drv, 'Port', None),
+                'multicastAddress': str(getattr(drv, 'multicastAddress', '') or ''),
+                'ipFromFilter': str(getattr(drv, 'ipFromFilter', '') or ''),
+            })
+        axes = []
+        for ax in d.axes:
+            axes.append({
+                'type': type(ax).__name__,
+                'id': str(getattr(ax, 'id', '')),
+                'property': str(getattr(ax, 'property', '') or ''),
+            })
         out.append({
-            'kind': type(d).__name__,
-            'name': str(getattr(d, 'path', '') or getattr(d, 'name', '') or ''),
-            'port': int(d.Port),
-            'multicastAddress': str(getattr(d, 'multicastAddress', '') or ''),
-            'ipFromFilter': str(getattr(d, 'ipFromFilter', '') or ''),
+            'name': str(getattr(d, 'name', '') or ''),
+            'path': str(getattr(d, 'path', '') or ''),
+            'uid': str(getattr(d, 'uid', '') or ''),
+            'started': bool(getattr(d, 'started', False)),
+            'engaged': bool(getattr(d, 'engaged', False)),
+            'receiving': bool(getattr(d, 'receiving', False)),
+            'drivers': drivers,
+            'axes': axes,
         })
     except Exception:
         pass
@@ -111,12 +159,23 @@ async function inspectReceivers(host, opts = {}) {
     throw e;
   }
 
-  // The endpoint wraps the script's return value; which key varies by version,
-  // so take the first thing that looks like our list rather than insisting on
-  // one shape and breaking at a venue.
-  const candidates = [body, body.result, body.data, body.value, body.returnValue];
+  // Designer answers { status, d3Log, pythonLog, returnValue }, and returnValue
+  // is the script's value **as a JSON string** — not as JSON. Measured against
+  // a live session; a version that hands back the value directly is handled by
+  // the same loop rather than by a second code path.
+  const candidates = [body.returnValue, body.result, body.data, body.value, body];
   for (const c of candidates) {
-    if (Array.isArray(c)) return c.filter((r) => r && Number.isFinite(Number(r.port)));
+    const v = typeof c === 'string' ? tryParse(c) : c;
+    if (Array.isArray(v)) return v;
+  }
+
+  // A script error comes back as HTTP 200 with a status code set, which is easy
+  // to mistake for an empty session.
+  if (body.status && body.status.code) {
+    const e2 = new Error(`${host} ran the query and Designer reported: ` +
+      String(body.status.message || '').split('Traceback')[0].trim().slice(0, 200));
+    e2.code = 'EDISGUISE_API';
+    throw e2;
   }
   const e = new Error(`${host} ran the query but returned no receiver list: ${text.slice(0, 200)}`);
   e.code = 'EDISGUISE_API';
