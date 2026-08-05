@@ -251,7 +251,12 @@ function createWindow() {
   // Cmd+R is the way out of a stuck viewport. See releaseStuckEmulation.
   mainWindow.webContents.on('did-finish-load', () => { void releaseStuckEmulation(mainWindow); });
 
-  mainWindow.loadURL(svc.url);
+  // With the token, not the bare URL. Bound beyond loopback the service
+  // always generates one and the guard checks it on every request — static
+  // files included — so the bare URL made the app render its own 401 the
+  // moment webBindHost was widened. The desktop window authenticates exactly
+  // like the browser it is.
+  mainWindow.loadURL(webUrlWithToken());
 
   // Nothing here should open a window or navigate off the local UI.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

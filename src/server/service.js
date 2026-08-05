@@ -150,7 +150,12 @@ async function startService(opts = {}) {
     lock.release();
     throw err;
   }
-  lock.update({ url: http.url() });
+  // The tokened form, because this URL exists to be *opened*: the second
+  // instance's "posi3 is already running — open it" dialog launches it, and
+  // without the token a non-loopback bind answers that click with a 401. The
+  // lock file lives in the profile directory, which is this user's own — the
+  // token guards the LAN, not the machine's owner.
+  lock.update({ url: token ? `${http.url()}/?token=${encodeURIComponent(token)}` : http.url() });
 
   /**
    * Auto-start is deliberately not tied to a window loading. It used to hang
