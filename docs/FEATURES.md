@@ -3853,3 +3853,29 @@ Two problems, not one: the port disagrees, and the receiver is not engaged, so n
 even once it agrees. The axes are already there for both device IDs.
 
 **245 tests pass.**
+
+---
+
+## 2026-08-05 — Naming what to go and look at
+
+> "nothing listens on 6000 — its driver is on 8000. undefined — posi3 on port undefined … It should
+> say that no port match and there is a driver on a diffrent port: name driver port number. IF that is
+> given and the ID is wrong it should say ID mismatch Driver name port number has axes ids : id1 id2
+> id3"
+
+The `undefined` line was the detail list still reading the **old flat shape**. A receiver holds
+drivers and axes, so both are listed under its name:
+
+    No port match — this connection sends to 6000, and posi3's NavigatorDriver on port 8000.
+    posi3: NavigatorDriver on 8000 · axis ids 10, 1 · not engaged, not receiving
+
+Both problems now name the object to open, not a bare number:
+
+    No port match — this connection sends to <port>, and <receiver>'s <DriverType> on port <n>
+    ID mismatch  — this connection sends id <n>, and <receiver>'s <DriverType> on port <n>
+                   has axis ids <a, b, c>
+
+The id mismatch is deliberately named against the **driver** rather than the receiver: that is the
+object whose axes these are, and the one that has to be opened to add another.
+
+**245 tests pass.**

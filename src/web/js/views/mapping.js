@@ -245,13 +245,21 @@ function receiverCard(conn, dest) {
       verdict.className = `map-verdict ${r.matches ? 'ok' : 'warn'}`;
       clear(verdict);
       verdict.appendChild(el('div', { text: r.verdict }));
-      // What it found, so an operator can see which driver is which rather than
-      // taking a single sentence on trust.
+      // What it found, so an operator can see which receiver is which rather
+      // than taking a single sentence on trust. A receiver holds drivers and
+      // axes, so both are listed under its name — the earlier version read the
+      // old flat shape and printed "undefined — posi3 on port undefined".
       for (const rec of r.receivers) {
+        const drivers = (rec.drivers || [])
+          .map((d) => `${d.type} on ${d.port}` +
+            (d.multicastAddress ? ` (multicast ${d.multicastAddress})` : '') +
+            (d.ipFromFilter ? ` (from ${d.ipFromFilter})` : ''))
+          .join(', ') || 'no driver';
+        const axes = (rec.axes || []).map((a) => a.id).join(', ') || 'none';
         verdict.appendChild(el('div', { class: 'hint' },
-          `${rec.kind}${rec.name ? ` — ${rec.name}` : ''} on port ${rec.port}` +
-          (rec.multicastAddress ? `, multicast ${rec.multicastAddress}` : '') +
-          (rec.ipFromFilter ? `, filtered to ${rec.ipFromFilter}` : '')));
+          `${rec.name || rec.path}: ${drivers} · axis ids ${axes} · ` +
+          `${rec.engaged ? 'engaged' : 'not engaged'}, ` +
+          `${rec.receiving ? 'receiving' : 'not receiving'}`));
       }
     } catch (err) {
       verdict.className = 'map-verdict err';
