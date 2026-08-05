@@ -420,6 +420,7 @@ button.btn.sm { padding: 4px 9px; font-size: var(--fs-label); }
 .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 8px; }
 .pill.idle         { color: var(--idle); }
 .pill.connecting   { color: var(--warn); }
+.pill.starting     { color: var(--warn); }
 .pill.connected    { color: var(--accent-text); background: var(--accent-wash); }
 .pill.streaming    { color: var(--ok-text); background: var(--ok-wash); }
 /* The encoder-side twin of `receiving`: started, and data flowing to us. */
@@ -427,12 +428,12 @@ button.btn.sm { padding: 4px 9px; font-size: var(--fs-label); }
 .pill.stalled      { color: var(--warn); background: var(--warn-wash); }
 .pill.reconnecting { color: var(--warn); background: var(--warn-wash); }
 .pill.error        { color: var(--err-text); background: var(--err-wash); }
-.pill.stopping     { color: var(--text-faint); }
 /* Destination health, shown per endpoint beside the encoder's own state. */
 .pill.receiving    { color: var(--ok-text); background: var(--ok-wash); }
 .pill.refused      { color: var(--warn); background: var(--warn-wash); }
 .pill.offline      { color: var(--err-text); background: var(--err-wash); }
 .pill.connecting .dot,
+.pill.starting .dot,
 .pill.reconnecting .dot { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 

@@ -58,6 +58,12 @@ class Store {
   encoderIndicator(id) {
     const state = this.stateOf(id);
     if (state === 'streaming') return 'sending';
+    // The brief running state between TCP connect and the first sample used
+    // to display as `connected` too — the same word as the idle handshake
+    // state, meaning something else. `starting` is what is actually
+    // happening: Start was pressed, the session is up, the stream is not
+    // flowing yet.
+    if (state === 'connected') return 'starting';
     if (state !== 'idle') return state;
     const alive = this.encoderAlive.get(id);
     if (alive === true) return 'connected';
