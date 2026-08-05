@@ -429,7 +429,13 @@ function createApi(ctx) {
       const hasPort = (r) => navDrivers(r).some((d) => Number(d.port) === dest.port);
       const hasAxis = (r) => (r.axes || []).some((a) => String(a.id) === String(dest.devid));
 
-      const both = receivers.find((r) => hasPort(r) && hasAxis(r)) || null;
+      // Plural on purpose. Ports and axis ids may both repeat across receivers,
+      // so a packet on this port with this id is taken by *every* receiver that
+      // has both — which is how a redundant rig is built, and also how the same
+      // encoder ends up driving something nobody meant. Picking the first would
+      // report one of them and hide the rest.
+      const matching = receivers.filter((r) => hasPort(r) && hasAxis(r));
+      const both = matching[0] || null;
       const portOnly = receivers.filter(hasPort);
       const axisOnly = receivers.filter(hasAxis);
       const allPorts = [...new Set(receivers.flatMap((r) => navDrivers(r).map((d) => Number(d.port))))];
@@ -449,9 +455,9 @@ function createApi(ctx) {
       const describeNav = (r) => {
         const ds = navDrivers(r);
         if (!ds.length) {
-          return `disguise ScreenPositionReceiver ${q(r.name, r.path)} has no Navigator driver`;
+          return `disguise PositionReceiver ${q(r.name, r.path)} has no Navigator driver`;
         }
-        return `disguise ScreenPositionReceiver ${q(r.name, r.path)} has ` +
+        return `disguise PositionReceiver ${q(r.name, r.path)} has ` +
           `${ds.length > 1 ? 'these drivers' : 'this driver'}: ` +
           ds.map((d) => `${q(d.name, d.type)} on ${d.port}`).join(', ');
       };
@@ -462,27 +468,43 @@ function createApi(ctx) {
       let verdict;
       let level = 'warn';
       if (!receivers.length) {
-        verdict = `${dest.host} has a Designer session, but no position receiver in it. ` +
+        verdict = `${dest.host} has a Designer session, but no PositionReceiver in it. ` +
           'Add one, with a Navigator driver and an axis inside.';
       } else if (!portExists) {
         verdict = `Port mismatch: this connection sends to port ${dest.port}, ` +
           `${receivers.map(describeNav).join('; ')}.`;
       } else if (!idExists) {
-        // Named against the driver on our port: that is the object whose axes
-        // these are, and the one to open to add another.
-        const home = portOnly[0];
-        const drv = navDrivers(home).find((d) => Number(d.port) === dest.port);
-        const ids = (home.axes || []).map((a) => a.id);
+        // Every receiver in the session, not merely the first one on our port.
+        // A show can hold several, and an id that exists nowhere is only
+        // provable by looking at all of them — naming one read as though it
+        // were the only place an axis could be.
+        //
+        // The receivers carrying our port come first, since that is where the
+        // axis has to be added; each is named with the driver that matched.
+        const ordered = [...portOnly, ...receivers.filter((r) => !portOnly.includes(r))];
+        const describeAxes = (r) => {
+          const drv = navDrivers(r).find((d) => Number(d.port) === dest.port);
+          const ids = (r.axes || []).map((a) => a.id);
+          return `disguise PositionReceiver ${q(r.name, r.path)}` +
+            (drv ? ` driver ${q(drv.name, 'NavigatorDriver')} on ${drv.port}` : '') +
+            ` has ${ids.length ? `these axis ids: ${ids.join(', ')}` : 'no axes'}`;
+        };
         verdict = `ID mismatch: this connection sends id ${dest.devid}, ` +
-          `disguise ScreenPositionReceiver ${q(home.name, home.path)} driver ` +
-          `${q(drv && drv.name, 'NavigatorDriver')} on ${dest.port} has ` +
-          (ids.length ? `these axis ids: ${ids.join(', ')}` : 'no axes at all') + '.';
+          `${ordered.map(describeAxes).join('; ')}.`;
       } else if (!both) {
         verdict = `Split across receivers: port ${dest.port} is on ` +
           `${portOnly.map((r) => q(r.name, r.path)).join(', ')} and axis id ${dest.devid} is on ` +
           `${axisOnly.map((r) => q(r.name, r.path)).join(', ')} — they have to be in the same one.`;
+      } else if (matching.length > 1) {
+        // Worth stating rather than calling it a match: this feed drives every
+        // one of them, which is either the point of a redundant rig or a
+        // surprise.
+        verdict = `Matches ${matching.length} receivers: port ${dest.port} with axis id ` +
+          `${dest.devid} is in ${matching.map((r) => q(r.name, r.path)).join(', ')} — ` +
+          'this connection drives all of them.';
+        level = 'info';
       } else {
-        verdict = `Everything matches: disguise ScreenPositionReceiver ${q(both.name, both.path)} ` +
+        verdict = `Everything matches: disguise PositionReceiver ${q(both.name, both.path)} ` +
           `has a driver on port ${dest.port} and an axis for id ${dest.devid}.`;
         level = 'info';
       }

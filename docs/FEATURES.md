@@ -4015,3 +4015,36 @@ Measured with the connection's port set to 8000, which it now is.
 
 **248 tests pass**, one of which fails if `engaged`, `receiving` or `started` reappears in the query
 or in a verdict.
+
+---
+
+## 2026-08-05 — Several receivers, and none of them assumed unique
+
+> "there is a second ScreenPositionReceiver "posi5" that has an axis with id 2, but its not stated." /
+> "so we can have multiple screenpostionreceiver with same and different drivers and same and
+> different axis/ids" / "also rename ScreenPositionReceiver to just PositionReceiver in our msgs"
+
+    ID mismatch: this connection sends id 1, disguise PositionReceiver "posi3" driver "testdr"
+    on 7999 has these axis ids: 5, 10; disguise PositionReceiver "posi5" driver "testdr" on
+    7999 has these axis ids: 2.
+
+**The id branch described `portOnly[0]`** — the first receiver carrying the port — and ignored the
+rest of the session. The same fault as `drivers[0]` a change earlier, one level up: naming one read
+as though it were the only place an axis could be, and an id that exists *nowhere* can only be shown
+by looking at all of them. Every receiver is described now, those carrying the port first, since that
+is where the axis has to be added.
+
+**And a match need not be unique.** Ports and axis ids may both repeat across receivers — the session
+above has `"testdr"` on 7999 in two of them — so a packet on a port with an id is taken by *every*
+receiver holding both. That is how a redundant rig is built, and also how one encoder ends up driving
+something nobody meant. `receivers.find(…)` would have reported one and hidden the others; it is a
+list, and several matches are stated as such:
+
+    Matches 2 receivers: port 8000 with axis id 1 is in "posi3", "posi5" — this connection
+    drives all of them.
+
+**`ScreenPositionReceiver` → `PositionReceiver` in every message.** The first is the class name in
+the Python API; the second is what Designer presents and what an operator goes looking for. A message
+is read by the person, not by the API. A test fails if the class name reappears in a verdict.
+
+**250 tests pass.**

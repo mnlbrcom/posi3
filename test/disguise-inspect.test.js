@@ -208,7 +208,7 @@ test('while the port is wrong, the device id is not anyone’s next question', a
   const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
   assert.match(api, /\} else if \(!portExists\) \{[\s\S]{0,200}Port mismatch:/,
     'the port is checked first, on its own');
-  assert.match(api, /\} else if \(!idExists\) \{[\s\S]{0,600}ID mismatch:/,
+  assert.match(api, /\} else if \(!idExists\) \{[\s\S]{0,1200}ID mismatch:/,
     'and the id only once the port agrees');
   assert.doesNotMatch(api, /problems\.join/,
     'the two are never joined into one sentence');
@@ -219,6 +219,11 @@ test('while the port is wrong, the device id is not anyone’s next question', a
     'each driver is named, quoted, with its port');
   assert.match(api, /these axis ids: \$\{ids\.join\(', '\)\}/,
     'and an id mismatch lists the ids that do exist');
+  // Every receiver, not the first one on our port: a show can hold several, and
+  // an id that exists nowhere is only provable by looking at all of them.
+  assert.match(api, /const ordered = \[\.\.\.portOnly, \.\.\.receivers\.filter\(\(r\) => !portOnly\.includes\(r\)\)\]/,
+    'all receivers are described, those carrying the port first');
+  assert.match(api, /ordered\.map\(describeAxes\)\.join\('; '\)/);
   // Only Navigator drivers are ever shown: a PosiStageNetDriver on 56565 is
   // nothing this bridge could feed, and offering it invites setting the port
   // to something that can never work.
@@ -271,4 +276,36 @@ test('no engaged or receiving status is read, or reported', () => {
   const verdicts = api.slice(api.indexOf('let verdict;'), api.indexOf('appLog(conn.id, verdict'));
   assert.doesNotMatch(verdicts, /engaged|receiving/,
     'and no verdict claims one');
+});
+
+test('several receivers can share a port and an id, and all of them are named', async (t) => {
+  // A show can hold several ScreenPositionReceivers, and both ports and axis
+  // ids may repeat across them. A packet on a port with an id is taken by every
+  // receiver that has both — the point of a redundant rig, and also how one
+  // encoder ends up driving something nobody meant.
+  const d = await fakeDesigner(t, ok([
+    receiver({ name: 'posi3', axes: [{ type: 'ScreenPositionAxis', id: '1' }] }),
+    receiver({ name: 'posi5', axes: [{ type: 'ScreenPositionAxis', id: '1' }] })
+  ]));
+  const found = await inspectReceivers(d.host, { apiPort: d.apiPort });
+  assert.equal(found.length, 2, 'both receivers come back');
+  assert.deepEqual(found.map((r) => r.name), ['posi3', 'posi5']);
+
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  assert.match(api, /const matching = receivers\.filter\(\(r\) => hasPort\(r\) && hasAxis\(r\)\)/,
+    'the match is a list, not the first hit');
+  assert.match(api, /Matches \$\{matching\.length\} receivers/,
+    'and several matches are stated as such');
+  assert.match(api, /this connection drives all of them/);
+});
+
+test('the messages say PositionReceiver, the name the operator sees', () => {
+  // `ScreenPositionReceiver` is the class name in the Python API. What Designer
+  // presents, and what an operator goes looking for, is a Position Receiver —
+  // and a message is read by the person, not by the API.
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  const verdicts = api.slice(api.indexOf('let verdict;'), api.indexOf('appLog(conn.id, verdict'));
+  assert.doesNotMatch(verdicts, /ScreenPositionReceiver/,
+    'the class name does not belong in a sentence for an operator');
+  assert.match(verdicts, /disguise PositionReceiver \$\{q\(/);
 });
