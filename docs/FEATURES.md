@@ -3765,3 +3765,30 @@ Which is itself the answer. `10.10.10.4` serves a web page on port 80 and return
 refused by the same host. `10.10.10.5` does not answer HTTP at all.
 
 **240 tests pass.**
+
+---
+
+## 2026-08-05 — A 404 that means "your Designer is older"
+
+> "just realsing that api calls on older disguise software dont work, so let me isntall a current
+> version of disguise"
+
+Which is what the rig was showing, and the message did not say it:
+
+    10.10.10.4 answered 404 — Route not found
+
+A 404 from a machine plainly serving HTTP means the *route* is absent, not the machine — the Python
+API was added to Designer later. Left as a bare status code it invites the reading that the address
+is wrong, when the address is fine and the software is old. It now says so, and names the other
+possibility in the same breath:
+
+    10.10.10.4 is serving HTTP but has no /api/session/python/execute — this Designer is older
+    than the Python API, or what is answering on that address is not Designer at all.
+
+Its own code, `EDISGUISE_NO_API`, so a caller can tell "too old" from "broken".
+
+Nothing else needs to change for a current Designer: the endpoint, the payload and the script are
+what the reference documents, and the response unwrapping already tries several shapes rather than
+insisting on one.
+
+**241 tests pass.**

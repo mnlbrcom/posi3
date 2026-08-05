@@ -91,3 +91,18 @@ test('a session with no receiver at all is not mistaken for a list', async (t) =
     () => inspectReceivers(d.host, { apiPort: d.apiPort }),
     (err) => err.code === 'EDISGUISE_API' && /no receiver list/.test(err.message));
 });
+
+test('an older Designer is named as such, not left as a bare 404', async (t) => {
+  // Measured on the rig: 10.10.10.4 serves a web page on port 80 and answers
+  // JSON 404 for every /api path. "404" on its own invites the reading that the
+  // address is wrong, when the address is fine and the software is old.
+  const d = await fakeDesigner(t, (req, res) => {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Route not found' }));
+  });
+  await assert.rejects(
+    () => inspectReceivers(d.host, { apiPort: d.apiPort }),
+    (err) => err.code === 'EDISGUISE_NO_API' &&
+      /older than the Python API/.test(err.message) &&
+      /not Designer at all/.test(err.message));
+});

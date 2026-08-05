@@ -90,8 +90,15 @@ async function inspectReceivers(host, opts = {}) {
 
   const text = await res.text();
   if (!res.ok) {
-    const e = new Error(`${host} answered ${res.status} — ${text.slice(0, 200)}`);
-    e.code = 'EDISGUISE_API';
+    // A 404 from a machine that is plainly serving HTTP means the route is not
+    // there — which is what an older Designer looks like, since the Python API
+    // was added later. Worth saying, because "404" invites the reading that the
+    // address is wrong when the address is fine.
+    const e = new Error(res.status === 404
+      ? `${host} is serving HTTP but has no ${new URL(url).pathname} — this Designer is older ` +
+        'than the Python API, or what is answering on that address is not Designer at all.'
+      : `${host} answered ${res.status} — ${text.slice(0, 200)}`);
+    e.code = res.status === 404 ? 'EDISGUISE_NO_API' : 'EDISGUISE_API';
     throw e;
   }
 
