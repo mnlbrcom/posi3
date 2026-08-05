@@ -415,18 +415,70 @@ function createApi(ctx) {
         throw err;
       }
 
-      const ports = [...new Set(receivers.map((r) => Number(r.port)))];
-      const match = receivers.find((r) => Number(r.port) === dest.port) || null;
-      const verdict = match
-        ? `${dest.host} is listening on ${dest.port} — the ports agree.`
-        : ports.length
-          ? `${dest.host} is listening on ${ports.join(', ')}, but this connection sends to ` +
-            `${dest.port}. Change one of them so they match.`
-          : `${dest.host} has a Designer session, but no UDP receiver in it. Add a Navigator ` +
-            'driver inside a Position Receiver.';
+      // The join: on this host, a receiver with a driver on our port, holding
+      // an axis with our device id. Each half can match without the other, and
+      // they are different faults — a port mismatch is one field in disguise, a
+      // missing axis is a whole axis nobody created.
+      const label = (r) => r.name || r.path || 'a receiver';
+      const hasPort = (r) => (r.drivers || []).some((d) => Number(d.port) === dest.port);
+      const hasAxis = (r) => (r.axes || []).some((a) => String(a.id) === String(dest.devid));
 
-      appLog(conn.id, verdict, match ? 'info' : 'warn');
-      return { receivers, ports, matches: !!match, verdict };
+      const both = receivers.find((r) => hasPort(r) && hasAxis(r)) || null;
+      const portOnly = receivers.filter(hasPort);
+      const axisOnly = receivers.filter(hasAxis);
+      const allPorts = [...new Set(receivers.flatMap((r) => (r.drivers || []).map((d) => Number(d.port))))];
+      const allIds = [...new Set(receivers.flatMap((r) => (r.axes || []).map((a) => String(a.id))))];
+
+      // Two independent facts, reported independently. A missing axis is a
+      // whole object nobody created; a wrong port is one field. Folding them
+      // into a single "nothing matches" sentence hid whichever one the operator
+      // was not already thinking about.
+      const idExists = allIds.includes(String(dest.devid));
+      const portExists = allPorts.includes(dest.port);
+
+      let verdict;
+      let level = 'warn';
+      if (!receivers.length) {
+        verdict = `${dest.host} has a Designer session, but no position receiver in it. ` +
+          'Add one, with a Navigator driver and an axis inside.';
+      } else if (both && both.engaged && both.receiving) {
+        verdict = `${label(both)} is engaged and receiving on port ${dest.port}, with an axis for ` +
+          `id ${dest.devid}. Everything matches.`;
+        level = 'info';
+      } else if (both && !both.engaged) {
+        verdict = `${label(both)} has a driver on ${dest.port} and an axis with id ${dest.devid}, ` +
+          'but the receiver is not engaged — so nothing will move until it is.';
+      } else if (both) {
+        verdict = `${label(both)} matches and is engaged, but reports that it is not receiving. ` +
+          'Check that this connection is running and that nothing between them drops the traffic.';
+      } else {
+        const problems = [];
+        if (!idExists) {
+          problems.push(`no axis with id ${dest.devid} exists in this show` +
+            (allIds.length ? ` — it has id ${allIds.join(', ')}` : ' — it has no axes at all'));
+        }
+        if (!portExists) {
+          problems.push(`nothing listens on ${dest.port}` +
+            (allPorts.length ? ` — its driver is on ${allPorts.join(', ')}` : ' — it has no driver'));
+        }
+        // Both halves exist, but not together: two receivers, each with one of
+        // them. Worth saying plainly, because every individual field looks right.
+        if (!problems.length) {
+          problems.push(`port ${dest.port} and axis id ${dest.devid} are in different receivers ` +
+            `(${portOnly.map(label).join(', ')} and ${axisOnly.map(label).join(', ')}) — ` +
+            'they have to be in the same one');
+        }
+        verdict = `${problems.join('; and ')}.`;
+      }
+
+      appLog(conn.id, verdict, level);
+      return {
+        receivers,
+        ports: allPorts,
+        ids: allIds,
+        matches: !!both && both.engaged && both.receiving,
+        verdict
+      };
     },
 
     /**
