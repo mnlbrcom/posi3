@@ -220,3 +220,26 @@ test('a timeout is never retried — the write may already have reached flash', 
   await assert.rejects(link.write('CycleTime', '20'));
   assert.equal(sent.length, 1, 'exactly one attempt');
 });
+
+test('the duplicate question is askable before anything in a batch spends flash', async () => {
+  // The server writes a batch as "every other variable, then Preset". The
+  // duplicate refusal used to live only inside setPreset — thrown *after* the
+  // rest of the batch had burned its cycles, discarding their results, and
+  // the retry-with-force wrote them all again.
+  const { link, sent } = fakeLink({ Preset: '7' });
+  await assert.rejects(link.assertPresetWritable(7), (err) => err.code === 'EPRESET_DUPLICATE');
+  assert.deepEqual(sent.filter((s) => s.startsWith('set')), [],
+    'the check is read-only — a refusal costs nothing');
+  const ok = await link.assertPresetWritable(8);
+  assert.equal(ok.current, 7, 'a non-duplicate answers instead of throwing');
+
+  // And the server actually asks first: the batch path refuses before writeMany.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  const batch = api.slice(api.indexOf('presets.length && link && link.running'));
+  const block = batch.slice(0, batch.indexOf('recordPendingAddress'));
+  assert.ok(block.indexOf('assertPresetWritable') !== -1 &&
+    block.indexOf('assertPresetWritable') < block.indexOf('writeMany'),
+    'the refusal comes before the first flash write of the batch');
+});

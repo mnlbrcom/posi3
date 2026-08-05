@@ -916,6 +916,15 @@ function createApi(ctx) {
       const presets = checked.filter((c) => c.variable === 'Preset');
       const rest = checked.filter((c) => c.variable !== 'Preset');
       if (presets.length && link && link.running) {
+        // Refuse before anything spends flash. The duplicate check used to run
+        // inside setPreset *after* the rest of the batch was written: its
+        // throw discarded the results of writes that had already burned their
+        // cycles, and the retry-with-force wrote them all a second time. The
+        // check is read-only and cheap — it goes first, so a refused batch
+        // costs nothing.
+        for (const p of presets) {
+          await link.assertPresetWritable(Number(p.value), { force: !!force });
+        }
         const results = rest.length ? await link.writeMany(rest) : [];
         for (const p of presets) {
           const r = await link.setPreset(Number(p.value), { force: !!force });
