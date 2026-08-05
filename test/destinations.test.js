@@ -183,11 +183,11 @@ test('stopping closes every socket', async () => {
 test('a schema-1 profile with a lone d3 is accepted and promoted', () => {
   const out = sanitiseConnection({
     name: 'legacy',
-    encoder: { host: '10.10.10.20', port: 6000 },
-    d3: { host: '10.10.10.47', port: 6000, devid: 3 }
+    encoder: { host: '192.0.2.20', port: 6000 },
+    d3: { host: '192.0.2.47', port: 6000, devid: 3 }
   });
   assert.equal(out.destinations.length, 1);
-  assert.equal(out.destinations[0].host, '10.10.10.47');
+  assert.equal(out.destinations[0].host, '192.0.2.47');
   assert.equal(out.destinations[0].devid, 3);
   // …and the mirror the mapping screen reads stays in step.
   assert.equal(out.d3.devid, 3);
@@ -196,10 +196,10 @@ test('a schema-1 profile with a lone d3 is accepted and promoted', () => {
 test('duplicate destinations are rejected', () => {
   assert.throws(() => sanitiseConnection({
     name: 'x',
-    encoder: { host: '10.10.10.20', port: 6000 },
+    encoder: { host: '192.0.2.20', port: 6000 },
     destinations: [
-      { host: '10.0.0.1', port: 6000, devid: 1 },
-      { host: '10.0.0.1', port: 6000, devid: 1 }
+      { host: '192.0.2.1', port: 6000, devid: 1 },
+      { host: '192.0.2.1', port: 6000, devid: 1 }
     ]
   }), (err) => err.code === 'EINVAL' && /Duplicate destination/.test(err.message));
 });
@@ -208,19 +208,19 @@ test('the same host and port with different device ids is allowed', () => {
   // One disguise machine can legitimately receive two axes from one encoder.
   const out = sanitiseConnection({
     name: 'x',
-    encoder: { host: '10.10.10.20', port: 6000 },
+    encoder: { host: '192.0.2.20', port: 6000 },
     destinations: [
-      { host: '10.0.0.1', port: 6000, devid: 1 },
-      { host: '10.0.0.1', port: 6000, devid: 2 }
+      { host: '192.0.2.1', port: 6000, devid: 1 },
+      { host: '192.0.2.1', port: 6000, devid: 2 }
     ]
   });
   assert.equal(out.destinations.length, 2);
 });
 
 test('fan-out is bounded', () => {
-  const many = Array.from({ length: 17 }, (_, i) => ({ host: '10.0.0.1', port: 6000, devid: i }));
+  const many = Array.from({ length: 17 }, (_, i) => ({ host: '192.0.2.1', port: 6000, devid: i }));
   assert.throws(
-    () => sanitiseConnection({ name: 'x', encoder: { host: '10.10.10.20', port: 6000 }, destinations: many }),
+    () => sanitiseConnection({ name: 'x', encoder: { host: '192.0.2.20', port: 6000 }, destinations: many }),
     (err) => err.code === 'EINVAL' && /At most 16/.test(err.message)
   );
 });

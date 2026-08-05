@@ -25,8 +25,8 @@ const mapped = (over = {}) => computeMapping(Object.assign({
 
 test('each receiver is described by its own device id and port', () => {
   const conn = { name: 'Revolve', velocityPolicy: 'zero' };
-  const director = { name: 'director', host: '10.10.10.5', port: 6000, devid: 10 };
-  const understudy = { name: 'US', host: '10.10.10.2', port: 7401, devid: 11 };
+  const director = { name: 'director', host: '192.0.2.5', port: 6000, devid: 10 };
+  const understudy = { name: 'US', host: '192.0.2.2', port: 7401, devid: 11 };
   const m = mapped();
 
   const a = d3Fields(conn, director, m);
@@ -44,7 +44,7 @@ test('velocitycalcmode follows what the bridge actually sends', () => {
   // Getting this wrong is silent and wrong in both directions: deriving from
   // position while a real velocity arrives double-counts, and not deriving
   // while zeroes arrive leaves the axis with no velocity at all.
-  const dest = { name: 'd', host: '10.0.0.1', port: 6000, devid: 1 };
+  const dest = { name: 'd', host: '192.0.2.1', port: 6000, devid: 1 };
 
   const zero = rowsOf(d3Fields({ velocityPolicy: 'zero' }, dest, mapped()), 'ScreenPositionAxis');
   assert.equal(zero.velocitycalcmode, 'from position');
@@ -57,7 +57,7 @@ test('velocitycalcmode follows what the bridge actually sends', () => {
 test('the axis range comes from the receiver’s own mapping', () => {
   // Two machines fed by one encoder need not be showing the same thing.
   const conn = { velocityPolicy: 'zero' };
-  const dest = { host: '10.0.0.1', port: 6000, devid: 1 };
+  const dest = { host: '192.0.2.1', port: 6000, devid: 1 };
 
   const whole = rowsOf(d3Fields(conn, dest, mapped()), 'ScreenPositionAxis');
   assert.equal(whole.min_input, '0');

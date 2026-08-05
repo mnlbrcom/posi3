@@ -61,7 +61,7 @@ test('prototype keys are stripped at every depth', () => {
   const { api, store } = apiWith();
   const hostile = JSON.parse(
     '{"version": 4, "connections": [' + JSON.stringify(CONN).slice(0, -1) +
-    ', "encoder2": {"__proto__": {"pendingHost": "10.9.9.9"}}}]}');
+    ', "encoder2": {"__proto__": {"pendingHost": "192.0.2.9"}}}]}');
   api.configImport(hostile);
   const c = store.connections[0];
   assert.equal(c.encoder.pendingHost, undefined,

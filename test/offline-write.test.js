@@ -20,7 +20,7 @@ const { writeVariablesOnce } = require('../src/core/discover');
  * A scripted encoder. `behaviour` decides what a `set` gets back.
  */
 async function fakeEncoder(t, behaviour) {
-  const state = { IP: '10.10.10.20', CycleTime: '18' };
+  const state = { IP: '192.0.2.20', CycleTime: '18' };
   const server = net.createServer((sock) => {
     let buf = '';
     sock.on('data', (d) => {
@@ -54,12 +54,12 @@ const accepts = (sock, name, value, state) => {
 test('a write to a stopped connection is acknowledged and committed', async (t) => {
   const enc = await fakeEncoder(t, accepts);
   const { results, committed } = await writeVariablesOnce('127.0.0.1',
-    [{ variable: 'IP', value: '10.10.10.30' }], { port: enc.port, commitMs: 3000 });
+    [{ variable: 'IP', value: '192.0.2.30' }], { port: enc.port, commitMs: 3000 });
 
   assert.equal(results[0].ok, true);
   assert.equal(results[0].verified, true, 'the value must be read back, not assumed');
   assert.equal(committed, true, 'the session must be held open for the flash commit');
-  assert.equal(enc.state.IP, '10.10.10.30');
+  assert.equal(enc.state.IP, '192.0.2.30');
 });
 
 test('a refusal that echoes the old value is not a success', async (t) => {
@@ -68,10 +68,10 @@ test('a refusal that echoes the old value is not a success', async (t) => {
     sock.write(`${name}=${state[name]}\r\n`);  // "using previous value"
   });
   const { results, committed } = await writeVariablesOnce('127.0.0.1',
-    [{ variable: 'IP', value: '10.10.10.30' }], { port: enc.port, commitMs: 500 });
+    [{ variable: 'IP', value: '192.0.2.30' }], { port: enc.port, commitMs: 500 });
 
   assert.equal(results[0].ok, false);
-  assert.match(results[0].error, /still reports 10\.10\.10\.20/);
+  assert.match(results[0].error, /still reports 192\.0\.2\.20/);
   assert.equal(committed, false);
 });
 
@@ -91,7 +91,7 @@ test('the bare dialect is tried once when set is refused', async (t) => {
 
 test('an encoder that is gone reports unreachable', async () => {
   await assert.rejects(
-    () => writeVariablesOnce('127.0.0.1', [{ variable: 'IP', value: '10.0.0.1' }],
+    () => writeVariablesOnce('127.0.0.1', [{ variable: 'IP', value: '192.0.2.1' }],
       { port: 1, connectTimeoutMs: 1500 }),
     (err) => err.code === 'EUNREACHABLE' || err.code === 'ECONNREFUSED'
   );
@@ -107,7 +107,7 @@ test('a write that is accepted but never announced still counts as verified', as
     sock.write(`${name}=${value}\r\n`);   // acknowledged, never committed
   });
   const { results, committed, verified } = await writeVariablesOnce('127.0.0.1',
-    [{ variable: 'IP', value: '10.10.10.30' }], { port: enc.port, commitMs: 400 });
+    [{ variable: 'IP', value: '192.0.2.30' }], { port: enc.port, commitMs: 400 });
 
   assert.equal(committed, false, 'the encoder never said so');
   assert.equal(verified, true, 'but the value read back is proof enough');
@@ -120,7 +120,7 @@ test('a value that does not stick is reported as failed', async (t) => {
     sock.write(`${name}=${value}\r\n`);   // says yes, stores nothing
   });
   const { results, verified } = await writeVariablesOnce('127.0.0.1',
-    [{ variable: 'IP', value: '10.10.10.99' }], { port: enc.port, commitMs: 400 });
+    [{ variable: 'IP', value: '192.0.2.99' }], { port: enc.port, commitMs: 400 });
 
   assert.equal(results[0].ok, false, 'an unverified write is not a success');
   assert.match(results[0].error, /did not stick/);

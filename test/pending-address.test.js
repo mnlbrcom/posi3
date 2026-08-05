@@ -22,21 +22,21 @@ const { sanitiseConnection } = require('../src/server/validate');
 
 const base = {
   name: 'Encoder 2',
-  encoder: { host: '10.10.10.20', port: 6000 },
-  destinations: [{ host: '10.10.10.5', port: 6000, devid: 1 }]
+  encoder: { host: '192.0.2.20', port: 6000 },
+  destinations: [{ host: '192.0.2.5', port: 6000, devid: 1 }]
 };
 
 test('a pending address survives being saved', () => {
   const c = sanitiseConnection(Object.assign({}, base, {
-    encoder: { host: '10.10.10.20', port: 6000, pendingHost: '10.10.10.30' }
+    encoder: { host: '192.0.2.20', port: 6000, pendingHost: '192.0.2.30' }
   }));
-  assert.equal(c.encoder.host, '10.10.10.20', 'host still names where it answers');
-  assert.equal(c.encoder.pendingHost, '10.10.10.30');
+  assert.equal(c.encoder.host, '192.0.2.20', 'host still names where it answers');
+  assert.equal(c.encoder.pendingHost, '192.0.2.30');
 });
 
 test('a pending address is validated like any other', () => {
   assert.throws(() => sanitiseConnection(Object.assign({}, base, {
-    encoder: { host: '10.10.10.20', port: 6000, pendingHost: 'not an address; Run!' }
+    encoder: { host: '192.0.2.20', port: 6000, pendingHost: 'not an address; Run!' }
   })), (err) => err.code === 'EINVAL');
 });
 
@@ -51,7 +51,7 @@ test('the address a write programs is never assumed to be live', () => {
   // else points the connection at a device that will not answer until somebody
   // walks to the rack.
   const written = sanitiseConnection(Object.assign({}, base, {
-    encoder: { host: '10.10.10.20', port: 6000, pendingHost: '10.10.10.30' }
+    encoder: { host: '192.0.2.20', port: 6000, pendingHost: '192.0.2.30' }
   }));
   assert.notEqual(written.encoder.host, written.encoder.pendingHost);
 });

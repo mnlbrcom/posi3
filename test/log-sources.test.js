@@ -187,7 +187,7 @@ test('deleting a connection is logged, and keeps its name', () => {
   // matters most, being the last that connection will ever have.
   const { api, store, logger } = apiWith();
   const conn = store.upsertConnection({
-    name: 'Trap Lift', encoder: { host: '10.10.10.99', port: 6000 },
+    name: 'Trap Lift', encoder: { host: '192.0.2.99', port: 6000 },
     destinations: [{ host: '127.0.0.1', port: 6000, devid: 9 }]
   });
 
@@ -196,7 +196,7 @@ test('deleting a connection is logged, and keeps its name', () => {
   const line = userLines(logger).at(-1);
   assert.equal(line.name, 'Trap Lift', 'a deleted connection is still named on its own last line');
   assert.equal(line.level, 'warn', 'deleting is not routine');
-  assert.match(line.text, /deleted — was encoder 10\.10\.10\.99:6000/);
+  assert.match(line.text, /deleted — was encoder 192\.0\.2\.99:6000/);
   assert.match(line.text, /127\.0\.0\.1:6000 id 9/, 'where it was sending is part of what was lost');
   assert.equal(store.find(conn.id), null, 'and it really is gone');
 });
