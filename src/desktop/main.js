@@ -376,7 +376,11 @@ function buildMenu() {
         // Shift, to match the web UI. Plain Cmd+R reloads the page here, and
         // binding "start all" to it would mean the same keystroke does two
         // different things depending on which surface you are looking at.
-        { label: 'Start all connections', accelerator: 'CmdOrCtrl+Shift+R', click: () => svc.manager.startAll() },
+        // The same pair the web UI binds in-page, so the desktop window and a
+        // browser answer to the same keys. Not Shift+R: that is the browser's
+        // hard reload, and refreshing a misbehaving page must never engage
+        // every encoder.
+        { label: 'Start all connections', accelerator: 'CmdOrCtrl+Shift+,', click: () => svc.manager.startAll() },
         { label: 'Stop all connections', accelerator: 'CmdOrCtrl+Shift+.', click: () => svc.manager.stopAll() },
         { type: 'separator' },
         { label: 'Open web UI in browser', click: () => shell.openExternal(webUrlWithToken()) },

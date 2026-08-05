@@ -4705,3 +4705,18 @@ was left and re-entered; during an incident that reads as "nothing is being
 logged". The signal is now the newest line's sequence number, which advances
 even when the length cannot. Pinned by `test/log-view.test.js` at source level,
 since the view needs a browser to run.
+
+### The start shortcut sat on the hard-reload key, and the stop shortcut was dead
+
+Cmd/Ctrl+Shift+R — bound to Start All — is the browser's *hard* reload in
+Chrome and Firefox, so refreshing a misbehaving page engaged every encoder:
+the exact collision the original Cmd+R remap was made to escape, one key over.
+And Stop All tested `ev.key === '.'` while requiring Shift, which is
+unreachable — Shift turns that key into `>` on a US layout and `:` on a German
+one before the value arrives. The dangerous shortcut fired; the emergency one
+never could.
+
+Both now sit on Cmd/Ctrl+Shift+Comma (start) and Cmd/Ctrl+Shift+Period (stop),
+matched by `ev.code` — the physical key, immune to layout and Shift — and the
+desktop menu carries the same accelerators, so the window and a browser answer
+to the same keys. No browser engine owns either combination.

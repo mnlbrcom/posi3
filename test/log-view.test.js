@@ -33,3 +33,25 @@ test('the repaint signal is the newest sequence number', () => {
   assert.match(src, /buffer\[buffer\.length - 1\]\.seq/,
     'the guard reads the newest seq, which advances even when the length is pinned');
 });
+
+test('no shortcut sits on a browser-owned key, and stop is matched physically', () => {
+  // Cmd/Ctrl+Shift+R is the hard reload in Blink and Gecko: bound to Start
+  // All, refreshing a misbehaving page engaged every encoder. And a stop
+  // shortcut matched by `ev.key === '.'` while requiring Shift is unreachable
+  // — Shift turns that key into '>' (US) or ':' (German) before it arrives.
+  const app = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'app.js'), 'utf8');
+  const handler = app.slice(app.indexOf('function wireShortcuts'),
+    app.indexOf('\n}', app.indexOf('function wireShortcuts')));
+  assert.doesNotMatch(handler, /=== 'r'/, 'nothing may bind near the reload key');
+  assert.match(handler, /ev\.code === 'Comma'/);
+  assert.match(handler, /ev\.code === 'Period'/,
+    'physical-key match, so the shortcut works on every layout');
+  assert.doesNotMatch(handler, /ev\.key/,
+    'ev.key is layout- and Shift-dependent; ev.code is not');
+
+  const desktop = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'desktop', 'main.js'), 'utf8');
+  assert.doesNotMatch(desktop, /CmdOrCtrl\+Shift\+R/,
+    'the desktop menu answers to the same keys as the web UI');
+});

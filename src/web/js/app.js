@@ -89,23 +89,29 @@ async function boot() {
 }
 
 /**
- * Keyboard shortcuts.
+ * Keyboard shortcuts: Cmd/Ctrl+Shift+Comma starts everything, and the key next
+ * to it stops everything.
  *
  * These used to be a native Electron menu, which a browser does not have. The
  * accelerators cannot be carried over as-is: Cmd/Ctrl+R meant "start all
- * connections" and in a browser it reloads the page. On a show that is the
- * difference between engaging the encoders and dropping every link, so the
- * bindings moved to Shift and are handled in-page.
+ * connections" and in a browser it reloads the page. The first replacement,
+ * Shift+R, walked into the same wall one key over — Cmd/Ctrl+Shift+R is the
+ * browser's *hard* reload, so refreshing a misbehaving page engaged every
+ * encoder. Comma and Period belong to no browser on any engine.
+ *
+ * Matched by `ev.code` — the physical key — not `ev.key`. With Shift held the
+ * `.` key produces `>` on a US layout and `:` on a German one, so a value
+ * match made the stop shortcut dead on every layout anyone here uses, while
+ * start worked. An emergency stop that does nothing is worse than none.
  */
 function wireShortcuts() {
   window.addEventListener('keydown', (ev) => {
     const mod = ev.metaKey || ev.ctrlKey;
     if (!mod || !ev.shiftKey) return;
-    const key = ev.key.toLowerCase();
-    if (key === 'r') {
+    if (ev.code === 'Comma') {
       ev.preventDefault();
       window.d3d.link.startAll().catch((err) => toast('error', err.message));
-    } else if (key === '.') {
+    } else if (ev.code === 'Period') {
       ev.preventDefault();
       window.d3d.link.stopAll().catch((err) => toast('error', err.message));
     }
