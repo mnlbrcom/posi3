@@ -139,7 +139,11 @@ test('type comes from the scale, not from a number typed at the point of use', (
   // Fifteen sizes, most of them half a pixel apart, is not a scale — it is the
   // absence of one. These two assertions are what stop it growing back: a size
   // may only be named in the token block, and there may only be a few tokens.
-  const tokens = [...CSS.matchAll(/^\s*(--fs-[a-z]+)\s*:\s*([0-9.]+)px/gm)];
+  // rem, required: px ignores the browser's base-font-size setting, so a
+  // user who raised their default text size got nothing while zoom worked.
+  const tokens = [...CSS.matchAll(/^\s*(--fs-[a-z]+)\s*:\s*([0-9.]+)rem/gm)];
+  assert.equal([...CSS.matchAll(/^\s*--fs-[a-z]+\s*:\s*[0-9.]+px/gm)].length, 0,
+    'scale tokens are rem — px would pin the size against the user\'s own setting');
   const names = new Set(tokens.map((m) => m[1]));
   assert.ok(names.size >= 3 && names.size <= 4,
     `the scale should be 3-4 sizes, found ${names.size}: ${[...names].join(', ')}`);
@@ -199,7 +203,15 @@ test('no engine-exclusive CSS without a fallback', () => {
 test('no hand-written vendor prefixes for things that do not need them', () => {
   // There is no build step, so Autoprefixer is not in play; the only prefixed
   // properties allowed are ones with no unprefixed equivalent.
-  const allowed = new Set(['-webkit-app-region', '-webkit-font-smoothing', '-webkit-overflow-scrolling', '-webkit-details-marker']);
+  const allowed = new Set([
+    '-webkit-app-region', '-webkit-font-smoothing', '-webkit-overflow-scrolling',
+    '-webkit-details-marker',
+    // The Gecko sibling of -webkit-font-smoothing — no unprefixed form exists.
+    '-moz-osx-font-smoothing',
+    // Unprefixed user-select reached Safari only in 18.4; older WebKit needs
+    // the prefix or the titlebar wordmark becomes drag-selectable.
+    '-webkit-user-select'
+  ]);
   const found = new Set([...CSS.matchAll(/(-webkit-[a-z-]+|-moz-[a-z-]+|-ms-[a-z-]+)\s*:/g)].map((m) => m[1]));
   const unexpected = [...found].filter((p) => !allowed.has(p));
   assert.deepEqual(unexpected, [], `unexpected vendor prefixes: ${unexpected.join(', ')}`);

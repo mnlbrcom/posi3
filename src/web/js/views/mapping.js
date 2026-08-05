@@ -37,6 +37,15 @@ const openGroups = new Set();
 const lastAsked = new Map();
 
 export function renderMapping(root) {
+  {
+    // Keyed by destination id, kept at module scope to survive rebuilds — and
+    // pruned here so they do not survive the destination itself.
+    const live = new Set();
+    for (const c of store.connections) for (const d of c.destinations || []) live.add(d.id);
+    for (const id of lastAsked.keys()) if (!live.has(id)) lastAsked.delete(id);
+    for (const key of openGroups) if (!live.has(String(key).split(':')[0])) openGroups.delete(key);
+  }
+
   clear(root);
   const view = el('div', { class: 'view' });
   const conns = store.connections;

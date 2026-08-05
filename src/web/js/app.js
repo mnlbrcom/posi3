@@ -15,7 +15,7 @@
 // already provided it. Imported first so it exists before boot() runs.
 import './api.js';
 
-import { el, clear, hz, toast, banner, dismissBanner, steady } from './ui.js';
+import { el, clear, hz, setText, toast, banner, dismissBanner, steady } from './ui.js';
 import { store } from './store.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderConnections } from './views/connections.js';
@@ -317,9 +317,12 @@ function updateAggregate() {
     const t = store.telemetryOf(conn.id);
     if (t) pkts += t.txHz || 0;
   }
-  aggregate.textContent = running
+  // Through setText, so an unchanged line costs nothing: this runs on every
+  // animation frame, and an unconditional textContent write replaces the text
+  // node ~60 times a second — the churn the two-clock model exists to avoid.
+  setText(aggregate, running
     ? `${running} link${running > 1 ? 's' : ''} · ${hz(steadyTotal(pkts))} pkt/s`
-    : `${store.connections.length} configured · idle`;
+    : `${store.connections.length} configured · idle`);
 }
 
 boot();

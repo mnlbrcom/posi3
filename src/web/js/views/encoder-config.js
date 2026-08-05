@@ -29,6 +29,21 @@ export function renderEncoderConfig(root) {
   const view = el('div', { class: 'view' });
   const conns = store.connections;
 
+  // The module maps outlive the cards on purpose — that is what lets a rebuilt
+  // card keep its read values — but they must not outlive the *connection*. A
+  // pending flash timer for a deleted encoder would still fire, and its banner
+  // key names a connection nobody can find.
+  const live = new Set(conns.map((c) => c.id));
+  for (const id of pendingFlash.keys()) {
+    if (!live.has(id)) {
+      clearTimeout(pendingFlash.get(id));
+      pendingFlash.delete(id);
+      dismissBanner(`flash-${id}`);
+      dismissBanner(`flash-unknown-${id}`);
+    }
+  }
+  for (const id of lastRead.keys()) if (!live.has(id)) lastRead.delete(id);
+
   // One button for the whole screen and one on every card. Reading every
   // encoder at once is the usual thing before a show; reading one is what you
   // do after changing something on it.
@@ -550,14 +565,21 @@ function buildControl(spec, onChange) {
     function updateHint(v) {
       if (spec.name !== 'CycleTime') return;
       const ms = Number(v);
-      if (!ms || ms <= 0) { hint.textContent = ''; return; }
-      const rate = 1000 / ms;
-      hint.textContent = `≈ ${rate >= 10 ? Math.round(rate) : rate.toFixed(1)} Hz` +
-        // Deliberately not stated as fact: POSITAL's own documents disagree.
-        // FAQ 4 gives a ~2 ms internal sensor update; §1.2 advertises cycle
-        // times under 2 ms; the datasheet says >= 10 ms. Flag it, do not rule.
-        (ms < 2 ? '  ⚠ below the ~2 ms the manual gives for the internal sensor update — values may repeat' : '');
-      hint.className = ms < 2 ? 'hint warn-text' : 'hint';
+      // Computed first, assigned only on change: refreshLive calls this every
+      // animation frame, and the unconditional write replaced the text node
+      // at ~60 Hz with the same characters.
+      let text = '';
+      if (ms > 0) {
+        const rate = 1000 / ms;
+        text = `≈ ${rate >= 10 ? Math.round(rate) : rate.toFixed(1)} Hz` +
+          // Deliberately not stated as fact: POSITAL's own documents disagree.
+          // FAQ 4 gives a ~2 ms internal sensor update; §1.2 advertises cycle
+          // times under 2 ms; the datasheet says >= 10 ms. Flag it, do not rule.
+          (ms < 2 ? '  ⚠ below the ~2 ms the manual gives for the internal sensor update — values may repeat' : '');
+      }
+      if (hint.textContent !== text) hint.textContent = text;
+      const cls = ms > 0 && ms < 2 ? 'hint warn-text' : 'hint';
+      if (hint.className !== cls) hint.className = cls;
     }
 
     return {

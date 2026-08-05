@@ -102,3 +102,23 @@ test('a stream reconnect closes its own gap', () => {
   assert.match(mbody, /pausedAtSeq = null/,
     'a restarted bridge resets the freeze point — the frozen stream no longer exists');
 });
+
+test('what is keyed by a connection or destination dies with it', () => {
+  // Module-scope maps survive rebuilds on purpose; they must not survive the
+  // thing they describe. A deleted connection kept its last telemetry frame
+  // forever, and a pending flash timer for a deleted encoder would still fire.
+  const storeSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'store.js'), 'utf8');
+  const adopt = storeSrc.slice(storeSrc.indexOf('setProfile('));
+  assert.match(adopt.slice(0, adopt.indexOf('\n  }')), /map\.delete\(id\)/,
+    'states, telemetry and field layouts follow the profile');
+
+  const cfg = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'encoder-config.js'), 'utf8');
+  assert.match(cfg, /clearTimeout\(pendingFlash\.get\(id\)\)/,
+    'a deleted encoder\'s flash timer is stopped, not just dropped');
+
+  const map = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
+  assert.match(map, /lastAsked\.delete\(id\)/, 'stored verdicts follow the destinations');
+});

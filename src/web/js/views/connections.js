@@ -14,13 +14,16 @@ export function renderConnections(root) {
   clear(root);
   const view = el('div', { class: 'view' });
 
+  // With a catch, like every other action on this screen: a failed start-all
+  // used to be an unhandled rejection and zero feedback, leaving the operator
+  // believing the links were starting.
   const startAll = el('button', {
     class: 'btn primary', text: 'Start All',
-    onclick: async () => { await window.d3d.link.startAll(); }
+    onclick: () => window.d3d.link.startAll().catch((err) => toast('error', err.message))
   });
   const stopAll = el('button', {
     class: 'btn', text: 'Stop All',
-    onclick: async () => { await window.d3d.link.stopAll(); }
+    onclick: () => window.d3d.link.stopAll().catch((err) => toast('error', err.message))
   });
 
   view.appendChild(el('div', { class: 'panel page-head' },

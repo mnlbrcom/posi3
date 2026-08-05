@@ -181,10 +181,12 @@ export function renderDashboard(root) {
               : `unparsed lines from ${nameList([...faulted], 'connection')}`);
       // The caption has one line and cannot hold ten names, so the breakdown
       // lives here: per connection, then the totals by kind.
-      summaryStats.faults.node.title = faults
+      const title = faults
         ? perConnection.map((f) => `${f.name}: ${f.parts.join(', ')}`).join('\n') +
           `\n\n${sendFails} send failures · ${encoderErrors} encoder errors · ${unparsed} unparsed lines`
         : '';
+      // Only on change: this runs per frame, and .title is an attribute write.
+      if (summaryStats.faults.node.title !== title) summaryStats.faults.node.title = title;
     }
   };
 }

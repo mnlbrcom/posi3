@@ -44,6 +44,13 @@ class Store {
 
   setProfile(profile) {
     this.profile = profile;
+    // Everything keyed by connection id follows the profile. A connection
+    // deleted while running kept its last telemetry frame here forever — the
+    // only eviction was an `idle` event no deleted link ever sends.
+    const ids = new Set(profile.connections.map((c) => c.id));
+    for (const map of [this.states, this.telemetry, this.fieldLayouts]) {
+      for (const id of map.keys()) if (!ids.has(id)) map.delete(id);
+    }
     if (this.selectedId && !this.find(this.selectedId)) this.selectedId = null;
     if (!this.selectedId && profile.connections.length) this.selectedId = profile.connections[0].id;
     this.emit('profile');
