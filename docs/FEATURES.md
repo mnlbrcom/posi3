@@ -4127,3 +4127,44 @@ Before: fourteen lines, three false claims in ninety seconds.
 longer repeats it immediately.
 
 **253 tests pass.**
+
+---
+
+## 2026-08-05 — The indicator has to be true
+
+> "when i click Ask disguise … switch the pages … its back on receiving" / "the director connection is
+> showing offline, but switches to receiving everynow and then" / "the indicators need to be real
+> stats and need to be instant and accurate. Otherwise it defeats the purpose of an indicator."
+
+**The mismatch was forgotten on navigation.** `lastAsked` was a local in the card, and a card is
+rebuilt every time the screen is drawn — so what disguise had said was thrown away and the pill went
+back to claiming `receiving`. It is keyed by destination at module scope now: what disguise said does
+not stop being true because a view re-rendered.
+
+    before asking            receiving
+    after asking             mismatch
+    away and back again      mismatch
+
+**And the pill was making the claim the log had just stopped making.** `destinationHealth` read
+straight off `sink.offline`, so it flipped green for the second or two between a trial resuming sends
+and the next error arriving. `receiving` now clears the same bar as the log claim: recent errors, or
+suppressed sends, mean not receiving.
+
+Sampled against the switched-off machine, twenty times over forty seconds: **twenty `offline`, no
+flicker.** Before, it alternated.
+
+### What "instant and accurate" can mean here
+
+Failure is instant: the first ICMP error takes the pill out of `receiving` immediately, and it is
+accurate because the kernel is telling us the packets did not arrive.
+
+Success cannot be instant, and this is a property of UDP rather than a decision — there is no
+delivery confirmation, so the only evidence available is the absence of an objection. That absence is
+worthless on its own: a machine that was off produced **nine consecutive quiet seconds** at full send
+rate. So `receiving` needs the silence to have lasted, and a genuine recovery is shown late rather
+than a false one shown early.
+
+The exception is a destination that has never failed: with no errors at all there is nothing to
+prove, and it reads `receiving` from the first packet.
+
+**254 tests pass.**

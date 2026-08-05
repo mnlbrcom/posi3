@@ -341,11 +341,16 @@ test('a known mismatch stops the card claiming the destination is receiving', ()
   const view = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
 
-  assert.match(view, /if \(state === 'receiving' && lastAsked && !lastAsked\.matches\) state = 'mismatch';/,
+  assert.match(view, /if \(state === 'receiving' && asked && !asked\.matches\) state = 'mismatch';/,
     'a known mismatch overrides the health pill');
-  assert.match(view, /lastAsked = r;/, 'the answer is remembered');
-  assert.match(view, /lastAsked = null;/,
+  assert.match(view, /lastAsked\.set\(dest\.id, r\);/, 'the answer is remembered');
+  assert.match(view, /lastAsked\.delete\(dest\.id\);/,
     'and forgotten when the question could not be answered — that says nothing about the destination');
+  // Module scope: a card is rebuilt on every navigation, and a local would be
+  // lost with it — the pill went back to claiming `receiving` the moment the
+  // screen was left and returned to.
+  assert.match(view, /^const lastAsked = new Map\(\);$/m,
+    'what disguise said survives a re-render');
 
   const css = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'css', 'app.css'), 'utf8');

@@ -25,6 +25,17 @@ import { store } from '../store.js';
 /** Receivers survive navigation with their groups as the operator left them. */
 const openGroups = new Set();
 
+/**
+ * What disguise last said about each receiver, by destination id.
+ *
+ * Module scope, because a card is rebuilt on every navigation and a local would
+ * be lost with it — the pill went back to claiming `receiving` the moment the
+ * screen was left and returned to, which is the one thing asking had just
+ * disproved. What disguise said does not stop being true because a view was
+ * re-rendered.
+ */
+const lastAsked = new Map();
+
 export function renderMapping(root) {
   clear(root);
   const view = el('div', { class: 'view' });
@@ -117,16 +128,7 @@ function receiverCard(conn, dest) {
   // be polled and is not for use during a show. A button, and nothing else.
   const askBtn = el('button', { class: 'btn', text: 'Ask disguise' });
   const verdict = el('div', { class: 'map-verdict' });
-  /**
-   * What disguise said last time it was asked, or null.
-   *
-   * The pill is the destination's health, and `receiving` there means only that
-   * packets are leaving and the network has not objected — UDP offers nothing
-   * stronger. Once disguise has told us there is no receiver on that port, or
-   * none with that device id, we know the packets are arriving nowhere useful,
-   * and the pill must stop saying otherwise.
-   */
-  let lastAsked = null;
+
   const pillHolder = el('span', { class: 'pill-holder' }, pill('idle'));
   const livePos = el('span', { class: 'target-pos', text: '—' });
   const resultHolder = el('div', { class: 'map-result' });
@@ -252,7 +254,7 @@ function receiverCard(conn, dest) {
     verdict.className = 'map-verdict';
     try {
       const r = await window.d3d.disguise.inspect(conn.id, dest.id);
-      lastAsked = r;
+      lastAsked.set(dest.id, r);
       verdict.className = `map-verdict ${r.matches ? 'ok' : 'warn'}`;
       clear(verdict);
       verdict.appendChild(el('div', { text: r.verdict }));
@@ -263,7 +265,7 @@ function receiverCard(conn, dest) {
     } catch (err) {
       // An unanswerable question tells us nothing about the destination, so the
       // pill keeps whatever the network says.
-      lastAsked = null;
+      lastAsked.delete(dest.id);
       verdict.className = 'map-verdict err';
       setText(verdict, err.message);
     } finally {
@@ -323,7 +325,8 @@ function receiverCard(conn, dest) {
       // Nothing objected to the sends, but disguise has told us they land in no
       // matching receiver. "receiving" would be the same false claim the
       // destination pill used to make with a cable pulled.
-      if (state === 'receiving' && lastAsked && !lastAsked.matches) state = 'mismatch';
+      const asked = lastAsked.get(dest.id);
+      if (state === 'receiving' && asked && !asked.matches) state = 'mismatch';
       if (state !== lastState) {
         clear(pillHolder).appendChild(pill(state));
         lastState = state;
