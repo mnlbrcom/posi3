@@ -1,5 +1,5 @@
 /**
- * One rule, and a reason for it.
+ * Two rules, and a reason for each.
  *
  * `no-undef` catches a name that does not exist in the scope it is used in.
  * That is invisible to tests until the branch actually runs, and on a show that
@@ -9,9 +9,19 @@
  * the routes under a running link — the ReferenceError took the whole bridge
  * down with the encoder still streaming.
  *
+ * `no-unused-vars` is the mirror image: a name defined and never used. It never
+ * crashes anything — the harm is to the reader, because a dead name is a false
+ * claim about the code. The log view imported `checkbox` from the day it was
+ * migrated and never once called it, which advertised a control the screen does
+ * not have; when a checkbox was then mentioned in a discussion of that screen,
+ * the operator reasonably asked "what checkbox?". The sweep that added this
+ * rule found nine such names — four in src/, five in tests — and removed them,
+ * so it gates from zero.
+ *
  * Deliberately not a style config. Everything else here is a judgement the
  * codebase already makes consistently, and a gate that fails on taste gets
- * switched off. This one only ever fires on code that cannot work.
+ * switched off. These fire only on code that cannot work or words that are not
+ * true.
  *
  * The globals are written out rather than pulled from the `globals` package, so
  * this stays a single dependency. Add a name when the platform genuinely
@@ -66,7 +76,7 @@ export default [
         global: 'readonly'
       }
     },
-    rules: { 'no-undef': 'error' }
+    rules: { 'no-undef': 'error', 'no-unused-vars': 'error' }
   },
 
   // The web UI: ES modules in a browser, and the same UI in the desktop window.
@@ -102,6 +112,6 @@ export default [
         CSS: 'readonly'
       }
     },
-    rules: { 'no-undef': 'error' }
+    rules: { 'no-undef': 'error', 'no-unused-vars': 'error' }
   }
 ];
