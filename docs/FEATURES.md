@@ -3524,3 +3524,27 @@ point from Offset 43156 to 124642. Every fixture in that file now uses loopback 
 impossible to reach hardware, and ECONNREFUSED comes back at once.
 
 **221 tests pass.**
+
+---
+
+## 2026-08-05 — Banners close themselves within thirty seconds
+
+> "since banners are all loged they should disapear after max 30 secs"
+
+They do now. A banner is an interruption, not a record: every one is written to the log, and the state
+a banner describes — a destination not answering, an encoder in the wrong output mode — is on the
+dashboard continuously. Nothing is left for a banner to be the only copy of, and one that sits there
+all night is one that stops being read.
+
+The timer used to be conditional on a `ttlMs` being passed, so a banner raised without one stayed
+until somebody clicked it. It is unconditional, and a shorter `ttlMs` still shortens but can never
+extend past the cap. Measured on the running app:
+
+    no ttl                       → 30,000 ms
+    the unreachable notice       →  5,000 ms
+    a caller asking for 120,000  → 30,000 ms
+
+Only one banner in the app sets a `ttlMs` at all — the unreachable notice, at the five seconds it was
+asked for. Everything else was untimed and now gets thirty.
+
+**222 tests pass.**
