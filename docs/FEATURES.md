@@ -5054,3 +5054,15 @@ titlebar: the wordmark must start past the buttons' physical edge, the bar
 must stay physically as tall as them, and — the assertion a constant cannot
 pass — the clearance must *grow in CSS px* as zoom shrinks. Measured: the
 physical clearance holds at exactly 78 px at every factor.
+
+### Zoom is bounded: three steps either side of Cmd+0
+
+**Asked:** limit Cmd+- / Cmd+= to three steps down and three up from Cmd+0.
+
+Each Electron zoom level is ×1.2, so the range is 58%–173%. The stock
+`zoomIn`/`zoomOut` menu roles are unbounded and are replaced by clamped items
+on the same accelerators; `Cmd+0` stays stock, zero being inside any bound.
+Electron persists the zoom level per origin, so an out-of-range level from an
+earlier run is clamped once at launch — while the `--zoom` test hook stays
+deliberately unclamped, because `zoomcheck` proves the titlebar survives
+zooms the menu no longer offers. Pinned by `test/desktop-zoom.test.js`.
