@@ -117,3 +117,22 @@ test('a read that fails against a known-offline encoder is not logged as news', 
   // And appInfo carries the answers, so a browser's first render can agree.
   assert.deepEqual(api.appInfo().encoderAlive, { c1: true });
 });
+
+test('a retry loop wears one name, not two in alternation', async (t) => {
+  // Each attempt re-entered `connecting` and each failure `reconnecting`, so
+  // against an unreachable encoder the pill ping-ponged every few seconds.
+  // The first attempt is `connecting`; from then on the condition is "a retry
+  // loop is running", and it keeps the one name until it ends.
+  const l = link(65533); // nothing listens: every attempt fails fast
+  t.after(() => { l.stop(); l.stopIdleProbe(); });
+  const states = [];
+  l.on('state', (e) => states.push(e.state));
+
+  l.start();
+  await until(() => states.filter((x) => x === 'reconnecting').length >= 3,
+    8000, 'a few retry cycles');
+  const afterFirstFailure = states.slice(states.indexOf('reconnecting'));
+  assert.equal(afterFirstFailure.includes('connecting'), false,
+    'once retrying, no attempt announces itself as a fresh connect');
+  assert.equal(states[0], 'connecting', 'while the very first attempt still does');
+});

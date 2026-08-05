@@ -217,7 +217,6 @@ function statTile(label, caption) {
 
 function buildCard(conn) {
   const pillHolder = el('span', { class: 'pill-holder' });
-  const detail = el('div', { class: 'card-detail', text: '' });
 
   const dial = new Dial();
   const travel = new TravelBar();
@@ -275,7 +274,6 @@ function buildCard(conn) {
       el('div', { class: 'card-actions' },
         el('button', { class: 'btn', text: 'Controls', onclick: () => openControls(conn) }),
         el('button', { class: 'btn', text: 'Edit', onclick: () => openEditor(conn) }))),
-    detail,
     el('div', { class: 'encoder-cols' },
       el('div', { class: 'encoder-pane encoder-dial' },
         dial.node,
@@ -301,19 +299,17 @@ function buildCard(conn) {
   const mapping = (firstDest && firstDest.mapping) || { mode: 'full' };
 
   let lastState = null;
-  let lastDetailText = null;
 
   return {
     node,
     name: conn.name,
     refresh() {
-      const state = store.stateOf(conn.id);
       const t = store.telemetryOf(conn.id);
-      const s = store.states.get(conn.id);
 
       // Rebuilding the pill every frame was one of the causes of the UI
-      // shivering, so only touch it on a real change. The pill shows the
-      // device-truth indicator; `state` below keeps steering the detail text.
+      // shivering, so only touch it on a real change. The pill is the card's
+      // one statement about state: retry countdowns, attempt numbers and
+      // error strings stay behind the scenes, in the log.
       const shown = store.encoderIndicator(conn.id);
       if (shown !== lastState) {
         clear(pillHolder).appendChild(pill(shown));
@@ -354,12 +350,6 @@ function buildCard(conn) {
         }
       }
 
-
-      const detailText = s && s.detail && state !== 'streaming' ? s.detail : '';
-      if (detailText !== lastDetailText) {
-        setText(detail, detailText);
-        lastDetailText = detailText;
-      }
 
       // Revolutions of travel as the *encoder* reports its scaling, not as the
       // type label implies. A commissioned unit is often nothing like its
