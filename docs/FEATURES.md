@@ -3596,3 +3596,66 @@ client that connects after a destination has already failed never sees the banne
 dashboard pill is what carries that state.
 
 **226 tests pass.**
+
+---
+
+## 2026-08-05 — Disguise Mapping, rebuilt around the receiver
+
+> "now we want to redo the whole Disguise Mapping thing, we want a similar layout as the other pages
+> like connections and encoder config but for every disguise receiver means when fan out has multiple
+> then these should live there to with name ip and id. Then we make sure we have everything for each
+> disguise receiving id in each tile."
+
+Decided with the user: **one card per receiver**, and **each receiver owns its mapping**.
+
+### The defect underneath the request
+
+`d3Fields` read `conn.d3.port` and `conn.d3.devid` — the legacy mirror of the *first* destination. A
+fan-out to a director and an understudy produced one set of values describing the director, and the
+second machine was never described at all. On a redundant rig that is precisely the machine nobody
+looks at until it has to take over, and it would have been configured from the wrong device ID and
+the wrong port.
+
+`velocitycalcmode` was hardcoded to `from position` as well. That is wrong in both directions and
+silently so: deriving from position while a real velocity arrives double-counts, and not deriving
+while zeroes arrive leaves the axis with no velocity at all. It follows `velocityPolicy` now.
+
+### Schema 3 → 4: the mapping moves onto the receiver
+
+One encoder can feed several disguise machines and they need not be showing the same thing. The
+mapping is a property of the axis, so it lives on the destination; the connection no longer has one.
+The migration copies the old connection mapping onto every receiver — identical to what the screen
+used to show, and separable from then on. Verified on the reference profile: three receivers, each
+with its own mapping, and `mapping` gone from every connection.
+
+Proven end to end through the UI: `US` set to `rotation.y` while `director`, on the same encoder,
+stayed on `offset.x`.
+
+### The screen
+
+Structure follows Connections and Encoder Config exactly — a header card with the screen's action,
+then a list of cards with retractable groups, folded by default and remembered across navigation.
+Each card carries what that receiver needs and nothing about any other:
+
+    disguise 1                                    ● receiving      [Save]
+    10.10.10.5:6000 · id 1 · fed by Revolve at 10.10.10.10:6000
+    Live position  26 107
+    ▸ Input range and output
+    ▸ Type these into disguise
+
+The pill is the **receiver's** health, not the encoder's — this card is about the disguise machine.
+The live position comes from the encoder feeding it, which is what Capture records. `Save All` writes
+one call per encoder rather than one per receiver, so two receivers on the same connection cannot
+overwrite each other.
+
+Gone with it: `store.selected`. The screen used to work on whichever connection had last been clicked
+elsewhere and said "Select a connection first" when that was nothing — the same implied-target
+problem the Encoder Config screen was rebuilt to remove.
+
+### Also found
+
+`<code>` was taking the user agent's `monospace` — a third font family on the page that nobody chose.
+It uses `--mono` now. Same class of miss as the form controls: correct-looking markup, wrong font,
+invisible until measured. The headless audit caught it.
+
+**230 tests pass**, every view clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and expanded.

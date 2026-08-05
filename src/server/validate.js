@@ -196,7 +196,9 @@ function sanitiseConnection(raw) {
     enabled: d.enabled !== false,
     localAddress: d.localAddress ? checkHost(d.localAddress, 'Local interface') : null,
     localIfName: d.localIfName ? String(d.localIfName).slice(0, 120) : null,
-    localPort: d.localPort ? checkPort(d.localPort, 'Local source port') : null
+    localPort: d.localPort ? checkPort(d.localPort, 'Local source port') : null,
+    // Schema 4: each receiver carries its own axis mapping.
+    mapping: checkMapping(d.mapping)
   }));
 
   // Two destinations on the same address and port would send disguise the same
@@ -247,22 +249,29 @@ function sanitiseConnection(raw) {
       maxDelayMs: Math.max(250, Number(raw.reconnect.maxDelayMs) || 5000)
     };
   }
-  if (raw.mapping && typeof raw.mapping === 'object') {
-    const m = raw.mapping;
-    out.mapping = {
-      mode: ['full', 'revolutions', 'capture'].includes(m.mode) ? m.mode : 'full',
-      revolutions: Number(m.revolutions) || 1,
-      gearRatio: Number(m.gearRatio) || 1,
-      minInput: Number(m.minInput) || 0,
-      maxInput: Number(m.maxInput) || 0,
-      minOutput: Number(m.minOutput) || 0,
-      maxOutput: m.maxOutput === undefined ? 1 : Number(m.maxOutput),
-      wrapInput: m.wrapInput !== false,
-      property: String(m.property || 'offset.x').slice(0, 200),
-      object: String(m.object || '').slice(0, 300)
-    };
-  }
   return out;
+}
+
+/**
+ * One receiver's axis mapping.
+ *
+ * Bounds rather than rejects: these come from number inputs an operator is
+ * still typing into, and a half-entered value should settle rather than throw.
+ */
+function checkMapping(m) {
+  const raw = m && typeof m === 'object' ? m : {};
+  return {
+    mode: ['full', 'revolutions', 'capture'].includes(raw.mode) ? raw.mode : 'full',
+    revolutions: Number(raw.revolutions) || 1,
+    gearRatio: Number(raw.gearRatio) || 1,
+    minInput: Number(raw.minInput) || 0,
+    maxInput: Number(raw.maxInput) || 0,
+    minOutput: Number(raw.minOutput) || 0,
+    maxOutput: raw.maxOutput === undefined ? 1 : Number(raw.maxOutput),
+    wrapInput: raw.wrapInput !== false,
+    property: String(raw.property || 'offset.x').slice(0, 200),
+    object: String(raw.object || '').slice(0, 300)
+  };
 }
 
 /** IPv4 interfaces for the multi-NIC picker on show servers. */

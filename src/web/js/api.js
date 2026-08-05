@@ -207,7 +207,7 @@ if (!window.d3d) {
     },
 
     mapping: {
-      compute: (id, mapping) => call('mappingCompute', { id, mapping })
+      compute: (id, destId, mapping) => call('mappingCompute', { id, destId, mapping }),
     },
 
     net: {

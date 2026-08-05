@@ -1,118 +1,235 @@
 /**
- * disguise mapping helper.
+ * Disguise mapping — one card per receiver.
  *
- * Produces the exact values to type into the NavigatorDriver and
- * ScreenPositionAxis windows, and — more usefully — lets you drive the physical
- * axis to each end and press "Capture current" rather than working the numbers
- * out by hand at the venue.
+ * A card for every disguise machine on the rig, not one for whichever
+ * connection happened to be selected. That mattered for more than tidiness:
+ * the numbers were computed from `conn.d3`, the legacy mirror of the *first*
+ * destination, so a fan-out to a director and an understudy produced one set of
+ * values describing the director and never mentioned the other machine at all —
+ * which is exactly the one nobody is looking at until it has to take over.
+ *
+ * Each card carries everything that receiver needs: its own device ID, its own
+ * port, its own mapping, and the encoder feeding it. The mapping belongs to the
+ * receiver (schema 4), so two machines fed by one encoder can drive different
+ * properties.
+ *
+ * Structure follows Connections and Encoder Config: a header card with the
+ * screen's actions, then a list of cards, each with retractable groups.
  */
 
 import {
-  el, clear, groupDigits, fixed, setText, toast, select, input, checkbox, panel, confirmModal
+  el, clear, pill, groupDigits, fixed, setText, toast, select, input, checkbox, confirmModal
 } from '../ui.js';
 import { store } from '../store.js';
 
+/** Receivers survive navigation with their groups as the operator left them. */
+const openGroups = new Set();
+
 export function renderMapping(root) {
   clear(root);
-  const conn = store.selected;
   const view = el('div', { class: 'view' });
+  const conns = store.connections;
 
-  if (!conn) {
-    view.appendChild(el('div', { class: 'empty' }, el('h3', { text: 'Select a connection first' })));
-    root.appendChild(view);
-    return { refreshLive() {} };
-  }
-
-  const m = Object.assign({
-    mode: 'full', revolutions: 1, gearRatio: 1,
-    minInput: 0, maxInput: store.info.constants.TOTAL_COUNTS - 1,
-    minOutput: 0, maxOutput: 1, wrapInput: true,
-    property: 'offset.x', object: ''
-  }, conn.mapping || {});
+  const saveAllBtn = el('button', { class: 'btn', text: 'Save All' });
 
   view.appendChild(el('div', { class: 'panel page-head' },
     el('div', { class: 'view-head' },
       el('h1', { text: 'Disguise Mapping' }),
       el('span', { class: 'spacer' }),
-    el('button', {
-      class: 'btn primary', text: 'Save mapping',
-      onclick: async () => {
-        try {
-          await window.d3d.config.saveConnection(Object.assign({}, conn, { mapping: m }));
-          store.setProfile(await window.d3d.config.get());
-          toast('info', 'Mapping saved');
-        } catch (err) { toast('error', err.message); }
+      saveAllBtn)));
+
+  // Every receiver on the rig, each remembering which encoder feeds it.
+  const receivers = [];
+  for (const conn of conns) {
+    for (const dest of conn.destinations || []) receivers.push({ conn, dest });
+  }
+
+  if (!receivers.length) {
+    view.appendChild(el('div', { class: 'empty' },
+      el('h3', { text: 'No disguise receivers configured' }),
+      el('p', { text: 'Add a connection with at least one destination — this screen produces the values to type into its Navigator driver and axis.' }),
+      el('button', {
+        class: 'btn primary', text: 'Go to Connections',
+        onclick: () => store.setView('connections')
+      })));
+    root.appendChild(view);
+    return { refreshLive() {} };
+  }
+
+  const cards = receivers.map(({ conn, dest }) => receiverCard(conn, dest));
+  view.appendChild(el('div', { class: 'cfg-list' }, ...cards.map((c) => c.node)));
+  root.appendChild(view);
+
+  saveAllBtn.onclick = async () => {
+    saveAllBtn.disabled = true;
+    try {
+      // Grouped by connection: each save writes the whole connection, so one
+      // call per encoder rather than one per receiver — otherwise two receivers
+      // on the same encoder would each overwrite the other's mapping.
+      for (const conn of conns) {
+        const mine = cards.filter((c) => c.connId === conn.id);
+        if (!mine.some((c) => c.dirty())) continue;
+        await saveConnection(conn, mine);
       }
-    }))));
+      store.setProfile(await window.d3d.config.get());
+      toast('info', 'Mappings saved');
+    } catch (err) {
+      toast('error', err.message);
+    } finally {
+      saveAllBtn.disabled = false;
+    }
+  };
 
-  view.appendChild(el('div', { class: 'view-sub' },
-    'Work out min_input / max_input for the disguise Axes window. Drive the axis to each end of ' +
-    'its travel and press Capture — that is usually faster and more accurate than calculating steps.'));
+  return {
+    refreshLive() {
+      for (const card of cards) card.refreshLive();
+    }
+  };
+}
 
-  const resultHolder = el('div');
-  const livePos = el('span', { class: 'num', text: '—' });
+/** Write every changed receiver of one connection in a single save. */
+async function saveConnection(conn, cards) {
+  const next = JSON.parse(JSON.stringify(conn));
+  for (const card of cards) {
+    const d = next.destinations.find((x) => x.id === card.destId);
+    if (d) d.mapping = card.mapping();
+  }
+  await window.d3d.config.saveConnection(next);
+  for (const card of cards) card.markSaved();
+}
 
-  const minBox = input({ type: 'number', class: 'num-input', value: m.minInput, oninput: (e) => { m.minInput = Number(e.target.value); recompute(); } });
-  const maxBox = input({ type: 'number', class: 'num-input', value: m.maxInput, oninput: (e) => { m.maxInput = Number(e.target.value); recompute(); } });
+// ---------------------------------------------------------------------------
 
-  const captureRow = el('div', {},
+function receiverCard(conn, dest) {
+  const m = Object.assign({
+    mode: 'full', revolutions: 1, gearRatio: 1,
+    minInput: 0, maxInput: 0, minOutput: 0, maxOutput: 1,
+    wrapInput: true, property: 'offset.x', object: ''
+  }, dest.mapping || {});
+  let saved = JSON.stringify(m);
+
+  const where = `${dest.host}:${dest.port}`;
+  const title = dest.name || where;
+  const groupKey = (g) => `${dest.id}:${g}`;
+
+  const saveBtn = el('button', { class: 'btn primary', text: 'Save', disabled: true });
+  const pillHolder = el('span', { class: 'pill-holder' }, pill('idle'));
+  const livePos = el('span', { class: 'target-pos', text: '—' });
+  const resultHolder = el('div', { class: 'map-result' });
+
+  const dirty = () => JSON.stringify(m) !== saved;
+  const refreshDirty = () => { saveBtn.disabled = !dirty(); };
+
+  // -- the range this axis is driven over -----------------------------------
+
+  const minBox = input({
+    type: 'number', class: 'num-input', value: m.minInput,
+    oninput: (e) => { m.minInput = Number(e.target.value); changed(); }
+  });
+  const maxBox = input({
+    type: 'number', class: 'num-input', value: m.maxInput,
+    oninput: (e) => { m.maxInput = Number(e.target.value); changed(); }
+  });
+
+  const captureRow = el('div', { class: 'map-rows' },
     el('div', { class: 'field' },
-      el('label', {}, 'Start of travel (min_input)  ', el('span', { class: 'faint', text: 'steps' })),
+      el('label', {}, 'Start of travel ', el('code', { text: 'min_input' })),
       el('div', { class: 'row-inline' }, minBox,
-        el('button', {
-          class: 'btn shrink', text: 'Capture current',
-          onclick: () => capture('min')
-        }))),
+        el('button', { class: 'btn shrink', text: 'Capture', onclick: () => capture('min') }))),
     el('div', { class: 'field' },
-      el('label', {}, 'End of travel (max_input)  ', el('span', { class: 'faint', text: 'steps' })),
+      el('label', {}, 'End of travel ', el('code', { text: 'max_input' })),
       el('div', { class: 'row-inline' }, maxBox,
-        el('button', {
-          class: 'btn shrink', text: 'Capture current',
-          onclick: () => capture('max')
-        }))),
-    el('div', { class: 'hint' }, 'Live position: ', livePos));
+        el('button', { class: 'btn shrink', text: 'Capture', onclick: () => capture('max') }))),
+    el('div', { class: 'hint' },
+      'Drive the axis to each end and press Capture — faster and more exact than working the steps out.'));
 
-  const revBox = input({ type: 'number', class: 'num-input', value: m.revolutions, min: 0.01, step: 0.25, oninput: (e) => { m.revolutions = Number(e.target.value); recompute(); } });
-  const gearBox = input({ type: 'number', class: 'num-input', value: m.gearRatio, min: 0.01, step: 0.1, oninput: (e) => { m.gearRatio = Number(e.target.value); recompute(); } });
-
-  const revRow = el('div', {},
+  const revRow = el('div', { class: 'map-rows' },
     el('div', { class: 'field' },
-      el('label', { text: 'Revolutions of travel' }), revBox),
+      el('label', { text: 'Revolutions of travel' }),
+      input({
+        type: 'number', class: 'num-input', value: m.revolutions, min: 0.01, step: 0.25,
+        oninput: (e) => { m.revolutions = Number(e.target.value); changed(); }
+      })),
     el('div', { class: 'field' },
-      el('label', { text: 'Gear / belt ratio (encoder turns per driven turn)' }), gearBox));
+      el('label', { text: 'Gear ratio — encoder turns per driven turn' }),
+      input({
+        type: 'number', class: 'num-input', value: m.gearRatio, min: 0.01, step: 0.1,
+        oninput: (e) => { m.gearRatio = Number(e.target.value); changed(); }
+      })));
 
   const modeArea = el('div');
 
-  const form = el('div', { class: 'panel-body' },
+  const inputBody = el('div', { class: 'cfg-body' },
     el('div', { class: 'field' },
-      el('label', { text: 'How is the input range defined?' }),
+      el('label', { text: 'How the input range is defined' }),
       select([
-        { value: 'full', label: 'Full 25-bit range (0 … 33 554 431)' },
+        { value: 'full', label: 'The encoder’s whole travel' },
         { value: 'revolutions', label: 'A number of revolutions' },
-        { value: 'capture', label: 'Capture two endpoints' }
-      ], m.mode, (v) => { m.mode = v; renderMode(); recompute(); })),
+        { value: 'capture', label: 'Two captured endpoints' }
+      ], m.mode, (v) => { m.mode = v; renderMode(); changed(); })),
     modeArea,
     el('div', { class: 'row-inline' },
-      el('div', { class: 'field' }, el('label', { text: 'min_output' }),
-        input({ type: 'number', class: 'num-input', value: m.minOutput, oninput: (e) => { m.minOutput = Number(e.target.value); recompute(); } })),
-      el('div', { class: 'field' }, el('label', { text: 'max_output' }),
-        input({ type: 'number', class: 'num-input', value: m.maxOutput, oninput: (e) => { m.maxOutput = Number(e.target.value); recompute(); } }))),
+      el('div', { class: 'field' },
+        el('label', {}, el('code', { text: 'min_output' })),
+        input({
+          type: 'number', class: 'num-input', value: m.minOutput,
+          oninput: (e) => { m.minOutput = Number(e.target.value); changed(); }
+        })),
+      el('div', { class: 'field' },
+        el('label', {}, el('code', { text: 'max_output' })),
+        input({
+          type: 'number', class: 'num-input', value: m.maxOutput,
+          oninput: (e) => { m.maxOutput = Number(e.target.value); changed(); }
+        }))),
     el('div', { class: 'field' },
       el('label', { text: 'Property to drive' }),
-      input({ class: 'mono-input', value: m.property, oninput: (e) => { m.property = e.target.value; recompute(); } }),
-      el('div', { class: 'hint', text: 'A disguise expression, e.g. offset.x, rotation.y, brightness.' })),
+      input({
+        class: 'mono-input', value: m.property,
+        oninput: (e) => { m.property = e.target.value; changed(); }
+      }),
+      el('div', { class: 'hint', text: 'A disguise expression: offset.x, rotation.y, brightness.' })),
     el('div', { class: 'field' },
       el('label', { text: 'Object (optional)' }),
-      input({ class: 'mono-input', value: m.object, placeholder: 'objects/screen2/surface 1.apx', oninput: (e) => { m.object = e.target.value; recompute(); } })),
-    checkbox('wrapinput', m.wrapInput, (v) => { m.wrapInput = v; recompute(); }));
+      input({
+        class: 'mono-input', value: m.object, placeholder: 'objects/screen2/surface 1.apx',
+        oninput: (e) => { m.object = e.target.value; changed(); }
+      })),
+    checkbox('Wrap input — the span crosses the encoder’s rollover', m.wrapInput,
+      (v) => { m.wrapInput = v; changed(); }));
 
-  view.appendChild(el('div', { class: 'grid-2' },
-    el('div', { class: 'panel' },
-      el('div', { class: 'panel-head' }, el('span', { text: 'Input range' })),
-      form),
-    resultHolder));
+  const groups = [
+    detailsGroup('Input range and output', inputBody, groupKey('input')),
+    detailsGroup('Type these into disguise', resultHolder, groupKey('fields'))
+  ];
 
-  root.appendChild(view);
+  const node = el('div', { class: 'card cfg-card' },
+    el('div', { class: 'card-head' },
+      el('span', { class: 'card-name', text: title }),
+      pillHolder,
+      el('div', { class: 'card-actions' }, saveBtn)),
+    // Same shape as an encoder card: what this is, and where, under the name.
+    el('div', { class: 'card-addr' },
+      `${where} · id ${dest.devid}` +
+      (dest.enabled === false ? ' · disabled' : '') +
+      ` · fed by ${conn.name} at ${conn.encoder.host}:${conn.encoder.port}`),
+    el('div', { class: 'cfg-target' },
+      el('span', { class: 'target-live' },
+        el('span', { class: 'target-live-label', text: 'Live position' }),
+        livePos,
+        el('span', { class: 'target-hint', text: 'from the encoder feeding this receiver' }))),
+    ...groups);
+
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    try {
+      await saveConnection(conn, [api]);
+      store.setProfile(await window.d3d.config.get());
+      toast('info', `${title}: mapping saved`);
+    } catch (err) {
+      toast('error', err.message);
+      saveBtn.disabled = false;
+    }
+  };
 
   function renderMode() {
     clear(modeArea);
@@ -122,83 +239,93 @@ export function renderMapping(root) {
 
   function capture(which) {
     const t = store.telemetryOf(conn.id);
-    if (!t) { toast('warn', 'No live position — start the connection first.'); return; }
+    if (!t) { toast('warn', `${conn.name} is not running — start it to capture a position.`); return; }
     if (which === 'min') { m.minInput = t.pos; minBox.value = t.pos; }
     else { m.maxInput = t.pos; maxBox.value = t.pos; }
-    recompute();
+    changed();
   }
 
   let pending = null;
-  async function recompute() {
+  function changed() {
+    refreshDirty();
     if (pending) clearTimeout(pending);
-    pending = setTimeout(async () => {
-      try {
-        const res = await window.d3d.mapping.compute(conn.id, m);
-        clear(resultHolder).appendChild(renderResult(conn, res, m));
-      } catch (err) {
-        clear(resultHolder).appendChild(el('div', { class: 'panel' },
-          el('div', { class: 'panel-body err-text-inline', text: err.message })));
-      }
-    }, 60);
+    pending = setTimeout(recompute, 60);
+  }
+
+  async function recompute() {
+    try {
+      const res = await window.d3d.mapping.compute(conn.id, dest.id, m);
+      clear(resultHolder).appendChild(renderResult(conn, res));
+    } catch (err) {
+      clear(resultHolder).appendChild(el('div', { class: 'err-text-inline', text: err.message }));
+    }
   }
 
   renderMode();
   recompute();
 
-  return {
+  let lastState = null;
+  const api = {
+    node,
+    connId: conn.id,
+    destId: dest.id,
+    dirty,
+    mapping: () => JSON.parse(JSON.stringify(m)),
+    markSaved() { saved = JSON.stringify(m); refreshDirty(); },
     refreshLive() {
       const t = store.telemetryOf(conn.id);
       setText(livePos, t ? groupDigits(t.pos) : null);
+
+      // The receiver's own health, not the encoder's: this card is about the
+      // disguise machine. Only on a real change — this runs every frame.
+      const d = (t && (t.destinations || []).find((x) => x.id === dest.id)) || null;
+      const state = d ? d.health : store.stateOf(conn.id) === 'idle' ? 'idle' : 'idle';
+      if (state !== lastState) {
+        clear(pillHolder).appendChild(pill(state));
+        lastState = state;
+      }
     }
   };
+  return api;
 }
 
-function renderResult(conn, res, m) {
+/** A retractable group that remembers whether it was open. */
+function detailsGroup(label, body, key) {
+  const node = el('details', { class: 'cfg-group' },
+    el('summary', { text: label }),
+    body);
+  if (openGroups.has(key)) node.open = true;
+  node.addEventListener('toggle', () => {
+    if (node.open) openGroups.add(key); else openGroups.delete(key);
+  });
+  return node;
+}
+
+// ---------------------------------------------------------------------------
+
+function renderResult(conn, res) {
   const { mapped, fields, suggestedPreset } = res;
   const wrap = el('div');
 
   for (const w of mapped.warnings) {
-    const box = el('div', {
-      class: 'panel',
-      style: `border-color:${w.level === 'error' ? 'var(--err)' : 'var(--warn)'}`
-    },
-      el('div', { class: 'panel-body' },
-        el('div', { class: w.level === 'error' ? 'err-text-inline' : 'warn-text', text: w.text }),
-        w.action === 'preset'
-          ? el('div', { style: 'margin-top:10px' },
-            el('button', {
-              class: 'btn sm', text: `Move the rollover away (set Preset=${suggestedPreset})`,
-              onclick: async () => {
-                const ok = await confirmModal({
-                  title: 'Move the count rollover?',
-                  body: [
-                    el('div', { class: 'flash-warn' },
-                      el('strong', { text: 'This writes to the encoder’s flash. ' }),
-                      'Do not power off the encoder until it confirms.'),
-                    el('div', { class: 'cmd-preview' }, el('div', { text: `set Preset=${suggestedPreset}` })),
-                    el('p', { class: 'dim', text: 'Re-capture both endpoints afterwards — every position shifts.' })
-                  ],
-                  confirmLabel: 'Write preset'
-                });
-                if (!ok) return;
-                try {
-                  await window.d3d.encoder.preset(conn.id, suggestedPreset);
-                  toast('info', 'Preset accepted — re-capture your endpoints once it confirms.');
-                } catch (err) { toast('error', err.message); }
-              }
-            }))
-          : null));
-    wrap.appendChild(box);
+    wrap.appendChild(el('div', { class: `map-warn ${w.level}` },
+      el('div', { class: w.level === 'error' ? 'err-text-inline' : 'warn-text', text: w.text }),
+      w.action === 'preset'
+        ? el('button', {
+          class: 'btn', text: `Move the rollover away — set Preset=${suggestedPreset}`,
+          onclick: () => writePreset(conn, suggestedPreset)
+        })
+        : null));
   }
 
-  const summary = el('div', { class: 'statline', style: 'margin-bottom:12px' },
+  wrap.appendChild(el('div', { class: 'statline' },
     el('span', {}, 'Span ', el('b', { text: `${groupDigits(mapped.rawSpan)} steps` })),
-    el('span', {}, 'Rotation ', el('b', { text: `${fixed(mapped.revsUsed, 3)} rev (${fixed(mapped.revsUsed * 360, 1)}°)` })),
+    el('span', {}, 'Rotation ', el('b', {
+      text: `${fixed(mapped.revsUsed, 3)} rev (${fixed(mapped.revsUsed * 360, 1)}°)`
+    })),
     el('span', {}, 'Resolution ', el('b', {
-      text: mapped.unitsPerCount
-        ? `${mapped.unitsPerCount.toExponential(2)} output units / count`
-        : '—'
-    })));
+      text: mapped.unitsPerCount ? `${mapped.unitsPerCount.toExponential(2)} units / step` : '—'
+    }))));
 
   const card = el('div', { class: 'd3card' });
   for (const section of fields) {
@@ -210,10 +337,30 @@ function renderResult(conn, res, m) {
         row.note ? el('span', { class: 'nn', text: row.note }) : null));
     }
   }
-
-  wrap.appendChild(panel('Type these into disguise', [summary, card], null,
-    'Create a Position Receiver, add a Navigator driver inside it, then add an Axis. ' +
-    'Values are selectable so you can copy them straight across. Finally, engage the position receiver.'));
+  wrap.appendChild(card);
+  wrap.appendChild(el('div', { class: 'hint' },
+    'Create a Position Receiver, add a Navigator driver inside it, then an Axis. ' +
+    'Engage the position receiver last.'));
 
   return wrap;
+}
+
+async function writePreset(conn, value) {
+  const ok = await confirmModal({
+    title: 'Move the count rollover?',
+    body: [
+      el('div', { class: 'flash-warn' },
+        el('strong', { text: 'This writes to the encoder’s flash. ' }),
+        'Do not power off the encoder until it confirms.'),
+      el('div', { class: 'cmd-preview' }, el('div', { text: `set Preset=${value}` })),
+      el('p', { class: 'dim', text: 'Re-capture both endpoints afterwards — every position shifts.' })
+    ],
+    confirmLabel: 'Write preset',
+    danger: true
+  });
+  if (!ok) return;
+  try {
+    await window.d3d.encoder.preset(conn.id, value);
+    toast('info', 'Preset accepted — re-capture your endpoints once it confirms.');
+  } catch (err) { toast('error', err.message); }
 }

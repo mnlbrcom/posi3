@@ -17,7 +17,7 @@ const {
   DEFAULT_D3_PORT, DEFAULT_TELEMETRY_HZ
 } = require('../shared/constants');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const SAVE_DEBOUNCE_MS = 300;
 
 function defaultSettings() {
@@ -38,6 +38,32 @@ function defaultSettings() {
   };
 }
 
+/**
+ * How this receiver's axis is driven.
+ *
+ * On the destination, not the connection: one encoder can feed several disguise
+ * machines, and they need not be showing the same thing — a director and an
+ * understudy share a mapping, but a second machine driving `rotation.y` from
+ * the same shaft is a legitimate rig. Schema 4 moved it here; before that there
+ * was one mapping per connection and every receiver after the first was
+ * described by the first one's device ID and port.
+ */
+function defaultMapping(overrides = {}) {
+  return Object.assign({
+    mode: 'full',
+    revolutions: 1,
+    gearRatio: 1,
+    minInput: 0,
+    /* Only mode 'capture' reads this, and nothing has been captured yet. */
+    maxInput: 0,
+    minOutput: 0,
+    maxOutput: 1,
+    wrapInput: true,
+    property: 'offset.x',
+    object: ''
+  }, overrides);
+}
+
 function defaultDestination(overrides = {}) {
   return Object.assign({
     id: crypto.randomUUID(),
@@ -48,7 +74,8 @@ function defaultDestination(overrides = {}) {
     enabled: true,
     localAddress: null,
     localIfName: null,
-    localPort: null
+    localPort: null,
+    mapping: defaultMapping()
   }, overrides);
 }
 
@@ -81,22 +108,6 @@ function defaultConnection(overrides = {}) {
        a change. They are filled in from the device and kept. */
     encoderMeta: { countsPerRev: null, totalCounts: null, cycleTimeMs: null },
     reconnect: { enabled: true, minDelayMs: 250, maxDelayMs: 5000 },
-    mapping: {
-      mode: 'full',
-      minInput: 0,
-      /* Only used by mode 'capture', which means "the span the operator
-         recorded" — and nothing has been recorded yet. This held the nameplate
-         33,554,431, a figure belonging to no encoder on this rig: the one
-         reporting 300,000 would have started a capture 111 times too wide. In
-         'full' and 'revolutions' the span is derived from what the device
-         reported, so this value is not consulted at all. */
-      maxInput: 0,
-      minOutput: 0,
-      maxOutput: 1,
-      wrapInput: true,
-      property: 'offset.x',
-      object: ''
-    },
     logRaw: false,
     notes: ''
   }, overrides);
@@ -307,8 +318,8 @@ function migrateConnection(c, fromVersion) {
     ? Object.assign({}, base.encoderMeta, c.encoderMeta)
     : Object.assign({}, base.encoderMeta);
   out.reconnect = Object.assign({}, base.reconnect, c.reconnect);
-  out.mapping = Object.assign({}, base.mapping, c.mapping);
-  out.destinations = migrateDestinations(c);
+  delete out.mapping;
+  out.destinations = migrateDestinations(c, fromVersion);
   // `d3` is kept as a mirror of the first destination — read-only by
   // convention. Several screens legitimately mean "the primary destination"
   // (the mapping helper computes one axis), and this saves them reaching into
@@ -322,11 +333,21 @@ function migrateConnection(c, fromVersion) {
  * A v1 profile is upgraded by promoting `d3` to the first destination, so a
  * profile written by the previous build keeps working untouched.
  */
-function migrateDestinations(c) {
+/**
+ * @param {object} c
+ * @param {number} fromVersion  schema the profile was written by.
+ */
+function migrateDestinations(c, fromVersion) {
   const list = Array.isArray(c.destinations) && c.destinations.length
     ? c.destinations
     : [c.d3 || {}];
-  return list.map((d) => defaultDestination(d));
+  // Schema 3 -> 4: the mapping was one per connection, so every receiver after
+  // the first was described by the first one's device ID and port. Each takes a
+  // copy of it — identical to what the screen used to show, and separable from
+  // now on.
+  const inherited = Number(fromVersion) < 4 && c.mapping ? c.mapping : null;
+  return list.map((d) => defaultDestination(
+    inherited && !d.mapping ? Object.assign({}, d, { mapping: defaultMapping(inherited) }) : d));
 }
 
 module.exports = {
