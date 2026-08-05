@@ -523,6 +523,18 @@ function createApi(ctx) {
     manager.disguiseChecks.set(dest.id, { matches: !!both, at: Date.now(), verdict });
 
     // Wrong: ask again, further off each time. Right: stop.
+    //
+    // Stopping has a known cost, accepted deliberately: once this reads
+    // `receiving`, breaking the rig *in Designer* — moving the axis id, changing
+    // the driver's port — is invisible here. Nothing changes on the network, so
+    // no state change fires, and nothing is scheduled to ask. `receiving`
+    // therefore means "matched when last looked at", and that may be hours ago.
+    //
+    // The alternative is a heartbeat while healthy, which is polling an
+    // endpoint whose documentation forbids it, against a machine that is
+    // working, during a show. The Ask button is the answer instead: it is there
+    // for exactly the moment somebody wants the claim re-established. Do not
+    // replace this with a timer.
     if (both) {
       clearTimeout(recheckTimers.get(dest.id));
       recheckTimers.delete(dest.id);
