@@ -241,8 +241,17 @@ function createApi(ctx) {
     // The operator gets a banner; the record gets a line. A banner is drawn in
     // one browser and gone in five seconds — if it was worth interrupting
     // somebody for, it was worth keeping.
-    appLog(conn.id, `read failed — no answer at ${where}` +
-      (last ? ` (${last.message})` : ''), 'error');
+    //
+    // Unless it is not news. The idle handshake already has this encoder at
+    // `offline`, the indicator says so, and an error line repeating what the
+    // screen states is noise that buries the failures that are new. The line
+    // is for the case where the encoder *was* answering — a read failing
+    // against a device the indicator calls connected is exactly worth keeping.
+    const link = manager.get(conn.id);
+    if (!link || link.encoderAlive !== false) {
+      appLog(conn.id, `read failed — no answer at ${where}` +
+        (last ? ` (${last.message})` : ''), 'error');
+    }
     const e = new Error(`${conn.name} is unreachable at ${where}`);
     e.code = 'EUNREACHABLE';
     e.cause = last;
@@ -652,6 +661,11 @@ function createApi(ctx) {
       loadWarning: store.loadWarning,
       readOnly: store.readOnly,
       interfaces: listInterfaces(),
+      // What the idle handshakes have established so far, so a browser's very
+      // first render can say offline/connected instead of waiting up to a
+      // probe interval for the stream to tell it.
+      encoderAlive: Object.fromEntries(
+        manager.ids().map((id) => [id, manager.get(id).encoderAlive])),
       // The UI renders reference data it cannot require directly.
       constants: {
         COUNTS_PER_REV: constants.COUNTS_PER_REV,

@@ -113,7 +113,7 @@ function encoderCard(conn) {
   const applyBtn = el('button', { class: 'btn primary', text: 'Apply changes', disabled: true });
   const revertBtn = el('button', { class: 'btn', text: 'Revert', disabled: true });
   const readBtn = el('button', { class: 'btn', text: 'Read' });
-  const pillHolder = el('span', { class: 'pill-holder' }, pill(store.stateOf(conn.id)));
+  const pillHolder = el('span', { class: 'pill-holder' }, pill(store.encoderIndicator(conn.id)));
   const livePos = el('span', { class: 'target-pos', text: '—' });
 
   const nic = conn.encoder.localAddress
@@ -396,7 +396,12 @@ function encoderCard(conn) {
       if (ctl) ctl.set(value);
     }
     applyDependentRanges();
-  } else {
+  } else if (store.encoderIndicator(conn.id) !== 'offline') {
+    // Nothing cached, so ask the device — unless the indicator already says
+    // there is no device to ask. Opening this page with two encoders
+    // unplugged used to fire two reads, two toasts and two error lines to
+    // report what the pills already said. The Read button still works, and a
+    // read against a supposedly-connected encoder that fails is still logged.
     readAll();
   }
 
@@ -406,10 +411,14 @@ function encoderCard(conn) {
     node,
     readAll,
     refreshLive() {
+      // The indicator for the pill; the raw state still decides the wording
+      // below, because "not running" is about posi3 and stays true whether
+      // the idle device is reachable or not.
       const state = store.stateOf(conn.id);
-      if (state !== lastState) {
-        clear(pillHolder).appendChild(pill(state));
-        lastState = state;
+      const shown = store.encoderIndicator(conn.id);
+      if (shown !== lastState) {
+        clear(pillHolder).appendChild(pill(shown));
+        lastState = shown;
       }
       const t = store.telemetryOf(conn.id);
       if (!t) {

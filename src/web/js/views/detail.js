@@ -52,7 +52,7 @@ export function openControls(conn) {
         el('span', { class: 'arrow', text: '·' }),
         `device ID ${conn.d3.devid}`),
 
-      el('div', { class: 'modal-actions' }, pill(state), runStop, zeroBtn, runBtn),
+      el('div', { class: 'modal-actions' }, pill(store.encoderIndicator(conn.id)), runStop, zeroBtn, runBtn),
 
       // Deleting used to live in the connections row menu, which is gone. It
       // belongs on the one surface that is about managing a single connection,

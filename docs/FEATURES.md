@@ -4931,3 +4931,40 @@ in-page handler only required Ctrl+Shift — and on Windows **AltGr arrives as
 Ctrl+Alt**, so an AltGr+Shift chord on the comma key, a typing gesture on
 several European layouts, would have read as the start-all shortcut. Alt now
 disqualifies the chord.
+
+## 2026-08-06 — The encoder gets a device-truth indicator
+
+**Asked:** on Encoder Config the pill said `idle` for encoders that were
+unplugged, and opening the page logged "read failed — no answer" for both.
+The indicator should say `offline` when the device is unreachable,
+`connected` when there is a handshake, `sending` when started and streaming —
+and a no-answer error should only appear when the app believed the encoder
+was connected. Both ends checked by indicators, as instant as possible.
+
+**Built:**
+
+- **An idle handshake probe on the link** (`IDLE_PROBE_MS = 1000`): while a
+  connection is *not* started, the bridge connects to the encoder's TCP port
+  and closes immediately — no command sent, nothing read, flash untouched, a
+  client slot held for milliseconds. Never while running: the stream is its
+  own proof. A refusal counts as absence (an encoder always listens on its
+  data port), unlike the disguise-side probe where a refusal proves a
+  machine. The probe follows the link's registration — started by
+  `manager.upsert`, suspended by `start()`, resumed by `stop()`, retargeted
+  (and reset to unknown) by `reconfigure()`, ended by `remove()`/`dispose()`.
+- **The pill vocabulary pairs with the disguise side**: `offline` /
+  `connected` / `sending` (streaming's display name — the twin of
+  `receiving`), with the running states between (connecting, stalled, error)
+  keeping their own names. All four encoder-pill surfaces — dashboard,
+  connections, encoder config, the controls dialog — show
+  `store.encoderIndicator()`; button logic stays on the raw link state,
+  because Start is about posi3, not the device.
+- **Instant on every edge**: probes emit on every tick so any client is
+  current within a second; `appInfo` carries the answers so the first render
+  already knows; the stream keeps it live from there.
+- **Not-news errors are quiet.** `readOffline` logs "read failed — no answer"
+  only when the indicator did *not* already say offline — a read failing
+  against a supposedly-connected encoder is exactly worth keeping. And
+  Encoder Config no longer auto-reads a card whose indicator says offline, so
+  opening the page beside two unplugged encoders shows two offline pills and
+  nothing else.

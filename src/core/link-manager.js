@@ -109,6 +109,9 @@ class LinkManager extends EventEmitter {
 
     this._links.set(config.id, link);
     this._rates.set(config.id, { samples: [] });
+    // A registered link watches its encoder even while idle — that is what
+    // lets the indicator say offline/connected instead of just "not started".
+    link.startIdleProbe();
     return link;
   }
 
@@ -121,6 +124,8 @@ class LinkManager extends EventEmitter {
     const link = this._links.get(id);
     if (!link) return false;
     link.stop();
+    // stop() resumes the idle probe by design; removal ends the watch.
+    link.stopIdleProbe();
     link.removeAllListeners();
     this._links.delete(id);
     this._rates.delete(id);
@@ -181,7 +186,10 @@ class LinkManager extends EventEmitter {
 
   dispose() {
     this.stopAll();
-    for (const link of this._links.values()) link.removeAllListeners();
+    for (const link of this._links.values()) {
+      link.stopIdleProbe();
+      link.removeAllListeners();
+    }
     this._links.clear();
     this._rates.clear();
     this._stopTimer();

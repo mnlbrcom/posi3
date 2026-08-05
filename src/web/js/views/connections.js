@@ -55,7 +55,7 @@ export function renderConnections(root) {
   for (const conn of store.connections) {
     const state = store.stateOf(conn.id);
     const running = state !== 'idle' && state !== 'error';
-    const pillHolder = el('span', { class: 'pill-holder' }, pill(state));
+    const pillHolder = el('span', { class: 'pill-holder' }, pill(store.encoderIndicator(conn.id)));
 
     // Start and Stop as two buttons rather than one that changes label. A
     // toggle means the control under your finger is whichever one the link
@@ -110,7 +110,7 @@ export function renderConnections(root) {
 
     list.appendChild(card);
     // Per row: each rate holds its own last-shown value.
-    live.push({ id: conn.id, cells, pillHolder, startBtn, stopBtn, lastState: state, steadyRate: steady() });
+    live.push({ id: conn.id, cells, pillHolder, startBtn, stopBtn, lastState: store.encoderIndicator(conn.id), steadyRate: steady() });
   }
 
   view.appendChild(list);
@@ -126,13 +126,17 @@ export function renderConnections(root) {
         // Only on a real change: this runs every animation frame, and
         // rebuilding the pill or reassigning `disabled` each time is what made
         // earlier versions of this screen shiver.
-        const state = store.stateOf(l.id);
-        if (state !== l.lastState) {
-          clear(l.pillHolder).appendChild(pill(state));
+        // The pill shows the device-truth indicator; the buttons answer to
+        // the raw link state, because Start is about posi3, not the device —
+        // an offline encoder's Start stays pressable and simply fails honestly.
+        const shown = store.encoderIndicator(l.id);
+        if (shown !== l.lastState) {
+          clear(l.pillHolder).appendChild(pill(shown));
+          const state = store.stateOf(l.id);
           const running = state !== 'idle' && state !== 'error';
           l.startBtn.disabled = running;
           l.stopBtn.disabled = !running;
-          l.lastState = state;
+          l.lastState = shown;
         }
       }
     }

@@ -104,6 +104,26 @@ const OFFLINE_RETRY_MS = 1000;
 const HOST_ALIVE_TIMEOUT_MS = 800;
 
 /**
+ * While a connection is *not* started, the encoder is probed with a TCP
+ * handshake so its indicator can say what is true — `offline` for a device
+ * that is unplugged, `connected` for one that answers. Without this, an idle
+ * link's pill said `idle`, which describes posi3 and not the device: an
+ * unplugged encoder and a healthy one looked identical until somebody
+ * pressed Start.
+ *
+ * A handshake and an immediate close: no command is sent and nothing is
+ * read, so the encoder's flash and configuration are untouched, and the
+ * client slot is held for milliseconds. Never while running — a streaming
+ * connection is its own proof.
+ */
+// Once a second, the cadence every liveness check here uses: an indicator is
+// only worth trusting if it admits a change about as fast as a person can
+// look at it. The timeout fits inside the interval so a dead host cannot
+// stretch the cadence.
+const IDLE_PROBE_MS = 1000;
+const IDLE_PROBE_TIMEOUT_MS = 900;
+
+/**
  * How long a probe must go unanswered before the destination counts as back.
  *
  * The subtlety that makes this necessary: on a connected UDP socket the ICMP
@@ -240,6 +260,11 @@ class EncoderLink extends EventEmitter {
     this._prevPos = null;
     this._prevTs = null;
     this._prevMs = null;
+
+    /** What the idle handshake last proved: true, false, or null for not yet asked. */
+    this.encoderAlive = null;
+    this._idleProbeTimer = null;
+    this._idleProbe = null;
     this._derivedVel = 0;
 
     this._latencyUs = new Float64Array(LATENCY_WINDOW);
@@ -288,6 +313,7 @@ class EncoderLink extends EventEmitter {
 
   start() {
     if (this.running) return;
+    this.stopIdleProbe();
     this._stopping = false;
     this._attempt = 0;
 
@@ -335,6 +361,7 @@ class EncoderLink extends EventEmitter {
     this._closeUdp();
     this._assembler.reset();
     this._setState(STATE.IDLE, 'stopped');
+    this.startIdleProbe();
     return true;
   }
 
@@ -342,9 +369,15 @@ class EncoderLink extends EventEmitter {
   reconfigure(config) {
     const wasRunning = this.running;
     if (wasRunning) this.stop();
+    // The probe answers for the *old* address; retarget it. Alive resets to
+    // unknown so the indicator establishes itself against the new one instead
+    // of wearing the previous device's answer.
+    this.stopIdleProbe();
+    this.encoderAlive = null;
     this.config = normaliseConfig(Object.assign({}, this.config, config));
     this._minSendGapMs = this.config.maxSendHz > 0 ? 1000 / this.config.maxSendHz : 0;
     if (wasRunning) this.start();
+    else this.startIdleProbe();
   }
 
   // -------------------------------------------------------------------------
@@ -641,6 +674,11 @@ class EncoderLink extends EventEmitter {
     this._prevTs = null;
     this._prevMs = null;
 
+    /** What the idle handshake last proved: true, false, or null for not yet asked. */
+    this.encoderAlive = null;
+    this._idleProbeTimer = null;
+    this._idleProbe = null;
+
     if (this._socket) {
       this._socket.removeAllListeners();
       this._socket.destroy();
@@ -910,6 +948,59 @@ class EncoderLink extends EventEmitter {
     socket.on('error', (err) => settle(err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET'));
     // Never the reason a process stays up — this runs during an outage, which
     // is exactly when someone is likely to be quitting.
+    socket.unref();
+  }
+
+  /**
+   * Keep the encoder's reachability current while this link is idle.
+   *
+   * Emits on every probe, not only on change: a browser that connects between
+   * two changes would otherwise wait forever for a state that is not going to
+   * move, and an indicator has to establish itself rather than inherit.
+   */
+  startIdleProbe() {
+    if (this._idleProbeTimer || this.running) return;
+    const tick = () => this._probeEncoderAlive();
+    this._idleProbeTimer = setInterval(tick, IDLE_PROBE_MS);
+    if (this._idleProbeTimer.unref) this._idleProbeTimer.unref();
+    tick();
+  }
+
+  stopIdleProbe() {
+    if (this._idleProbeTimer) {
+      clearInterval(this._idleProbeTimer);
+      this._idleProbeTimer = null;
+    }
+    if (this._idleProbe) {
+      this._idleProbe.destroy();
+      this._idleProbe = null;
+    }
+  }
+
+  _probeEncoderAlive() {
+    if (this.running || this._idleProbe) return;
+    const { encoder } = this.config;
+    const socket = net.connect({
+      host: encoder.host,
+      port: encoder.port,
+      localAddress: encoder.localAddress || undefined
+    });
+    this._idleProbe = socket;
+    socket.setTimeout(IDLE_PROBE_TIMEOUT_MS);
+
+    const settle = (alive) => {
+      if (this._idleProbe !== socket) return;
+      this._idleProbe = null;
+      socket.destroy();
+      this.encoderAlive = alive;
+      this.emit('encoderEvent', { id: this.id, kind: 'encoderReachability', alive });
+    };
+    socket.on('connect', () => settle(true));
+    socket.on('timeout', () => settle(false));
+    // Unlike the destination probe, a refusal here is *not* proof of the thing
+    // that matters: an encoder always listens on its data port, so a machine
+    // that refuses is not an encoder ready to talk.
+    socket.on('error', () => settle(false));
     socket.unref();
   }
 
