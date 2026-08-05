@@ -48,8 +48,7 @@ const ok = (value) => (req, res) => {
 /** One receiver, as the rig reports it. */
 const receiver = (over = {}) => Object.assign({
   name: 'posi3', path: 'objects/screenpositionreceiver/posi3.apx', uid: '1708',
-  started: true, engaged: true, receiving: true,
-  drivers: [{ type: 'NavigatorDriver', port: 8000, multicastAddress: '', ipFromFilter: '' }],
+  drivers: [{ type: 'NavigatorDriver', name: 'nav', port: 8000, multicastAddress: '', ipFromFilter: '' }],
   axes: [{ type: 'ScreenPositionAxis', id: '1', property: 'offset.x' }]
 }, over);
 
@@ -254,4 +253,22 @@ test('the answer is one statement, not a statement and a list of the same thing'
     'the verdict is shown');
   assert.doesNotMatch(body, /for \(const rec of r\.receivers\)/,
     'and nothing enumerates the receivers again underneath it');
+});
+
+test('no engaged or receiving status is read, or reported', () => {
+  // The receiver carries `started`, `engaged` and `receiving`; the axes carry
+  // none of them. On the reference rig `engaged` read False for a receiver whose
+  // axes the operator had engaged — so whatever it tracks, it is not the thing
+  // an operator is looking at. A status nobody can act on, reported
+  // confidently, is worse than no status at all.
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'disguise-api.js'), 'utf8');
+  assert.doesNotMatch(SCRIPT, /engaged|receiving|started/,
+    'the query does not ask for a status it cannot interpret');
+  assert.match(src, /deliberately \*\*not\*\* read/, 'and says why');
+
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  const verdicts = api.slice(api.indexOf('let verdict;'), api.indexOf('appLog(conn.id, verdict'));
+  assert.doesNotMatch(verdicts, /engaged|receiving/,
+    'and no verdict claims one');
 });
