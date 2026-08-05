@@ -187,8 +187,11 @@ function sanitiseConnection(raw) {
   if (rawDests.length > MAX_DESTINATIONS) {
     fail('EINVAL', `At most ${MAX_DESTINATIONS} destinations per encoder`);
   }
-  out.destinations = rawDests.map((d, i) => ({
-    id: d.id ? String(d.id).slice(0, 64) : `dest-${i}`,
+  out.destinations = rawDests.map((d) => ({
+    // Random, never positional: `dest-${i}` collided across connections made
+    // through the raw API, and everything downstream — verdicts, re-check
+    // timers, health history — is keyed by this id alone.
+    id: d.id ? String(d.id).slice(0, 64) : crypto.randomUUID(),
     name: String(d.name || '').slice(0, 120),
     host: checkHost(d.host, 'disguise address'),
     port: checkPort(d.port, 'disguise port'),

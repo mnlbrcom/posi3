@@ -45,6 +45,33 @@ export function ingestLog(batch) {
   if (buffer.length > MAX_RENDERED) buffer = buffer.slice(-MAX_RENDERED);
 }
 
+/**
+ * Fold a re-fetched tail into what is already held, after a stream gap.
+ *
+ * The event stream only carries lines produced while it is connected, so an
+ * EventSource reconnect means a hole: whatever the bridge logged during the
+ * outage was never sent and never will be. The tail read closes the hole —
+ * everything newer than the newest held line is appended, in order, and
+ * everything older is already here.
+ *
+ * A tail whose newest line is *older* than ours means the bridge restarted
+ * and its sequence began again. The held lines and any freeze point describe
+ * a stream that no longer exists, so the window starts over from what the new
+ * bridge has — otherwise restarted lines with small seq slipped past the
+ * pause filter into a supposedly frozen window.
+ */
+export function mergeLog(lines) {
+  if (!lines || !lines.length) return;
+  const newest = buffer.length ? buffer[buffer.length - 1].seq : -1;
+  if (lines[lines.length - 1].seq < newest) {
+    buffer = lines.slice(-MAX_RENDERED);
+    pausedAtSeq = null;
+    return;
+  }
+  for (const line of lines) if (line.seq > newest) buffer.push(line);
+  if (buffer.length > MAX_RENDERED) buffer = buffer.slice(-MAX_RENDERED);
+}
+
 export function renderLog(root) {
   clear(root);
   const view = el('div', { class: 'view' });

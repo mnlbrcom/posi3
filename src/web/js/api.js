@@ -93,6 +93,17 @@ const listeners = new Map(); // event name -> Set<fn>
 function ensureSource() {
   if (source) return source;
   source = new EventSource(withToken('/api/events'));
+  // The browser reconnects by itself, but a reconnect is a *gap*: log lines
+  // and config edits from the outage were never sent and never will be. The
+  // first `open` is just the connection coming up; every later one means
+  // something may have been missed, and whoever subscribes gets to catch up.
+  let everOpened = false;
+  source.addEventListener('open', () => {
+    if (!everOpened) { everOpened = true; return; }
+    for (const fn of listeners.get('reconnected') || []) {
+      try { fn(); } catch (err) { console.error('reconnected handler failed', err); }
+    }
+  });
   for (const name of ['telemetry', 'linkState', 'encoderEvent', 'log', 'configChanged']) {
     source.addEventListener(name, (ev) => {
       const subs = listeners.get(name);
@@ -236,6 +247,7 @@ if (!window.d3d) {
     events: {
       onTelemetry: (fn) => on('telemetry', fn),
       onLinkState: (fn) => on('linkState', fn),
+      onReconnected: (fn) => on('reconnected', fn),
       onEncoderEvent: (fn) => on('encoderEvent', fn),
       onLog: (fn) => on('log', fn),
       onConfigChanged: (fn) => on('configChanged', fn)
