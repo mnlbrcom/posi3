@@ -106,3 +106,22 @@ test('the server writes the lines the inventory promises', () => {
   assert.match(link, /Field layout will be inferred/);
   assert.match(link, /is not answering — pausing sends/);
 });
+
+test('no banner outlives half a minute', () => {
+  // A banner is an interruption, not a record. Every one is written to the log,
+  // and the state a banner describes is on the dashboard continuously — so
+  // there is nothing left for a banner to be the only copy of, and one that
+  // sits there all night is one that stops being read.
+  const ui = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'ui.js'), 'utf8');
+
+  assert.match(ui, /const MAX_BANNER_MS = 30000;/);
+
+  const fn = ui.slice(ui.indexOf('export function banner'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  // Unconditional: the old `if (ttlMs > 0)` left every banner without one on
+  // screen until somebody clicked it.
+  assert.doesNotMatch(body, /if \(ttlMs > 0\) setTimeout/,
+    'the timer must not be conditional on a ttl being passed');
+  assert.match(body, /Math\.min\(ttlMs, MAX_BANNER_MS\)/,
+    'a shorter ttl still shortens; it can never extend past the cap');
+});

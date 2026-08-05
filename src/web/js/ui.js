@@ -333,18 +333,29 @@ export function openModal({ title, body, closeLabel = 'Close', wide = false }) {
     (close) => [el('button', { class: 'btn', text: closeLabel, onclick: close })]);
 }
 
-/** Persistent notice strip under the title bar. Returns a dismiss function. */
+/**
+ * How long any banner may stay on screen.
+ *
+ * A banner is an interruption, not a record. Every one of them is also written
+ * to the log now, and the state a banner describes — a destination that is not
+ * answering, an encoder in the wrong output mode — is on the dashboard
+ * continuously. So there is nothing left for a banner to be the only copy of,
+ * and one that sits there all night is one that stops being read.
+ */
+const MAX_BANNER_MS = 30000;
+
 /**
  * A notice across the top of the window.
  *
- * Every banner closes. There used to be a `dismissible: false` for the ones
- * thought too important to lose — the flash-write warning above all — but a
- * notice nobody can clear is a notice that eventually gets ignored, and it left
- * an operator staring at a warning about a write that had already finished.
- * Importance is carried by the wording and the colour, not by trapping it on
- * screen.
+ * Every banner closes, and now every banner closes *itself*. There used to be a
+ * `dismissible: false` for the ones thought too important to lose — the
+ * flash-write warning above all — but a notice nobody can clear is a notice
+ * that eventually gets ignored, and it left an operator staring at a warning
+ * about a write that had already finished. Importance is carried by the wording
+ * and the colour, not by trapping it on screen.
  *
- * `ttlMs` makes it self-closing, for things that are true only for a moment.
+ * `ttlMs` shortens that for things true only for a moment; it can never extend
+ * it past MAX_BANNER_MS.
  */
 export function banner(kind, text, { key, ttlMs = 0 } = {}) {
   const root = document.getElementById('banners');
@@ -356,7 +367,7 @@ export function banner(kind, text, { key, ttlMs = 0 } = {}) {
     el('span', { text }),
     el('button', { class: 'banner-close', text: '×', title: 'Dismiss', onclick: () => node.remove() }));
   root.appendChild(node);
-  if (ttlMs > 0) setTimeout(() => node.remove(), ttlMs);
+  setTimeout(() => node.remove(), ttlMs > 0 ? Math.min(ttlMs, MAX_BANNER_MS) : MAX_BANNER_MS);
   return () => node.remove();
 }
 
