@@ -125,3 +125,24 @@ test('no banner outlives half a minute', () => {
   assert.match(body, /Math\.min\(ttlMs, MAX_BANNER_MS\)/,
     'a shorter ttl still shortens; it can never extend past the cap');
 });
+
+test('a destination banner goes when its link stops', () => {
+  // "…is offline — sends paused, retrying every 5s" stops being true the moment
+  // the link stops: nothing is retrying, because nothing is sending. Reported
+  // from the rig — the banner stayed up through Stop All.
+  //
+  // The banner's own 30s lifetime would clear it eventually, but until then the
+  // app would be stating something it knows to be false.
+  const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'app.js'), 'utf8');
+  const handler = app.slice(app.indexOf('onLinkState(('));
+  const body = handler.slice(0, handler.indexOf('\n  });'));
+
+  assert.match(body, /state === 'idle'/);
+  assert.match(body, /dismissBanner\(`dest-\$\{payload\.id\}`\)/,
+    'going idle must clear the destination banner for that connection');
+
+  // The key has to match the one the banner is raised under, or this silently
+  // does nothing.
+  assert.match(app, /banner\('warn', `\$\{who\}: \$\{e\.text\}`, \{ key: `dest-\$\{e\.id\}` \}\)/,
+    'raised under dest-<connection id>');
+});

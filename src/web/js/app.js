@@ -165,7 +165,14 @@ function wireEvents() {
   window.d3d.events.onTelemetry((frame) => store.applyTelemetry(frame));
 
   window.d3d.events.onLinkState((payload) => {
-    if (payload.state === 'idle') store.clearTelemetry(payload.id);
+    if (payload.state === 'idle') {
+      store.clearTelemetry(payload.id);
+      // "…is offline — sends paused, retrying every 5s" stops being true the
+      // moment the link stops: nothing is retrying, because nothing is
+      // sending. Leaving it up for the banner's own lifetime states something
+      // the app knows is false, so it goes as soon as the link goes.
+      dismissBanner(`dest-${payload.id}`);
+    }
     store.applyLinkState(payload);
   });
 
