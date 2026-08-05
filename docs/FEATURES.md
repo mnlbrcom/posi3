@@ -5026,3 +5026,31 @@ but only ran after send failures, and with nothing sent there were none.
 
 Both ends now follow one law: an indicator claims nothing it has not
 established, and re-establishes it within about a second.
+
+### The titlebar survives Cmd+- (and a zoom sweep now proves it)
+
+**Asked:** zooming out shrank the window header until the wordmark
+disappeared behind the macOS traffic lights; the browser handles it better
+but not optimally. Needs a visual test and a fix.
+
+**The mechanism of the bug:** the traffic lights are OS chrome at a fixed
+*physical* size, and page zoom rescales CSS pixels but not them. The
+clearance was `padding-left: 78px` — 78 CSS px, which at 67% zoom is ~52
+physical px, well under the buttons — and the bar's fixed 38px height shrank
+below the buttons the same way.
+
+**Fix:** the window opts into Electron's Window Controls Overlay
+(`titleBarOverlay: true` on macOS), which exposes `env(titlebar-area-x)` and
+`env(titlebar-area-height)` — the real control area in *current* CSS pixels,
+at every zoom. The titlebar uses `max(78px, env(titlebar-area-x, 78px))` and
+grows its height the same way, so browsers and anything without the API keep
+today's exact look. A browser tab has no traffic lights, which is why it
+"handled it better": nothing there sits at fixed physical size, so plain
+zoom is already safe.
+
+**Visual test:** `npm run zoomcheck` (macOS) relaunches the real app at 100 /
+80 / 67 / 50% zoom via a `--zoom=` test hook and measures the rendered
+titlebar: the wordmark must start past the buttons' physical edge, the bar
+must stay physically as tall as them, and — the assertion a constant cannot
+pass — the clearance must *grow in CSS px* as zoom shrinks. Measured: the
+physical clearance holds at exactly 78 px at every factor.

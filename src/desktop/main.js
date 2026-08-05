@@ -237,6 +237,11 @@ function createWindow() {
     backgroundColor: '#0d0d0d', // must match --bg, or the window flashes on open
     title: 'posi3',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // Exposes env(titlebar-area-*) to the page. The traffic lights are OS
+    // chrome at a fixed physical size, so a hardcoded CSS clearance shrinks
+    // under Cmd+- while the buttons do not — these variables report the real
+    // control area in *current* CSS pixels, at every zoom.
+    ...(process.platform === 'darwin' ? { titleBarOverlay: true } : {}),
     webPreferences: {
       // No preload and no node integration: this is an ordinary web page that
       // talks to the local API over HTTP, exactly as a browser would.
@@ -257,6 +262,17 @@ function createWindow() {
   // moment webBindHost was widened. The desktop window authenticates exactly
   // like the browser it is.
   mainWindow.loadURL(webUrlWithToken());
+
+  // Test hook, not a feature: tools/zoomcheck.js relaunches the app at fixed
+  // zoom factors to prove the titlebar stays clear of the traffic lights.
+  const zoomArg = process.argv.find((a) => a.startsWith('--zoom='));
+  if (zoomArg) {
+    const factor = Number(zoomArg.split('=')[1]);
+    if (factor > 0) {
+      mainWindow.webContents.once('did-finish-load',
+        () => mainWindow.webContents.setZoomFactor(factor));
+    }
+  }
 
   // Nothing here should open a window or navigate off the local UI.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

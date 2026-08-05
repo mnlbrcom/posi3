@@ -22,7 +22,8 @@
     "tray-icon": "node tools/make-tray-icon.js",
     "shaft": "node tools/shaft-check.js",
     "desktopcheck": "node tools/desktopcheck.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "zoomcheck": "node tools/zoomcheck.js"
   },
   "devDependencies": {
     "electron": "43.2.0",

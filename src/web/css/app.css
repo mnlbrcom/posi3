@@ -150,8 +150,19 @@ code { font-family: var(--mono); }
 
 /* Only the Electron window on macOS has traffic lights to clear. A browser tab
    has none, and reserving the space there just pushed the wordmark off the
-   left edge for no reason. */
-body.inset-titlebar .titlebar { padding-left: 78px; }
+   left edge for no reason.
+
+   env(titlebar-area-*), not a constant: the traffic lights are OS chrome at a
+   fixed *physical* size, and page zoom rescales CSS pixels but not them — so a
+   hardcoded 78px shrank under Cmd+- until the wordmark sat behind the close
+   button, and the bar itself fell physically shorter than the buttons. The
+   variables report the real control area in current CSS pixels at every zoom;
+   78px remains as the floor and the fallback. */
+body.inset-titlebar .titlebar {
+  padding-left: max(78px, env(titlebar-area-x, 78px));
+  flex: 0 0 auto;
+  height: max(var(--titlebar), env(titlebar-area-height, 0px));
+}
 
 .wordmark {
   display: inline-flex;
