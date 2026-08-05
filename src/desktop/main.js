@@ -264,7 +264,12 @@ function createWindow() {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(svc.url)) event.preventDefault();
+    // Parsed origins, not a prefix: "http://127.0.0.1:8710@evil.com/" starts
+    // with our URL and is somebody else's server. Defence in depth — the CSP
+    // already blocks the injection this would need.
+    let ok = false;
+    try { ok = new URL(url).origin === new URL(svc.url).origin; } catch { /* not a URL */ }
+    if (!ok) event.preventDefault();
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -445,7 +450,9 @@ function fatal(err) {
   app.exit(1);
 }
 
-app.on('activate', showWindow);
+// Not before the service exists: a dock click during the async start reached
+// createWindow with svc still null and died on svc.url.
+app.on('activate', () => { if (svc) showWindow(); });
 
 // Closing the window hides it, so this should never fire with the tray alive —
 // and if it does, the bridge must keep running.

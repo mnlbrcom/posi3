@@ -4870,3 +4870,20 @@ Designer upgraded mid-run is no longer muted until restart.
 - **`summary()` no longer reads a field that never existed** (`rate.tx`,
   `NaN` from the day it was written; latent, since nothing calls it yet). It
   now derives packets/s from the same sample window the telemetry rate uses.
+
+### Small server: settings refused when typed, wildcard binds usable, two desktop guards
+
+- **`configSetSettings` validates** (new `checkSettings` in validate.js): port
+  0–65535, bind host a real address or a wildcard, telemetry 1–120 Hz,
+  booleans coerced, unknown keys refused. `webPort: "abc"` used to be saved
+  and discovered only at the next launch, where it killed the desktop app.
+- **Mapping numbers must be finite, ratios positive.** `Number(x) || 1` let
+  `Infinity` through (truthy) and accepted negative ratios — NaN and garbage
+  in the axis values sent to disguise.
+- **`--bind ::` is usable.** The Host-header check accepted only loopback or
+  the literal `::`, so every real LAN request got 421. An IPv6 wildcard now
+  accepts literal IPs the way `0.0.0.0` always has.
+- **Two desktop guards:** a dock click during the async start no longer
+  reaches `createWindow` with the service still null, and `will-navigate`
+  compares parsed origins instead of a string prefix, which
+  `http://127.0.0.1:8710@evil.com/` satisfied.

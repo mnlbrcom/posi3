@@ -54,8 +54,12 @@ function createGuard(opts) {
     const name = host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
     if (isLoopback(name)) return true;
     if (name === opts.bindHost) return true;
-    // 0.0.0.0 means "every address on this machine", so any literal IP is ours.
-    if (opts.bindHost === '0.0.0.0' && /^[\d.]+$/.test(name)) return true;
+    // 0.0.0.0 and :: mean "every address on this machine", so any literal IP
+    // is ours. :: previously matched only the literal "::", which rejected
+    // every real LAN Host header with 421 and made that bind unusable.
+    const wildcard = opts.bindHost === '0.0.0.0' || opts.bindHost === '::';
+    if (wildcard && /^[\d.]+$/.test(name)) return true;
+    if (opts.bindHost === '::' && /^[0-9a-f:]+(%\w+)?$/i.test(name)) return true;
     return false;
   }
 
