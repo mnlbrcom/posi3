@@ -299,15 +299,15 @@ function encoderCard(conn) {
     if (!ok) return;
 
     applyBtn.disabled = true;
-    banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: 'flash' });
+    banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: `flash-${conn.id}` });
 
     // If the encoder never confirms, say so rather than quietly clearing the
     // banner: "write status unknown" is actionable, a vanished banner is not.
     const timeout = setTimeout(() => {
-      dismissBanner('flash');
+      dismissBanner(`flash-${conn.id}`);
       banner('error',
         `${conn.name}: write status unknown — the encoder did not confirm. ` +
-        'Use “Read” on its card to check before power-cycling it.', { key: 'flash-unknown' });
+        'Use “Read” on its card to check before power-cycling it.', { key: `flash-unknown-${conn.id}` });
     }, 30000);
     pendingFlash.set(conn.id, timeout);
 
@@ -324,7 +324,7 @@ function encoderCard(conn) {
         if (err.code !== 'EPRESET_DUPLICATE') throw err;
         clearTimeout(timeout);
         pendingFlash.delete(conn.id);
-        dismissBanner('flash');
+        dismissBanner(`flash-${conn.id}`);
         const again = await confirmModal({
           title: 'Preset Already At That Value',
           body: el('p', {
@@ -335,7 +335,7 @@ function encoderCard(conn) {
           danger: true
         });
         if (!again) { applyBtn.disabled = false; return; }
-        banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: 'flash' });
+        banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: `flash-${conn.id}` });
         results = await window.d3d.encoder.writeMany(conn.id, entries, true);
       }
       const failed = results.filter((r) => !r.ok);
@@ -350,7 +350,7 @@ function encoderCard(conn) {
       if (failed.length === results.length) {
         clearTimeout(timeout);
         pendingFlash.delete(conn.id);
-        dismissBanner('flash');
+        dismissBanner(`flash-${conn.id}`);
       }
       for (const r of results.filter((x) => x.ok)) {
         current.set(r.variable, r.value);
@@ -363,7 +363,7 @@ function encoderCard(conn) {
     } catch (err) {
       clearTimeout(timeout);
       pendingFlash.delete(conn.id);
-      dismissBanner('flash');
+      dismissBanner(`flash-${conn.id}`);
       toast('error', err.message);
     } finally {
       applyBtn.disabled = edited.size === 0;
@@ -436,8 +436,12 @@ export function onFlashConfirmed(id) {
     clearTimeout(timer);
     pendingFlash.delete(id);
   }
-  dismissBanner('flash');
-  dismissBanner('flash-unknown');
+  // This encoder's banners, nobody else's. The keys were global, so with two
+  // writes in flight, A's confirmation dismissed B's do-not-power-off warning
+  // while B was still committing — the one warning this screen calls
+  // safety-critical, taken down by the wrong device.
+  dismissBanner(`flash-${id}`);
+  dismissBanner(`flash-unknown-${id}`);
 }
 
 // ---------------------------------------------------------------------------

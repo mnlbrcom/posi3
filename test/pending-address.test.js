@@ -55,3 +55,20 @@ test('the address a write programs is never assumed to be live', () => {
   }));
   assert.notEqual(written.encoder.host, written.encoder.pendingHost);
 });
+
+test('promotion edits the live record, not a snapshot from before the wait', () => {
+  // `conn` reaches promoteIfAnswered from before a multi-second encoder
+  // exchange. Upserting that snapshot whole silently reverted any edit another
+  // browser made during the wait — so the function re-finds the record and
+  // owns exactly two fields: host and pendingHost.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  const fn = api.slice(api.indexOf('const promoteIfAnswered'));
+  const body = fn.slice(0, fn.indexOf('\n  };'));
+  assert.match(body, /const live = store\.find\(conn\.id\)/, 'the record is re-found');
+  assert.match(body, /JSON\.parse\(JSON\.stringify\(live\)\)/, 'and the clone is of the live record');
+  assert.doesNotMatch(body, /JSON\.parse\(JSON\.stringify\(conn\)\)/,
+    'never of the snapshot the caller has been holding across an await');
+  assert.doesNotMatch(body, /await/, 'and nothing can slip in between find and upsert');
+});

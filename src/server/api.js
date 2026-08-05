@@ -206,12 +206,18 @@ function createApi(ctx) {
    * that works, which is the whole point of the two fields.
    */
   const promoteIfAnswered = (conn, usedHost) => {
-    if (!conn.encoder.pendingHost || usedHost !== conn.encoder.pendingHost) return;
-    const updated = JSON.parse(JSON.stringify(conn));
-    updated.encoder.host = conn.encoder.pendingHost;
+    // Re-found, not the caller's copy: `conn` was read before a multi-second
+    // encoder exchange, and upserting that snapshot whole silently reverted
+    // any edit another browser made during the wait. This function owns two
+    // fields — host and pendingHost — and touches nothing else. Synchronous
+    // from find to upsert, so nothing can slip in between.
+    const live = store.find(conn.id);
+    if (!live || !live.encoder.pendingHost || usedHost !== live.encoder.pendingHost) return;
+    const updated = JSON.parse(JSON.stringify(live));
+    updated.encoder.host = live.encoder.pendingHost;
     delete updated.encoder.pendingHost;
     store.upsertConnection(updated);
-    appLog(conn.id, `now answering at ${usedHost} — address change applied`);
+    appLog(live.id, `now answering at ${usedHost} — address change applied`);
     ctx.syncLink(updated);
     changed();
   };

@@ -133,6 +133,7 @@ async function inspectReceivers(host, opts = {}) {
   const control = new AbortController();
   const timer = setTimeout(() => control.abort(), opts.timeoutMs || DEFAULT_TIMEOUT_MS);
   let res;
+  let text;
   try {
     res = await fetch(url, {
       method: 'POST',
@@ -140,6 +141,11 @@ async function inspectReceivers(host, opts = {}) {
       body: JSON.stringify({ script: SCRIPT }),
       signal: control.signal
     });
+    // Inside the deadline. The timer used to be cleared the moment headers
+    // arrived, so a half-dead Designer — or a proxy — that answered 200 and
+    // then trickled the body hung this call forever, and with it the Ask
+    // button and the destination's automatic establish chain.
+    text = await res.text();
   } catch (err) {
     // Distinguished because they call for different people: no Designer
     // session on that machine is a different problem from a wrong address.
@@ -152,8 +158,6 @@ async function inspectReceivers(host, opts = {}) {
   } finally {
     clearTimeout(timer);
   }
-
-  const text = await res.text();
   if (!res.ok) {
     // A 404 from a machine that is plainly serving HTTP means the route is not
     // there — which is what an older Designer looks like, since the Python API

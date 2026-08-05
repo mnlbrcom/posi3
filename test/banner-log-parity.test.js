@@ -146,3 +146,17 @@ test('a destination banner goes when its link stops', () => {
   assert.match(app, /banner\('warn', `\$\{who\}: \$\{e\.text\}`, \{ key: `dest-\$\{e\.id\}` \}\)/,
     'raised under dest-<connection id>');
 });
+
+test('flash banners are keyed by encoder, so one cannot dismiss another', () => {
+  // With two writes in flight, encoder A's confirmation dismissed encoder B's
+  // "do not power off" warning while B was still committing — a global 'flash'
+  // key under a per-connection warning.
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'encoder-config.js'), 'utf8');
+  assert.doesNotMatch(src, /key: 'flash'/, 'no global flash key');
+  assert.doesNotMatch(src, /key: 'flash-unknown'/);
+  assert.match(src, /key: `flash-\$\{conn\.id\}`/, 'the key names the encoder it warns about');
+  const confirmed = src.slice(src.indexOf('function onFlashConfirmed'));
+  assert.match(confirmed.slice(0, confirmed.indexOf('\n}')), /flash-\$\{id\}/,
+    'and the confirmation dismisses only that encoder\'s banners');
+});
