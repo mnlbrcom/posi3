@@ -11,10 +11,19 @@ OPEN
 - IP/Nic Picker in add connection optimieren
 - Pop Layouts optimieren
 - Dashboard stats rethink
+- Web Interface reachable from other systems. Multi Ip reach.
 - App and Web have different min width
-- HZ back to one sec 
-Nn
+- App name MacOs and Windows conistent, also in the OS Menus.
+- A1. DISGUISE MAPPING SCREEN still optimising
+- A2. ZERO / PRESET 0 needs fix same thing.
+- A3. RUN! (SINGLE SAMPLE) show only when Polled mode active. Where??
+- A4. CONFIG EXPORT / IMPORT needs testing
+- A5. LOG EXPORT -  needs testing
+- A6. CONNECTION REORDERING - delete
+- A7. STALE KEYS IN YOUR SAVED PROFILE - what even is this, prop remove completely
+- A8. LOG-TO-FILE SETTING - WHAT? Where?
 
+Still open and awaiting your call, unchanged: the desktop audit items (Zero/Preset 0 button, Run!, config export/import UI, connection reordering
 
 DONE
 ----
