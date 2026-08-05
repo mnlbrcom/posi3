@@ -14,6 +14,7 @@ class Store {
     this.states = new Map(); // id -> {state, detail, attempt, nextRetryMs, lastError}
     this.telemetry = new Map(); // id -> latest telemetry frame (hot, not observed)
     this.fieldLayouts = new Map(); // id -> {fields, inferred}
+    this.encoderAlive = new Map(); // id -> true | false | null (not yet asked)
     this.selectedId = null;
     this.view = 'dashboard';
     this._subs = new Set();
@@ -40,6 +41,30 @@ class Store {
     return s ? s.state : 'idle';
   }
 
+  setEncoderAlive(id, alive) { this.encoderAlive.set(id, alive); }
+
+  /**
+   * What the encoder's pill should say — about the *device*, not about posi3.
+   *
+   * `idle` described this app ("you have not pressed Start") and nothing
+   * about the encoder, so an unplugged device and a healthy one looked
+   * identical until somebody started them. While a link is idle the bridge
+   * probes the encoder with a TCP handshake once a second, and that answer is
+   * what an idle pill shows: `offline` or `connected`. A streaming link shows
+   * `sending` — the twin of the disguise side's `receiving`. The running
+   * states in between (connecting, stalled, error…) keep their own names;
+   * they are already about what is actually happening.
+   */
+  encoderIndicator(id) {
+    const state = this.stateOf(id);
+    if (state === 'streaming') return 'sending';
+    if (state !== 'idle') return state;
+    const alive = this.encoderAlive.get(id);
+    if (alive === true) return 'connected';
+    if (alive === false) return 'offline';
+    return 'idle';
+  }
+
   telemetryOf(id) { return this.telemetry.get(id) || null; }
 
   setProfile(profile) {
@@ -48,7 +73,7 @@ class Store {
     // deleted while running kept its last telemetry frame here forever — the
     // only eviction was an `idle` event no deleted link ever sends.
     const ids = new Set(profile.connections.map((c) => c.id));
-    for (const map of [this.states, this.telemetry, this.fieldLayouts]) {
+    for (const map of [this.states, this.telemetry, this.fieldLayouts, this.encoderAlive]) {
       for (const id of map.keys()) if (!ids.has(id)) map.delete(id);
     }
     if (this.selectedId && !this.find(this.selectedId)) this.selectedId = null;

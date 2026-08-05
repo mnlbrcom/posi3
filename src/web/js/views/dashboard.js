@@ -312,10 +312,12 @@ function buildCard(conn) {
       const s = store.states.get(conn.id);
 
       // Rebuilding the pill every frame was one of the causes of the UI
-      // shivering, so only touch it on a real change.
-      if (state !== lastState) {
-        clear(pillHolder).appendChild(pill(state));
-        lastState = state;
+      // shivering, so only touch it on a real change. The pill shows the
+      // device-truth indicator; `state` below keeps steering the detail text.
+      const shown = store.encoderIndicator(conn.id);
+      if (shown !== lastState) {
+        clear(pillHolder).appendChild(pill(shown));
+        lastState = shown;
       }
       // While streaming the detail is "receiving from <host>", and the host is
       // already on the line above — so it is shown only for the states where it

@@ -55,6 +55,12 @@ async function boot() {
 
   versionNode.textContent = `v${store.info.version}`;
 
+  // The idle handshakes' answers so far, so the first render already says
+  // offline/connected instead of waiting a probe interval for the stream.
+  for (const [id, alive] of Object.entries(store.info.encoderAlive || {})) {
+    store.setEncoderAlive(id, alive);
+  }
+
   if (store.info.loadWarning) {
     banner('warn', store.info.loadWarning, { key: 'profile-warning' });
   }
@@ -212,6 +218,12 @@ function wireEvents() {
     const who = conn ? conn.name : e.id;
 
     switch (e.kind) {
+      // The idle handshake's answer. Applied silently — the pill is the
+      // message — and painted by the next animation frame.
+      case 'encoderReachability':
+        store.setEncoderAlive(e.id, e.alive);
+        break;
+
       case 'paramsWritten':
         onFlashConfirmed(e.id);
         toast('info', `${who}: parameters successfully written to flash.`);

@@ -422,6 +422,8 @@ button.btn.sm { padding: 4px 9px; font-size: var(--fs-label); }
 .pill.connecting   { color: var(--warn); }
 .pill.connected    { color: var(--accent-text); background: var(--accent-wash); }
 .pill.streaming    { color: var(--ok-text); background: var(--ok-wash); }
+/* The encoder-side twin of `receiving`: started, and data flowing to us. */
+.pill.sending      { color: var(--ok-text); background: var(--ok-wash); }
 .pill.stalled      { color: var(--warn); background: var(--warn-wash); }
 .pill.reconnecting { color: var(--warn); background: var(--warn-wash); }
 .pill.error        { color: var(--err-text); background: var(--err-wash); }

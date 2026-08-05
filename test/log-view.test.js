@@ -124,3 +124,26 @@ test('what is keyed by a connection or destination dies with it', () => {
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
   assert.match(map, /lastAsked\.delete\(id\)/, 'stored verdicts follow the destinations');
 });
+
+test('the encoder pill shows the device, in the same vocabulary as disguise', () => {
+  // offline / connected / sending — the encoder-side twin of the destination
+  // pill's offline / connected / receiving. `idle` only remains for the
+  // moment before the first handshake answers.
+  const storeSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'store.js'), 'utf8');
+  const helper = storeSrc.slice(storeSrc.indexOf('encoderIndicator('));
+  const body = helper.slice(0, helper.indexOf('\n  }'));
+  assert.match(body, /'sending'/, 'streaming shows as sending');
+  assert.match(body, /'connected'/, 'an idle link with a live handshake shows connected');
+  assert.match(body, /'offline'/, 'and a failed one shows offline');
+
+  for (const view of ['encoder-config', 'connections', 'dashboard', 'detail']) {
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'web', 'js', 'views', `${view}.js`), 'utf8');
+    assert.match(src, /encoderIndicator\(/, `${view} shows the device, not the state machine`);
+  }
+
+  const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'js', 'app.js'), 'utf8');
+  assert.match(app, /case 'encoderReachability':/, 'the stream keeps it live');
+  assert.match(app, /store\.info\.encoderAlive/, 'and boot seeds it, so the first render already knows');
+});
