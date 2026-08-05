@@ -138,3 +138,34 @@ test('one probe still goes out while a destination is offline', async (t) => {
   link._forward(2, 0);
   assert.equal(sink.suppressed, suppressedBefore + 1, 'and the next one is suppressed again');
 });
+
+test('a destination recovering through the probe path does not crash the process', async (t) => {
+  // Reported from the rig after installing a VPN, which changed the routes
+  // under a running link:
+  //
+  //   ReferenceError: dest is not defined
+  //     at EncoderLink._forward (encoder-link.js:618)
+  //
+  // `_forward` announced recovery with `dest`, a name that exists only in the
+  // `_openUdp` loop where the *other* call site lives. It is a ReferenceError,
+  // not a wrong value, so the branch had plainly never run: every test above
+  // drives the sink's callbacks, which is the other path. Uncaught in the main
+  // process, it takes the whole bridge down — with the encoder streaming.
+  const { link, sink, warnings } = await linkWithSink(t);
+
+  // The state _forward tests for: offline, a probe sent long enough ago, and
+  // nothing having objected since it went out.
+  sink.offline = true;
+  sink.txErrors = 12;
+  sink.probeSentAt = Date.now() - 5000;
+  sink.lastErrorAt = sink.probeSentAt - 1000;
+  sink.recovered = false;
+
+  link._forward(12345, 0);
+
+  assert.equal(sink.offline, false, 'the probe went unanswered, so it is back');
+  const claims = warnings.filter((w) => /reachable again/.test(w));
+  assert.equal(claims.length, 1, `expected one recovery claim, got: ${claims.join(' | ')}`);
+  assert.match(claims[0], /127\.0\.0\.1:\d+ is reachable again/,
+    'and it must name the destination, which is what `dest` was for');
+});

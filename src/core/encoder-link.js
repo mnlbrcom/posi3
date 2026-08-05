@@ -615,7 +615,10 @@ class EncoderLink extends EventEmitter {
           sink.failingSince = 0;
           sink.probeSentAt = 0;
           sink.lastErrorCode = null;
-          this._announceRecovery(sink, dest);
+          // `sink.dest`, not `dest`: this is _forward, not the _openUdp loop where
+          // that name exists. A ReferenceError here killed the main process the
+          // first time a destination actually recovered through the probe path.
+          this._announceRecovery(sink, sink.dest);
         } else if (nowMs < sink.nextProbeAt) {
           sink.suppressed++;
           continue;

@@ -3412,3 +3412,42 @@ its verification reads the value back — which for a write-only variable can ne
 written there is reported unconfirmed **even when it worked**.
 
 Recorded rather than changed: routing it correctly is a decision about flash cycles.
+
+---
+
+## 2026-08-05 — A ReferenceError in the send path took the whole bridge down
+
+> "A JavaScript error occurred in the main process — Uncaught Exception: ReferenceError: dest is not
+> defined at EncoderLink._forward (encoder-link.js:618) … when i installed tailscale, maybe the vpn
+> part caused that."
+
+The VPN did cause it, but only by being the first thing ever to exercise the branch.
+
+`_forward` announced a destination's recovery as `this._announceRecovery(sink, dest)`. `dest` exists
+only inside `_openUdp`'s `for (const dest of …)` loop, where the *other* call site lives — in
+`_forward` the name is simply not there. It is `sink.dest`, which the same function uses ten lines
+later to build the packet.
+
+A ReferenceError rather than a wrong value means the branch had **never run**. Reaching it needs a
+destination to go offline, then a probe to go unanswered for long enough to count as recovered.
+Installing Tailscale changed the routes under a running link, which is exactly that sequence. Uncaught
+in the main process, it takes the bridge down with the encoder still streaming.
+
+### Why the tests missed it
+
+Every test in `unreachable-destination.test.js` drives the sink's own error and success callbacks —
+the `_openUdp` path, where `dest` is in scope and the code is correct. Nothing drove the probe path in
+`_forward`. There is now a test that puts a sink in exactly that state and calls `_forward`, verified
+by restoring the bug, which fails it.
+
+### Whether there were others
+
+A one-off `no-undef` pass over the whole codebase — `src/core`, `src/server`, `src/shared`,
+`src/desktop`, `tools` and `src/web/js` — reports **nothing else**. The same pass flags this bug when
+it is put back, so the result means something. `CSS.escape` in `ui.js` came up and is a genuine
+browser global, supported in all three engines.
+
+Worth considering as a permanent gate: this class of defect is invisible to tests until the branch
+runs, and on a show that is the worst possible time to find out.
+
+**219 tests pass.**
