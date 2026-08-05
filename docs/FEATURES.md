@@ -4336,3 +4336,46 @@ same applies to the Designer object model, which was three wrong guesses (`state
 driver `name`, one driver per receiver) until it was read off a live session.
 
 **259 tests pass.**
+
+---
+
+## 2026-08-05 — The position trace, and a test for the class of bug that keeps escaping
+
+> "add that snapshot/telemetry health test too and check the position last 12 s dashboard graph, it
+> behaves weirdly, it kind of is bount to something that makes it squeeze and studder"
+
+### The graph
+
+Two faults, both horizontal — the vertical autoscale was fine.
+
+**The axis was elastic.** `x` was scaled to `now - pts[0].t`: the age of the *oldest point held*. So
+the whole trace stretched while the buffer filled, and jumped sideways every time a point aged out.
+The data was never wrong; the axis was. It is a fixed window now — `now - 12s` at the left edge,
+`now` at the right, always.
+
+**And the buffer was a third of the window.** `TRACE_POINTS` was 120 while telemetry arrives at
+30 Hz, so a moving encoder produced 360 points in twelve seconds and the oldest 240 were discarded: a
+graph labelled "last 12 s" held about four, stretched across the full width by the elastic axis. It
+trims by **age** now, sized for the fastest telemetry the settings allow.
+
+One point older than the cutoff is kept deliberately — it is the one the leftmost segment is drawn
+from, and without it the line began wherever the oldest sample happened to be.
+
+Measured on the running app, eight samples 1.2s apart:
+
+    right edge   600, 600, 600, 600, 600, 600, 600, 600     pinned at "now"
+    left edge    559 → 499 → 439 → 379 → 318 → 258 → 198 → 138
+
+50 units a second across a 600-unit width over twelve seconds: exactly real time, and no rescaling.
+
+### The agreement test
+
+`linkSnapshot` and the telemetry stream return the same telemetry, and the disguise answer was
+applied to one and not the other — so a screen reading one saw `connected` while a screen reading the
+other saw `mismatch`. That is the shape of half the escapes here: **one fact computed in two places.**
+
+The test asserts both report identical health and `confirmed` for the same destination, and that the
+filter lives in one method both go through. Verified by removing the snapshot's call, which fails
+with *"snapshot said connected, the stream said receiving — for the same destination"*.
+
+**260 tests pass.**

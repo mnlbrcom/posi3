@@ -353,3 +353,65 @@ test('the disguise answer is held on the server, so every screen agrees', () => 
   assert.match(css, /\.pill\.mismatch \{/);
   assert.match(css, /\.pill\.connected \{/, 'and connected reads as neither good nor bad');
 });
+
+test('linkSnapshot and the telemetry stream report the same health', async (t) => {
+  // Two endpoints returning the same telemetry, filtered in one and not the
+  // other, gave different answers about the same destination — the disguise
+  // answer was applied in the tick and not in the snapshot, so a screen reading
+  // one saw `connected` while a screen reading the other saw `mismatch`.
+  //
+  // This is the shape of half the escapes in this codebase: one fact computed
+  // in two places. The check is that both go through the same filter.
+  const { LinkManager } = require('../src/core/link-manager');
+  const { Logger } = require('../src/core/logger');
+  const { ConfigStore } = require('../src/core/config-store');
+  const { createApi } = require('../src/server/api');
+  const os = require('node:os');
+
+  const store = new ConfigStore(fs.mkdtempSync(path.join(os.tmpdir(), 'posi3-agree-')));
+  store.load();
+  const conn = store.upsertConnection({
+    name: 'Revolve',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ host: '127.0.0.1', port: 65535, devid: 1, name: 'd' }]
+  });
+  const manager = new LinkManager({ logger: new Logger() });
+  const api = createApi({ manager, store, syncLink: (c) => manager.upsert(c), env: () => ({}) });
+  manager.upsert(conn);
+  const link = manager.get(conn.id);
+  // Sinks exist once the sockets are open; the port is closed loopback, so
+  // nothing leaves the machine.
+  link._openUdp();
+  link._state = 'streaming';
+  t.after(() => link.stop());
+
+  const destId = link.telemetry().destinations[0].id;
+  const fromStream = () => {
+    const seen = [];
+    manager.on('telemetry', (p) => seen.push(p.links[0]));
+    manager._tick();
+    manager.removeAllListeners('telemetry');
+    return seen[seen.length - 1];
+  };
+
+  for (const matches of [true, false]) {
+    manager.disguiseChecks.set(destId, { matches, at: Date.now() });
+    const viaSnapshot = api.linkSnapshot({ id: conn.id });
+    const viaStream = fromStream();
+
+    const a = viaSnapshot.telemetry.destinations[0];
+    const b = (viaStream && viaStream.destinations[0]) || null;
+    assert.ok(b, 'the tick emitted telemetry for the link');
+    assert.equal(a.health, b.health,
+      `snapshot said ${a.health}, the stream said ${b.health} — for the same destination`);
+    assert.equal(a.confirmed, b.confirmed);
+  }
+
+  // And the filter lives in one place, so a third caller cannot miss it.
+  const managerSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
+  assert.match(managerSrc, /applyDisguiseChecks\(t\) \{/, 'one method');
+  const apiSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  assert.match(apiSrc, /manager\.applyDisguiseChecks\(snap\.telemetry\)/,
+    'and the snapshot endpoint goes through it');
+});
