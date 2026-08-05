@@ -14,6 +14,7 @@ OPEN
 - Web Interface reachable from other systems. Multi Ip reach.
 - App and Web have different min width
 - App name MacOs and Windows conistent, also in the OS Menus.
+- Encoder Config Indicator Idle should be offline. Idle should be connected but not started? States for Encoders? Offline(off/unplugged) Connected(stopped) Sending(start)
 - A1. DISGUISE MAPPING SCREEN still optimising
 - A2. ZERO / PRESET 0 needs fix same thing.
 - A3. RUN! (SINGLE SAMPLE) show only when Polled mode active. Where??

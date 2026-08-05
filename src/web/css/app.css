@@ -88,10 +88,13 @@
      hierarchy to spend on the claim "read this from across the room" — and it
      was the scale's only exception, which is exactly the kind of thing a scale
      is for avoiding. The totals sit at --fs-title now and lead on weight.    */
-  --fs-title: 17px;
-  --fs-head: 14px;
-  --fs-body: 12.5px;
-  --fs-label: 11px;
+  /* rem, not px: px ignores the browser's base-font-size setting, so a user
+     who raised their default text size got nothing anywhere in this app while
+     page zoom did work. Same rendered sizes at the 16px default. */
+  --fs-title: 1.0625rem;
+  --fs-head: 0.875rem;
+  --fs-body: 0.78125rem;
+  --fs-label: 0.6875rem;
 }
 
 * { box-sizing: border-box; }
@@ -109,6 +112,7 @@ html, body {
   font-family: var(--sans);
   font-size: var(--fs-body);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Form controls do not inherit the page's font — they take the user agent's,
@@ -135,6 +139,7 @@ code { font-family: var(--mono); }
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
+  -webkit-user-select: none;
   user-select: none;
 }
 /* -- wordmark ---------------------------------------------------------------
@@ -156,6 +161,7 @@ body.inset-titlebar .titlebar { padding-left: 78px; }
   font-weight: 700;
   letter-spacing: -0.03em;
   color: #fff;
+  -webkit-user-select: none;
   user-select: none;
 }
 .wordmark-name { padding-right: 1px; }
@@ -594,7 +600,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .d3row + .d3row { border-top: 1px solid var(--border-soft); }
 .d3row .kk { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-dim); }
 .d3row .vv {
-  font-family: var(--mono); font-size: var(--fs-body); user-select: all;
+  font-family: var(--mono); font-size: var(--fs-body); -webkit-user-select: all; user-select: all;
   /* These get copied into disguise by hand. Wrap rather than clip: a value cut
      off by `overflow: hidden` on the card would be silently wrong. */
   overflow-wrap: anywhere;

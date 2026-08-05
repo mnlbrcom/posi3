@@ -4887,3 +4887,24 @@ Designer upgraded mid-run is no longer muted until restart.
   reaches `createWindow` with the service still null, and `will-navigate`
   compares parsed origins instead of a string prefix, which
   `http://127.0.0.1:8710@evil.com/` satisfied.
+
+### Small web: rem scale, missing prefixes, honest buttons, bounded maps, quiet frames
+
+- **The type scale is rem.** Four px tokens ignored the browser's base
+  font-size setting — a user who raised their default text size got nothing
+  while page zoom worked. Same rendered sizes at the 16px default, and the
+  layout invariant now *requires* rem.
+- **Two prefixes that are genuinely needed:** `-moz-osx-font-smoothing`
+  (Gecko's sibling of the allowed `-webkit-font-smoothing`; no unprefixed form
+  exists) and `-webkit-user-select` (unprefixed reached Safari only in 18.4).
+  No build step means no Autoprefixer to paper over either.
+- **Header Start All / Stop All catch their failures** and toast, like every
+  other action on the screen — a failed start-all was an unhandled rejection
+  and zero feedback.
+- **Module-scope maps follow their subjects.** The store's states, telemetry
+  and field layouts are pruned to the profile's ids; a deleted encoder's
+  pending flash timer is cleared (and its banners dismissed) rather than left
+  to fire; stored verdicts and fold state follow their destinations.
+- **Per-frame paints go idempotent**: the header aggregate, the CycleTime rate
+  hint and the faults tooltip only write on change, instead of replacing the
+  same text ~60 times a second.
