@@ -4968,3 +4968,15 @@ was connected. Both ends checked by indicators, as instant as possible.
   Encoder Config no longer auto-reads a card whose indicator says offline, so
   opening the page beside two unplugged encoders shows two offline pills and
   nothing else.
+
+### One word per fact: `starting`, and the state nobody could reach
+
+Two encoder pills said `connected` and meant different things — the idle
+handshake ("the device is there") and the brief running state between TCP
+connect and the first sample. The running blip now displays as `starting`:
+Start was pressed, the session is up, the stream is not flowing yet. The
+handshake state keeps `connected`, the word as it was specified.
+
+`STOPPING` is removed from the state table: declared for years, entered by
+nothing — `stop()` goes straight to IDLE — and its orphaned pill style went
+with it.

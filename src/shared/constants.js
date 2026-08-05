@@ -146,8 +146,9 @@ const STATE = {
   STREAMING: 'streaming',
   STALLED: 'stalled',
   RECONNECTING: 'reconnecting',
-  ERROR: 'error',
-  STOPPING: 'stopping'
+  ERROR: 'error'
+  // STOPPING existed here for years and nothing ever entered it — stop() goes
+  // straight to IDLE. Removed rather than left as vocabulary that cannot occur.
 };
 
 // ---------------------------------------------------------------------------

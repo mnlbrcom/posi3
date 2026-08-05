@@ -134,6 +134,8 @@ test('the encoder pill shows the device, in the same vocabulary as disguise', ()
   const helper = storeSrc.slice(storeSrc.indexOf('encoderIndicator('));
   const body = helper.slice(0, helper.indexOf('\n  }'));
   assert.match(body, /'sending'/, 'streaming shows as sending');
+  assert.match(body, /'starting'/,
+    'the brief running state before the first sample is starting, not a second connected');
   assert.match(body, /'connected'/, 'an idle link with a live handshake shows connected');
   assert.match(body, /'offline'/, 'and a failed one shows offline');
 
