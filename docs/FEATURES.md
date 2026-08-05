@@ -3478,3 +3478,49 @@ never to silence a real miss; `CSS` is there because `CSS.escape` builds the ban
 selector and is supported in all three engines.
 
 **219 tests pass, lint clean.**
+
+---
+
+## 2026-08-05 — "Receiving" while the cable was out
+
+> "i unpluged the disguise but daschboard still says receiving i dont receive anything"
+
+True, and measurable. With the machine unplugged the sink read:
+
+    10.10.10.5:6000   health=receiving   offline=false   txErrors=404   suppressed=4148
+
+Four hundred send errors and four thousand suppressed packets, reported as receiving.
+
+**The probe test was too weak.** A destination that fails goes offline, then sends one probe every
+five seconds. Recovery asked only *"did an error arrive in the second after this probe"* — and a
+pulled cable's ICMP can take longer than that. So the probe looked clean, the sink was declared
+recovered, the next samples failed, and two seconds later it went offline again. Flapping, with the
+pill claiming `receiving` throughout.
+
+Recovery now also requires `RECOVERY_QUIET_MS` with no error at all — the same bar the send-callback
+path already used, and the reason that path never flapped. Verified with the cable still out:
+
+    10.10.10.5:6000   health=offline     txErrors=203   ← unplugged
+    10.10.10.2:6000   health=receiving   txErrors=0     ← still connected
+
+**Worth stating plainly:** UDP has no delivery confirmation. `receiving` means packets are leaving
+and nothing has objected — an ICMP host- or port-unreachable is the only negative evidence there is.
+A switch that silently discards traffic would still read as receiving, because nothing anywhere would
+say otherwise.
+
+### Two other things in this change
+
+**The Preset and Offset bound follows the device.** `setRange` moved the caption but not the field:
+`0 – 299,999` under a box that accepted 1,073,741,823. The input's limit moves with the text now, and
+`encoderWriteMany` enforces the real bound server-side from the persisted `encoderMeta.totalCounts` —
+a client-side limit is advice, and this one guards a flash write. Unknown scaling is not a licence to
+invent a bound: the check applies only once the device has said.
+
+**A test fixture wrote to real hardware.** `store.upsertConnection({ name: 'Revolve' })` with no
+address gets `defaultConnection()`'s `10.10.10.10` — a live encoder on this rig — and
+`encoderWriteMany` falls through to `writeOffline`, which opens a socket. A test asserting that an
+in-range Preset passes validation duly sent `set Preset=299999` to the encoder and moved its zero
+point from Offset 43156 to 124642. Every fixture in that file now uses loopback on a closed port:
+impossible to reach hardware, and ECONNREFUSED comes back at once.
+
+**221 tests pass.**

@@ -608,9 +608,22 @@ class EncoderLink extends EventEmitter {
       // seconds instead of every sample. UDP is stateless, so resuming costs
       // nothing — there is no session to re-establish, only a send that works.
       if (sink.offline) {
-        // A probe that nothing objected to, long enough ago to be sure.
+        // A probe that nothing objected to, long enough ago to be sure — and
+        // nothing objecting for a while either side of it.
+        //
+        // `lastErrorAt < probeSentAt` alone asks only "did an error arrive in
+        // the second after this probe". On a destination whose cable has been
+        // pulled the ICMP can take longer than that, so the probe looked clean,
+        // the sink was declared recovered, the next samples failed, and two
+        // seconds later it went offline again — flapping, while the dashboard
+        // said `receiving` throughout. Measured on the rig with the cable out:
+        // 404 send errors and 4,148 suppressed packets, health `receiving`.
+        //
+        // Sends have to have been quiet for RECOVERY_QUIET_MS as well, which is
+        // the same bar the send-callback path already used.
         if (sink.probeSentAt && nowMs - sink.probeSentAt >= PROBE_GRACE_MS &&
-            sink.lastErrorAt < sink.probeSentAt) {
+            sink.lastErrorAt < sink.probeSentAt &&
+            nowMs - sink.lastErrorAt >= RECOVERY_QUIET_MS) {
           sink.offline = false;
           sink.failingSince = 0;
           sink.probeSentAt = 0;
