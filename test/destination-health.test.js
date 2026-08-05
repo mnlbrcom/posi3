@@ -284,3 +284,40 @@ test('a sink that never opened reports the outage instead of clean silence', asy
   assert.match(down.text, /restart the connection/i,
     'and tells the operator the one action that retries a failed setup');
 });
+
+test('a recovery announcement counts this outage, not the whole run', async (t) => {
+  // `txErrors` is cumulative for the run and the announcement used it raw, so
+  // a second outage said "reachable again after 1265 lost packets" when it
+  // had lost a fraction of them — seen verbatim on the rig.
+  const link = new EncoderLink({
+    id: 'count', name: 'count',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ id: 'd', name: 'dest', host: '127.0.0.1', port: 65533, devid: 1 }]
+  });
+  t.after(() => link.stop());
+  const lines = [];
+  link.on('log', (l) => lines.push(l.text));
+  link._openUdp();
+  await until(() => link._sinks[0] && link._sinks[0].ready, 3000, 'sink ready');
+  const sink = link._sinks[0];
+  const err = Object.assign(new Error('sendmsg EHOSTUNREACH'), { code: 'EHOSTUNREACH' });
+
+  // First outage: four errors over more than the give-up window.
+  for (let i = 0; i < 3; i++) sink.onError(err);
+  sink.failingSince = Date.now() - 3000;
+  sink.onError(err);
+  assert.equal(sink.offline, true);
+  link._announceRecovery(sink, sink.dest);
+  assert.match(lines[lines.length - 1], /after 4 lost packets/);
+
+  // Second outage: three more. The count restarts; the total does not.
+  sink.offline = false;
+  sink.failingSince = 0;
+  for (let i = 0; i < 2; i++) sink.onError(err);
+  sink.failingSince = Date.now() - 3000;
+  sink.onError(err);
+  link._announceRecovery(sink, sink.dest);
+  assert.match(lines[lines.length - 1], /after 3 lost packets/,
+    'this outage lost three, however many the run has lost');
+  assert.equal(sink.txErrors, 7, 'while the cumulative counter keeps the run total');
+});

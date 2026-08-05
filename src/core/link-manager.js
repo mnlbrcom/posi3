@@ -153,7 +153,14 @@ class LinkManager extends EventEmitter {
   }
 
   startAll() {
-    for (const link of this._links.values()) link.start();
+    for (const [id, link] of this._links) {
+      // Same reason as start(): link.start() zeroes the counters, so samples
+      // held from the previous run make the first second's average negative.
+      // This loop skipped that reset and Stop All → Start All read -3000 Hz.
+      const rate = this._rates.get(id);
+      if (rate) rate.samples.length = 0;
+      link.start();
+    }
     this._syncTimer();
   }
 
@@ -339,10 +346,19 @@ class LinkManager extends EventEmitter {
       const link = this._links.get(id);
       if (link && link.running) {
         running++;
-        pkts += rate.tx;
+        // From the same window the telemetry rate uses. This read `rate.tx`,
+        // a field that has never existed on a rate entry, so packetsPerSec
+        // was NaN from the day it was written — latent only because nothing
+        // calls this yet; wrong the day the header bar it is documented for
+        // arrives.
+        const first = rate.samples[0];
+        const last = rate.samples[rate.samples.length - 1];
+        if (first && last && last.t > first.t) {
+          pkts += (last.tx - first.tx) / ((last.t - first.t) / 1000);
+        }
       }
     }
-    return { total: this._links.size, running, packetsPerSec: pkts };
+    return { total: this._links.size, running, packetsPerSec: Math.round(pkts) };
   }
 }
 

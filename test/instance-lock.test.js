@@ -107,3 +107,16 @@ test('the claim is an exclusive create, not a check followed by a write', () => 
   assert.ok(claim.indexOf("flag: 'wx'") < claim.indexOf('alive(held.pid)'),
     'and the liveness check happens after losing the create, not before writing');
 });
+
+test('Start All clears the rate windows exactly as start() does', () => {
+  // start(id) empties the sample window because link.start() zeroes the
+  // counters — held samples make the first second's average negative. The
+  // startAll loop skipped that reset, so Stop All → Start All read -3000 Hz
+  // until the window drained.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'link-manager.js'), 'utf8');
+  const all = src.slice(src.indexOf('startAll()'));
+  const body = all.slice(0, all.indexOf('\n  }'));
+  assert.match(body, /rate\.samples\.length = 0/, 'the window is emptied');
+  assert.ok(body.indexOf('samples.length = 0') < body.indexOf('link.start();'),
+    'before the counters reset, not after');
+});

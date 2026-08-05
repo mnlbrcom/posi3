@@ -395,6 +395,8 @@ class EncoderLink extends EventEmitter {
         trialUntil: 0,
         /** Whether this outage has already been announced. Cleared on recovery. */
         downAnnounced: false,
+        /** txErrors when the current outage began, so its own count can be told. */
+        errorsAtOutageStart: 0,
         /**
          * When this outage began, and what was said about it.
          *
@@ -419,7 +421,16 @@ class EncoderLink extends EventEmitter {
 
           const now = Date.now();
           sink.lastErrorAt = now;
-          if (!sink.failingSince) sink.failingSince = now;
+          if (!sink.failingSince) {
+            sink.failingSince = now;
+            // Where this outage's count starts. `txErrors` is cumulative for
+            // the run, and the recovery line used it raw — the second outage
+            // announced "reachable again after 1265 lost packets" when that
+            // outage had lost a fraction of them. Snapshot only on the first
+            // error of an outage: a trial failing re-enters here mid-outage
+            // and must not move the baseline.
+            if (!sink.downAnnounced) sink.errorsAtOutageStart = sink.txErrors - 1;
+          }
 
           // Failed before the socket ever worked — a hostname that does not
           // resolve, a local port already taken. That is not a blip to ride
@@ -621,6 +632,14 @@ class EncoderLink extends EventEmitter {
 
   _handleDisconnect(err) {
     if (this._stopping || this._state === STATE.IDLE) return;
+
+    // The next connection's first sample must not measure the outage. These
+    // survived reconnects, so the gap histogram opened with one entry the
+    // size of the downtime — poisoning p99 and max for the next 256 samples —
+    // and a resumed position could count a spurious wrap against the old one.
+    this._prevPos = null;
+    this._prevTs = null;
+    this._prevMs = null;
 
     if (this._socket) {
       this._socket.removeAllListeners();
@@ -901,7 +920,8 @@ class EncoderLink extends EventEmitter {
     // The outage is over, so the next one is news again.
     sink.downAnnounced = false;
     const where = dest.name ? `${dest.name} (${dest.host}:${dest.port})` : `${dest.host}:${dest.port}`;
-    this._log('info', 'app', `${where} is reachable again after ${sink.txErrors} lost packets`);
+    this._log('info', 'app',
+      `${where} is reachable again after ${sink.txErrors - (sink.errorsAtOutageStart || 0)} lost packets`);
     this.emit('encoderEvent', {
       id: this.id, kind: 'destinationUp',
       text: `${where} is reachable again`
