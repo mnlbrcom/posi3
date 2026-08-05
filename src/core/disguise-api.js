@@ -89,6 +89,10 @@ for d in devices:
                 # operator typed and what Designer shows: nav, testdr.
                 'name': str(getattr(drv, 'description', '') or ''),
                 'path': str(getattr(drv, 'path', '') or ''),
+                # One driver object can be referenced by several receivers, so
+                # identity has to come from the object, not from its name and
+                # port. Measured: testdr carries the same uid in two receivers.
+                'uid': str(getattr(drv, 'uid', '') or ''),
                 'port': getattr(drv, 'Port', None),
                 'multicastAddress': str(getattr(drv, 'multicastAddress', '') or ''),
                 'ipFromFilter': str(getattr(drv, 'ipFromFilter', '') or ''),

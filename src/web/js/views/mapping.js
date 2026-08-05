@@ -117,6 +117,16 @@ function receiverCard(conn, dest) {
   // be polled and is not for use during a show. A button, and nothing else.
   const askBtn = el('button', { class: 'btn', text: 'Ask disguise' });
   const verdict = el('div', { class: 'map-verdict' });
+  /**
+   * What disguise said last time it was asked, or null.
+   *
+   * The pill is the destination's health, and `receiving` there means only that
+   * packets are leaving and the network has not objected — UDP offers nothing
+   * stronger. Once disguise has told us there is no receiver on that port, or
+   * none with that device id, we know the packets are arriving nowhere useful,
+   * and the pill must stop saying otherwise.
+   */
+  let lastAsked = null;
   const pillHolder = el('span', { class: 'pill-holder' }, pill('idle'));
   const livePos = el('span', { class: 'target-pos', text: '—' });
   const resultHolder = el('div', { class: 'map-result' });
@@ -242,6 +252,7 @@ function receiverCard(conn, dest) {
     verdict.className = 'map-verdict';
     try {
       const r = await window.d3d.disguise.inspect(conn.id, dest.id);
+      lastAsked = r;
       verdict.className = `map-verdict ${r.matches ? 'ok' : 'warn'}`;
       clear(verdict);
       verdict.appendChild(el('div', { text: r.verdict }));
@@ -250,6 +261,9 @@ function receiverCard(conn, dest) {
       // so a per-receiver line underneath printed the same drivers again. One
       // statement, and it is the same one that goes into the log.
     } catch (err) {
+      // An unanswerable question tells us nothing about the destination, so the
+      // pill keeps whatever the network says.
+      lastAsked = null;
       verdict.className = 'map-verdict err';
       setText(verdict, err.message);
     } finally {
@@ -305,7 +319,11 @@ function receiverCard(conn, dest) {
       // The receiver's own health, not the encoder's: this card is about the
       // disguise machine. Only on a real change — this runs every frame.
       const d = (t && (t.destinations || []).find((x) => x.id === dest.id)) || null;
-      const state = d ? d.health : store.stateOf(conn.id) === 'idle' ? 'idle' : 'idle';
+      let state = d ? d.health : 'idle';
+      // Nothing objected to the sends, but disguise has told us they land in no
+      // matching receiver. "receiving" would be the same false claim the
+      // destination pill used to make with a cable pulled.
+      if (state === 'receiving' && lastAsked && !lastAsked.matches) state = 'mismatch';
       if (state !== lastState) {
         clear(pillHolder).appendChild(pill(state));
         lastState = state;

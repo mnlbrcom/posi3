@@ -1247,3 +1247,9 @@ select.unknown-value { border-color: var(--warn); }
 .map-verdict.ok { color: var(--ok-text); }
 .map-verdict.warn { color: var(--warn); }
 .map-verdict.err { color: var(--err-text); }
+
+/* Packets are leaving and nothing has objected, but disguise has said there is
+   no receiver on that port, or none with that device id — so they arrive
+   nowhere useful. Warn rather than ok: it is not working, and it is not the
+   network's fault either. */
+.pill.mismatch { color: var(--warn); background: var(--warn-wash); }

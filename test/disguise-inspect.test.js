@@ -208,7 +208,7 @@ test('while the port is wrong, the device id is not anyone’s next question', a
   const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
   assert.match(api, /\} else if \(!portExists\) \{[\s\S]{0,200}Port mismatch:/,
     'the port is checked first, on its own');
-  assert.match(api, /\} else if \(!idExists\) \{[\s\S]{0,1200}ID mismatch:/,
+  assert.match(api, /\} else if \(!idExists\) \{[\s\S]{0,2500}ID mismatch:/,
     'and the id only once the port agrees');
   assert.doesNotMatch(api, /problems\.join/,
     'the two are never joined into one sentence');
@@ -217,13 +217,15 @@ test('while the port is wrong, the device id is not anyone’s next question', a
   // naming one of three read as though it were the only one.
   assert.match(api, /ds\.map\(\(d\) => `\$\{q\(d\.name, d\.type\)\} on \$\{d\.port\}`\)/,
     'each driver is named, quoted, with its port');
-  assert.match(api, /these axis ids: \$\{ids\.join\(', '\)\}/,
+  assert.match(api, /axis \$\{ids\.length > 1 \? 'ids' : 'id'\} \$\{ids\.join\(', '\)\}/,
     'and an id mismatch lists the ids that do exist');
   // Every receiver, not the first one on our port: a show can hold several, and
   // an id that exists nowhere is only provable by looking at all of them.
-  assert.match(api, /const ordered = \[\.\.\.portOnly, \.\.\.receivers\.filter\(\(r\) => !portOnly\.includes\(r\)\)\]/,
-    'all receivers are described, those carrying the port first');
-  assert.match(api, /ordered\.map\(describeAxes\)\.join\('; '\)/);
+  // Every receiver is described, grouped by the driver object feeding it.
+  assert.match(api, /const key = \(drv && drv\.uid\)/,
+    'drivers are grouped by their own identity, not by name and port');
+  assert.match(api, /receivers\.filter\(\(r2\) => !portOnly\.includes\(r2\)\)/,
+    'and receivers without this port are named too, or a missing id is unprovable');
   // Only Navigator drivers are ever shown: a PosiStageNetDriver on 56565 is
   // nothing this bridge could feed, and offering it invites setting the port
   // to something that can never work.
@@ -308,4 +310,44 @@ test('the messages say PositionReceiver, the name the operator sees', () => {
   assert.doesNotMatch(verdicts, /ScreenPositionReceiver/,
     'the class name does not belong in a sentence for an operator');
   assert.match(verdicts, /disguise PositionReceiver \$\{q\(/);
+});
+
+test('a driver shared by two receivers is described as one driver', async (t) => {
+  // Measured on the rig: "testdr" carries the same uid in two receivers — one
+  // object, referenced twice. Naming it once per receiver read as two drivers
+  // that happen to share a name and a port, which is a different rig entirely.
+  const shared = { type: 'NavigatorDriver', name: 'testdr', port: 7999, uid: '1784006771968554994' };
+  const d = await fakeDesigner(t, ok([
+    receiver({ name: 'posi3', drivers: [shared], axes: [{ id: '5' }, { id: '10' }] }),
+    receiver({ name: 'posi5', drivers: [shared], axes: [{ id: '2' }] })
+  ]));
+  const found = await inspectReceivers(d.host, { apiPort: d.apiPort });
+
+  const uids = found.map((r) => r.drivers[0].uid);
+  assert.equal(uids[0], uids[1], 'the same object, so the same uid');
+
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  assert.match(api, /on \$\{dest\.port\} feeds/,
+    'one driver, feeding the receivers that reference it');
+  assert.match(api, /\.join\(' and '\)/, 'which are listed together under it');
+});
+
+test('a known mismatch stops the card claiming the destination is receiving', () => {
+  // `receiving` on the pill means only that packets are leaving and the network
+  // has not objected — UDP offers nothing stronger. Once disguise has said there
+  // is no receiver on that port, or none with that device id, the packets are
+  // arriving nowhere useful, and continuing to say `receiving` is the same false
+  // claim the pill used to make with a cable pulled.
+  const view = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');
+
+  assert.match(view, /if \(state === 'receiving' && lastAsked && !lastAsked\.matches\) state = 'mismatch';/,
+    'a known mismatch overrides the health pill');
+  assert.match(view, /lastAsked = r;/, 'the answer is remembered');
+  assert.match(view, /lastAsked = null;/,
+    'and forgotten when the question could not be answered — that says nothing about the destination');
+
+  const css = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'css', 'app.css'), 'utf8');
+  assert.match(css, /\.pill\.mismatch \{/, 'and the state has a colour of its own');
 });

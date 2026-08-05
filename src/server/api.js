@@ -481,16 +481,35 @@ function createApi(ctx) {
         //
         // The receivers carrying our port come first, since that is where the
         // axis has to be added; each is named with the driver that matched.
-        const ordered = [...portOnly, ...receivers.filter((r) => !portOnly.includes(r))];
-        const describeAxes = (r) => {
-          const drv = navDrivers(r).find((d) => Number(d.port) === dest.port);
+        const axesOf = (r) => {
           const ids = (r.axes || []).map((a) => a.id);
-          return `disguise PositionReceiver ${q(r.name, r.path)}` +
-            (drv ? ` driver ${q(drv.name, 'NavigatorDriver')} on ${drv.port}` : '') +
-            ` has ${ids.length ? `these axis ids: ${ids.join(', ')}` : 'no axes'}`;
+          return ids.length ? `axis ${ids.length > 1 ? 'ids' : 'id'} ${ids.join(', ')}` : 'no axes';
         };
-        verdict = `ID mismatch: this connection sends id ${dest.devid}, ` +
-          `${ordered.map(describeAxes).join('; ')}.`;
+
+        // One driver object can be referenced by several receivers — measured on
+        // the rig, where "testdr" carries the same uid in two of them. Naming it
+        // once per receiver read as two drivers that happen to share a name and
+        // a port, which is a different rig entirely. Grouped by the object's own
+        // identity, so a shared driver is described as shared.
+        const groups = new Map();
+        for (const r of portOnly) {
+          const drv = navDrivers(r).find((d) => Number(d.port) === dest.port);
+          const key = (drv && drv.uid) || `${drv && drv.name}:${dest.port}`;
+          if (!groups.has(key)) groups.set(key, { drv, rs: [] });
+          groups.get(key).rs.push(r);
+        }
+
+        const parts = [...groups.values()].map(({ drv, rs }) =>
+          `driver ${q(drv && drv.name, 'NavigatorDriver')} on ${dest.port} feeds ` +
+          rs.map((r) => `disguise PositionReceiver ${q(r.name, r.path)} (${axesOf(r)})`).join(' and '));
+
+        // Receivers with no driver on this port still matter: the id may not be
+        // anywhere, and that is only visible by naming them all.
+        for (const r of receivers.filter((r2) => !portOnly.includes(r2))) {
+          parts.push(`disguise PositionReceiver ${q(r.name, r.path)} has ${axesOf(r)}`);
+        }
+
+        verdict = `ID mismatch: this connection sends id ${dest.devid}, ${parts.join('; ')}.`;
       } else if (!both) {
         verdict = `Split across receivers: port ${dest.port} is on ` +
           `${portOnly.map((r) => q(r.name, r.path)).join(', ')} and axis id ${dest.devid} is on ` +

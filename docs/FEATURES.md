@@ -4048,3 +4048,33 @@ the Python API; the second is what Designer presents and what an operator goes l
 is read by the person, not by the API. A test fails if the class name reappears in a verdict.
 
 **250 tests pass.**
+
+---
+
+## 2026-08-05 — One shared driver, and a pill that stops claiming delivery
+
+> "its one shared driver object" / "also if there is an port mismatch or id mismatch, and no match at
+> all the disguise card should not state receiving"
+
+**A driver can be referenced by several receivers.** Confirmed on the rig — `"testdr"` carries the
+same `uid`, `1784006771968554994`, in both `posi3` and `posi5`. Naming it once per receiver read as
+two drivers that happened to share a name and a port, which is a different rig entirely. Identity now
+comes from the object's own `uid`, and a shared driver is described as shared:
+
+    ID mismatch: this connection sends id 1, driver "testdr" on 7999 feeds disguise
+    PositionReceiver "posi3" (axis ids 5, 10) and disguise PositionReceiver "posi5" (axis id 2).
+
+**And the pill stops saying `receiving` once we know better.** `receiving` there meant only that
+packets were leaving and the network had not objected — UDP offers nothing stronger, which is why a
+pulled cable once read as `receiving` for four thousand suppressed packets. But when disguise itself
+has said there is no driver on that port, or no axis with that device id, the packets are arriving
+nowhere useful and the app knows it. The pill reads `mismatch`:
+
+    pill before asking:  receiving
+    pill after asking:   mismatch
+
+Only from an answer. A question disguise could not answer is forgotten rather than treated as bad
+news — an unreachable Designer says nothing about whether the destination is receiving, so the
+network's own verdict stands.
+
+**251 tests pass.**
