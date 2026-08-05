@@ -4404,3 +4404,45 @@ the "Derived" velocity policy: something added without being asked for, that the
 removed. The count of those in this codebase is the argument for not adding them.
 
 **260 tests pass**, every view clean at 1440 / 1024 / 860 / 720 / 480 / 390, folded and expanded.
+
+---
+
+## 2026-08-05 — An indicator establishes its own state
+
+> "D - when full restart of the server or the app, each indicator runs a routine that checks for its
+> state rather then taking it from a default or past instance. Indicators are indicators and should
+> always be aware of their actual state."
+
+The disguise answer lived in memory, so restarting the app forgot it and every destination fell back
+to `connected` — true of the network, and not what the operator had established a minute earlier. Not
+a bug so much as an indicator inheriting a state instead of knowing one.
+
+**Each destination now checks itself when its link starts** — pressing Start, pressing Start All, or
+being auto-started at launch, which nobody clicks. A fresh process, one Start All, and no interaction
+at all:
+
+    disguise 1  10.10.10.4:7999  mismatch    confirmed=false
+    director    10.10.10.5:6000  offline     confirmed=undefined
+    US          10.10.10.2:6000  connected   confirmed=undefined
+
+And in the log, unprompted:
+
+    Revolve: ID mismatch: this connection sends id 1, driver "testdr" on 7999 feeds disguise
+    PositionReceiver "posi3" (axis ids 5, 10) and disguise PositionReceiver "posi5" (axis id 2).
+
+### The constraints it respects
+
+**Once per destination per process, and never again.** disguise's documentation forbids polling this
+endpoint; this is a single call at the moment a connection comes up, staggered so a fan-out to one
+machine does not arrive as a burst.
+
+**A destination that cannot answer records nothing.** `director` is switched off and `US` is a laptop:
+neither has a Designer session, so neither has a check, and the network's own verdict stands. The
+attempt is silent — an operator who has not asked anything should not be told their laptop is not
+running Designer.
+
+The verdict logic is one function now, shared by the button and the automatic check, because the
+alternative was the same reasoning written twice — the fault this codebase has produced more often
+than any other.
+
+**261 tests pass.**

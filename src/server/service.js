@@ -164,6 +164,9 @@ async function startService(opts = {}) {
       try {
         manager.start(conn.id);
         autoStarted.push(conn.id);
+        // Started without anyone pressing anything, so its destinations
+        // establish their own state the same way they would after a click.
+        api.establishDisguiseState({ id: conn.id });
       } catch { /* surfaced through link state */ }
     }
   }
