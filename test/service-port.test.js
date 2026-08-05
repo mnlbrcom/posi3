@@ -81,3 +81,28 @@ test('an explicit port is still honoured', async (t) => {
   t.after(() => a.stop());
   assert.equal(a.http.server.address().port, free);
 });
+
+test('with a token, every shared URL carries it — window, lock, and guard agree', async (t) => {
+  // Bound beyond loopback the service always generates a token and the guard
+  // checks it on static files too. The desktop window loaded the bare URL and
+  // rendered its own 401; the "already running — open it" dialog launched the
+  // lock's bare URL into a browser with the same result.
+  const dir = tmp();
+  const svc = await startService({ dataDir: dir, port: 0, token: 'secret-t' });
+  t.after(() => svc.stop());
+
+  const bare = await fetch(svc.url);
+  assert.equal(bare.status, 401, 'the bare URL is exactly what a window must not load');
+  const tokened = await fetch(`${svc.url}/?token=secret-t`);
+  assert.equal(tokened.status, 200, 'the tokened form is the one that opens');
+
+  const lock = JSON.parse(
+    fs.readFileSync(path.join(dir, require('../src/core/instance-lock').LOCK_FILE), 'utf8'));
+  assert.match(lock.url, /token=secret-t/,
+    'the lock exists to be opened by a second instance, so it carries the token');
+
+  const desktop = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'desktop', 'main.js'), 'utf8');
+  assert.match(desktop, /mainWindow\.loadURL\(webUrlWithToken\(\)\)/,
+    'and the window authenticates exactly like the browser it is');
+});

@@ -4769,3 +4769,18 @@ same read-and-compare `setPreset` uses — and the server asks it before the
 first write of the batch. A refused batch now costs nothing. The write order
 itself is unchanged (configuration first, then Preset), because Preset's
 meaning depends on the scaling written next to it.
+
+### Bound to the LAN, the desktop window locked itself out
+
+A non-loopback `webBindHost` always generates an access token, and the guard
+checks it on every request — static files included. The desktop window loaded
+the bare URL, so widening the bind made the app render its own
+"401 Missing or invalid access token"; the second-instance dialog's "Open it"
+button had the same fault, because the lock file stored the bare URL.
+
+The window now loads `webUrlWithToken()` — the same form the tray's "Copy web
+UI address" already produced — and the lock stores the tokened URL, since its
+whole purpose is to be opened. The lock lives in the profile directory, which
+is the user's own; the token guards the LAN, not the machine's owner.
+Behavioural test: with a token set, the bare URL answers 401, the tokened one
+200, and the lock's URL carries the token.
