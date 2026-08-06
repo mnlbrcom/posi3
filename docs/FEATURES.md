@@ -2925,7 +2925,9 @@ The encoder's own `CycleTime=18` appeared nowhere. Now:
 
 Every non-sample line the encoder sends is now logged. Samples are not, and never were: at ~100/s
 per link they would bury everything else. `logRaw` — settable only by hand-editing a profile, and
-with no reader left after this change — is gone.
+with no reader left after this change — is gone. *(Correction, 2026-08-06: the readers went but
+three writers stayed, so the field kept being validated and saved — the audit caught the record
+being ahead of the code. Schema 5, below, actually removed it.)*
 
 The source and the level are separate columns. One column showed the source for info lines and the
 level for the rest, so a warning **from** the encoder was indistinguishable from a warning **about**
@@ -5240,3 +5242,24 @@ tested. And a shape test pins the send loop itself: no template literals, no
 `new`, no array helpers, no copies — an innocent-looking addition to the
 per-sample path now fails the suite instead of costing microseconds on every
 one of a show's million samples.
+
+### Schema 5 — the profile carries known keys only
+
+Closes todo **A7** ("STALE KEYS IN YOUR SAVED PROFILE … remove completely")
+and the decision to drop `notes` too. The live profile carried `logRaw`
+twice (the 2026-08-04 entry claimed it was removed; only its readers were —
+corrected above), a `notes` field no screen ever showed, `parser.outputType`
+(kept "only because removing it is a schema change" — this is that change),
+and `defaultLocalAddress`/`defaultVelocityPolicy`, deleted from the app days
+ago yet re-saved on every write because `Object.assign` carries unknown keys
+forever.
+
+`SCHEMA_VERSION = 5`. The migration is a whitelist against the reference
+shapes (`defaultConnection`/`defaultDestination`/`defaultSettings`), applied
+at every depth **on every load**, not once — a key this build does not know
+is a key the profile does not keep, so dead keys cannot accrete again. The
+derived `d3` mirror is built after the whitelist; `pendingHost` is explicitly
+in it (appears only once an address is programmed — the whitelist must not
+eat it, and the migration test pins exactly that). All writers of the dead
+fields removed (`config-store.js`, `validate.js`, `encoder-link.js`
+normalise).

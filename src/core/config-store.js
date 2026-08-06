@@ -17,7 +17,7 @@ const {
   DEFAULT_D3_PORT, DEFAULT_TELEMETRY_HZ
 } = require('../shared/constants');
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const SAVE_DEBOUNCE_MS = 300;
 
 function defaultSettings() {
@@ -96,20 +96,14 @@ function defaultConnection(overrides = {}) {
     velocityPolicy: 'zero',
     udpSendPolicy: 'every',
     maxSendHz: 0,
-    /* `outputType` is null for the same reason as everything in encoderMeta: it
-       describes the device, and until the device says so we do not know it. It
-       said ASCII_SHORT on every new connection whatever the encoder was set to.
-       Nothing reads it — the parser recognises both formats from the line
-       itself — so it is a claim with no purpose; kept as a field only because
-       removing it is a schema change. */
-    parser: { outputType: null, fields: null, autoDetect: true },
+    /* No `outputType` claim: the parser recognises both formats from the line
+       itself, so the field said nothing anyone read. Schema 5 removed it. */
+    parser: { fields: null, autoDetect: true },
     /* Null, not a nameplate figure: before the encoder has answered we do not
        know these, and pretending we do is what made every first read look like
        a change. They are filled in from the device and kept. */
     encoderMeta: { countsPerRev: null, totalCounts: null, cycleTimeMs: null },
-    reconnect: { enabled: true, minDelayMs: 250, maxDelayMs: 5000 },
-    logRaw: false,
-    notes: ''
+    reconnect: { enabled: true, minDelayMs: 250, maxDelayMs: 5000 }
   }, overrides);
 }
 
@@ -186,7 +180,10 @@ class ConfigStore {
     }
     this.profile = {
       version: SCHEMA_VERSION,
-      settings: Object.assign(defaultSettings(), data.settings || {}),
+      // Known settings only: `Object.assign` alone carried keys deleted from
+      // the app years ago (defaultLocalAddress, defaultVelocityPolicy) in
+      // every profile ever written since.
+      settings: pickKnown(Object.assign(defaultSettings(), data.settings || {}), defaultSettings()),
       connections: (data.connections || []).map((c) => migrateConnection(c, Number(data.version) || 0))
     };
   }
@@ -306,6 +303,14 @@ class ConfigStore {
  * @param {number} fromVersion  schema the profile was written by; SCHEMA_VERSION
  *                              for data already in this build's shape.
  */
+/** Keep only the keys the reference shape has — the schema-5 rule. */
+function pickKnown(obj, reference) {
+  for (const k of Object.keys(obj)) {
+    if (!(k in reference)) delete obj[k];
+  }
+  return obj;
+}
+
 function migrateConnection(c, fromVersion) {
   const base = defaultConnection();
   const out = Object.assign({}, base, c);
@@ -328,6 +333,20 @@ function migrateConnection(c, fromVersion) {
   // convention. Several screens legitimately mean "the primary destination"
   // (the mapping helper computes one axis), and this saves them reaching into
   // the array. Never write through it: writes go to `destinations`.
+  // Schema 5: the profile carries known keys only, at every depth that has a
+  // reference shape. Unknown keys used to ride `Object.assign` forever —
+  // `logRaw` twice in the live profile, `notes` no screen ever showed,
+  // `parser.outputType`, settings removed years ago — and this runs on every
+  // load, not once: a key this build does not know is a key the profile does
+  // not keep, so dead keys cannot accrete again.
+  pickKnown(out, base);
+  pickKnown(out.encoder, Object.assign({ pendingHost: null }, base.encoder));
+  pickKnown(out.parser, base.parser);
+  const destShape = defaultDestination();
+  for (const d of out.destinations) pickKnown(d, destShape);
+
+  // The mirror is derived, not stored knowledge — built after the whitelist,
+  // which rightly has no entry for it.
   out.d3 = Object.assign({}, out.destinations[0]);
   return out;
 }

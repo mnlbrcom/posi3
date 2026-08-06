@@ -51,7 +51,8 @@ test('a new connection claims nothing about a device it has not spoken to', () =
   for (const key of ['countsPerRev', 'totalCounts', 'cycleTimeMs']) {
     assert.equal(c.encoderMeta[key], null, `encoderMeta.${key} must start unknown`);
   }
-  assert.equal(c.parser.outputType, null, 'the output format is the device\'s to state');
+  assert.equal('outputType' in c.parser, false,
+    'the parser reads the format off the line itself; the field is gone (schema 5)');
   assert.equal(c.parser.fields, null, 'the field layout is read, never assumed');
   assert.equal(c.destinations[0].mapping.maxInput, 0, 'no span has been captured yet');
 
@@ -196,4 +197,59 @@ test('a schema-3 mapping is copied onto every receiver', () => {
   c.destinations[1].mapping.property = 'offset.x';
   assert.equal(c.destinations[0].mapping.property, 'rotation.y',
     'the copies must not share an object');
+});
+
+test('schema 5: dead keys are stripped at every load, at every depth', () => {
+  // The live profile carried logRaw twice, a notes field no screen ever
+  // showed, parser.outputType, and settings keys deleted from the app years
+  // ago — Object.assign carried them all forward forever. The whitelist IS
+  // the migration, and it runs on every load, so dead keys cannot accrete
+  // again.
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({
+    version: 4,
+    settings: {
+      telemetryHz: 30, webPort: 8710, webBindHost: '127.0.0.1',
+      defaultLocalAddress: '192.0.2.2', defaultVelocityPolicy: 'zero'
+    },
+    connections: [{
+      id: 'c1', name: 'Revolve',
+      encoder: { host: '192.0.2.20', port: 6000, localAddress: null, mystery: 1 },
+      destinations: [{
+        id: 'd1', name: 'disguise 1', host: '192.0.2.4', port: 7999, devid: 1,
+        leftover: 'x'
+      }],
+      parser: { outputType: 'ASCII_SHORT', fields: null, autoDetect: true },
+      logRaw: false,
+      notes: 'inherited, never shown',
+      ghost: true
+    }]
+  }));
+
+  const s = loaded(dir);
+  assert.equal(s.profile.version, 5);
+  const c = s.profile.connections[0];
+
+  for (const key of ['logRaw', 'notes', 'ghost']) {
+    assert.equal(key in c, false, `${key} does not survive the load`);
+  }
+  assert.equal('outputType' in c.parser, false);
+  assert.equal('mystery' in c.encoder, false);
+  assert.equal('leftover' in c.destinations[0], false);
+  for (const key of ['defaultLocalAddress', 'defaultVelocityPolicy']) {
+    assert.equal(key in s.settings, false, `settings.${key} is gone`);
+  }
+
+  // And nothing real was lost.
+  assert.equal(c.name, 'Revolve');
+  assert.equal(c.encoder.host, '192.0.2.20');
+  assert.equal(c.destinations[0].devid, 1);
+  assert.equal(s.settings.telemetryHz, 30);
+
+  // A pending address is not a dead key: it appears only once programmed, and
+  // the whitelist must not eat it.
+  const withPending = s.upsertConnection({
+    id: 'c1', encoder: { host: '192.0.2.20', port: 6000, pendingHost: '192.0.2.30' }
+  });
+  assert.equal(withPending.encoder.pendingHost, '192.0.2.30');
 });

@@ -2021,9 +2021,7 @@ function normaliseConfig(c) {
       minDelayMs: (c.reconnect && c.reconnect.minDelayMs) || RECONNECT.MIN_DELAY_MS,
       maxDelayMs: (c.reconnect && c.reconnect.maxDelayMs) || RECONNECT.MAX_DELAY_MS
     },
-    logRaw: !!c.logRaw,
-    autoStart: !!c.autoStart,
-    notes: c.notes || ''
+    autoStart: !!c.autoStart
   };
 }
 
