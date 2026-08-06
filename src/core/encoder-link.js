@@ -886,59 +886,10 @@ class EncoderLink extends EventEmitter {
       const sink = sinks[i];
       if (!sink.ready) continue;
 
-      // A destination that has stopped answering gets one probe every few
-      // seconds instead of every sample. UDP is stateless, so resuming costs
-      // nothing — there is no session to re-establish, only a send that works.
-      if (sink.offline) {
-        // A probe that nothing objected to, long enough ago to be sure — and
-        // nothing objecting for a while either side of it.
-        //
-        // `lastErrorAt < probeSentAt` alone asks only "did an error arrive in
-        // the second after this probe". On a destination whose cable has been
-        // pulled the ICMP can take longer than that, so the probe looked clean,
-        // the sink was declared recovered, the next samples failed, and two
-        // seconds later it went offline again — flapping, while the dashboard
-        // said `receiving` throughout. Measured on the rig with the cable out:
-        // 404 send errors and 4,148 suppressed packets, health `receiving`.
-        //
-        // Sends have to have been quiet for RECOVERY_QUIET_MS as well, which is
-        // the same bar the send-callback path already used.
-        if (sink.trialUntil) {
-          // Under trial, and sending at the ordinary rate — anything less does
-          // not provoke the ICMP that proves a host is gone. Any error since it
-          // began has already cancelled it in the error handler, so reaching the
-          // end means every packet went unremarked at full rate, which is as
-          // much as UDP will ever tell us.
-          if (nowMs >= sink.trialUntil) {
-            // Sending resumes. Nothing is announced here: a quiet trial is not
-            // proof a host is back — this one stayed quiet for three seconds at
-            // full rate against a machine that was switched off, three times in
-            // ninety seconds. The announcement is left to `onSent`, which
-            // requires RECOVERY_QUIET_MS of ordinary traffic with no error at
-            // all; a dead host produces one within a second and goes straight
-            // back to offline, having claimed nothing.
-            sink.offline = false;
-            sink.failingSince = 0;
-            sink.probeSentAt = 0;
-            sink.trialUntil = 0;
-            sink.lastErrorCode = null;
-          }
-        } else if (sink.probeSentAt && nowMs - sink.probeSentAt >= PROBE_GRACE_MS &&
-            sink.lastErrorAt < sink.probeSentAt) {
-          // The probe drew no objection. That is a reason to look harder, not a
-          // reason to declare the outage over.
-          sink.trialUntil = nowMs + TRIAL_MS;
-        } else if (nowMs < sink.nextProbeAt) {
-          sink.suppressed++;
-          continue;
-        } else {
-          sink.nextProbeAt = nowMs + OFFLINE_RETRY_MS;
-          sink.probeSentAt = nowMs;
-          // Asked at the same moment, answered independently: the datagram
-          // tests our path, the connect tests whether the machine is there.
-          this._probeHostAlive(sink);
-        }
-      }
+      // Offline sinks send one probe datagram a second instead of every
+      // sample; the state machine for that lives beside the rest of the
+      // outage code, not in the send loop.
+      if (sink.offline && this._maintainSinkOutage(sink, nowMs)) continue;
 
       // Destinations usually share a device ID, so the packet is built once and
       // sent to each. Only rebuild when a destination overrides it.
@@ -955,6 +906,62 @@ class EncoderLink extends EventEmitter {
       sink.tx++;
       this.counters.tx++;
     }
+  }
+
+  /**
+   * One step of an offline sink's probe/trial cycle. Returns true when this
+   * sample must be suppressed rather than sent.
+   *
+   * A destination that has stopped answering gets one probe every few seconds
+   * instead of every sample. UDP is stateless, so resuming costs nothing —
+   * there is no session to re-establish, only a send that works.
+   *
+   * Recovery is judged in stages. A probe that nothing objected to, long
+   * enough ago to be sure — `lastErrorAt < probeSentAt` alone asks only "did
+   * an error arrive in the second after this probe", and on a pulled cable
+   * the ICMP can take longer, so the probe looked clean, the sink was
+   * declared recovered, the next samples failed, and it flapped while the
+   * dashboard said `receiving`. Measured on the rig: 404 send errors and
+   * 4,148 suppressed packets, health `receiving`. Hence probe → grace →
+   * full-rate trial, and the announcement stays with `onSent`, which demands
+   * RECOVERY_QUIET_MS of ordinary traffic with no error at all.
+   */
+  _maintainSinkOutage(sink, nowMs) {
+    if (sink.trialUntil) {
+      // Under trial, and sending at the ordinary rate — anything less does
+      // not provoke the ICMP that proves a host is gone. Any error since it
+      // began has already cancelled the trial in the error handler, so
+      // reaching the end means every packet went unremarked at full rate,
+      // which is as much as UDP will ever tell us. Nothing is announced here:
+      // a quiet trial is not proof — one stayed quiet for three seconds at
+      // full rate against a switched-off machine, three times in ninety
+      // seconds.
+      if (nowMs >= sink.trialUntil) {
+        sink.offline = false;
+        sink.failingSince = 0;
+        sink.probeSentAt = 0;
+        sink.trialUntil = 0;
+        sink.lastErrorCode = null;
+      }
+      return false;
+    }
+    if (sink.probeSentAt && nowMs - sink.probeSentAt >= PROBE_GRACE_MS &&
+        sink.lastErrorAt < sink.probeSentAt) {
+      // The probe drew no objection. That is a reason to look harder, not a
+      // reason to declare the outage over.
+      sink.trialUntil = nowMs + TRIAL_MS;
+      return false;
+    }
+    if (nowMs < sink.nextProbeAt) {
+      sink.suppressed++;
+      return true;
+    }
+    sink.nextProbeAt = nowMs + OFFLINE_RETRY_MS;
+    sink.probeSentAt = nowMs;
+    // Asked at the same moment, answered independently: the datagram tests
+    // our path, the ping tests whether the machine is there.
+    this._probeHostAlive(sink);
+    return false;
   }
 
   /**

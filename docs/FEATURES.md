@@ -5225,3 +5225,18 @@ flight at quit no longer holds the process); `stop()`'s early-return guard
 also checks the destination watch; `sink.recovered` is declared in the sink
 literal (it sprang into existence undefined) and in the matrix fixture; an
 orphaned doc comment left by a moved constant is gone.
+
+### The hot path back in the foreground, and two guards so it stays there
+
+Part 1.3/1.4 of the integrity plan. `_forward` had grown to 93 lines of which
+forwarding was ~15 — the offline probe/trial state machine moved out to
+`_maintainSinkOutage`, beside the rest of the outage code, as a pure refactor
+(suite unchanged: the golden bytes, the fanout tests and the health matrix
+are the contract). Two guards were added: `tools/udp-sink.js` no longer
+repairs a missing trailing `;` before matching — disguise drops the final
+axis exactly when that terminator is missing, so the old loop certified
+streams disguise would truncate; `parseDatagram` is strict, exported and
+tested. And a shape test pins the send loop itself: no template literals, no
+`new`, no array helpers, no copies — an innocent-looking addition to the
+per-sample path now fails the suite instead of costing microseconds on every
+one of a show's million samples.

@@ -34,6 +34,35 @@ const opts = parseArgs(process.argv, {
 // The exact grammar the legacy d3driver.exe produced: "<devid>:<pos>,<vel>;"
 const RE_PACKET = /^(\d+):(-?\d+),(-?\d+);$/;
 
+/**
+ * Parse one datagram into records, strictly.
+ *
+ * Every record must carry its own terminator. The old loop split on `;` and
+ * re-appended one before matching, so a datagram whose final record had *no*
+ * terminator still parsed clean — and disguise drops the final axis exactly
+ * when that `;` is missing. A sink that quietly repairs the defect it exists
+ * to catch certifies streams disguise would truncate.
+ */
+function parseDatagram(text) {
+  const records = [];
+  let bad = 0;
+  let rest = text.replace(/\r?\n$/, '');
+  if (rest === '') return { records, malformed: 0 };
+  if (!rest.endsWith(';')) {
+    // The unterminated tail is the defect; the terminated prefix still counts.
+    bad++;
+    rest = rest.slice(0, rest.lastIndexOf(';') + 1);
+  }
+  for (const raw of rest.split(';')) {
+    const rec = raw.trim();
+    if (!rec) continue;
+    const m = RE_PACKET.exec(rec + ';');
+    if (!m) { bad++; continue; }
+    records.push({ id: Number(m[1]), pos: Number(m[2]), vel: Number(m[3]) });
+  }
+  return { records, malformed: bad };
+}
+
 /** @type {Map<number, object>} per-device statistics */
 const devices = new Map();
 let malformed = 0;
@@ -53,6 +82,9 @@ function deviceStats(id) {
   return d;
 }
 
+module.exports = { parseDatagram };
+if (require.main !== module) return;
+
 const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
 sock.on('message', (msg) => {
@@ -64,18 +96,12 @@ sock.on('message', (msg) => {
   const text = msg.toString('latin1');
 
   // One datagram may legitimately carry several records.
-  for (const raw of text.split(';')) {
-    const rec = raw.trim();
-    if (!rec) continue;
-    const m = RE_PACKET.exec(rec + ';');
-    if (!m) {
-      malformed++;
-      if (!opts.quiet) console.log(`  malformed: ${JSON.stringify(rec)}`);
-      continue;
-    }
-    const id = Number(m[1]);
-    const pos = Number(m[2]);
-    const vel = Number(m[3]);
+  const parsed = parseDatagram(text);
+  if (parsed.malformed) {
+    malformed += parsed.malformed;
+    if (!opts.quiet) console.log(`  malformed in: ${JSON.stringify(text)}`);
+  }
+  for (const { id, pos, vel } of parsed.records) {
     const d = deviceStats(id);
 
     if (d.lastPos !== null) {

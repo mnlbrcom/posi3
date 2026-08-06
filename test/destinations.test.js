@@ -224,3 +224,30 @@ test('fan-out is bounded', () => {
     (err) => err.code === 'EINVAL' && /At most 16/.test(err.message)
   );
 });
+
+test('the send loop allocates nothing per sample', () => {
+  // The forwarding contract: parse → pooled buffer → udp.send, no allocation
+  // between a sample arriving and its datagrams leaving. The golden bytes are
+  // pinned elsewhere; this pins the *shape*, so an innocent-looking addition
+  // (a template literal in a log line, a map over sinks) fails the suite
+  // rather than costing microseconds on every one of a show's million samples.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'encoder-link.js'), 'utf8');
+  const fn = src.slice(src.indexOf('_forward(pos, vel) {'));
+  // Comments are prose, and prose may say `snprintf`; the contract is code.
+  const body = fn.slice(0, fn.indexOf('\n  }'))
+    .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  assert.ok(body.length < 3200, 'the hot path stays small enough to read at a glance');
+  for (const [pattern, why] of [
+    [/`/, 'template literals allocate a string per sample'],
+    [/\bnew\b/, 'construction in the send loop'],
+    [/\.map\(|\.filter\(|\.forEach\(/, 'array helpers allocate closures and results'],
+    [/\.push\(/, 'growing an array per sample'],
+    [/JSON\./, 'serialisation in the send loop'],
+    [/\.slice\(|\.split\(/, 'string/array copies per sample']
+  ]) {
+    assert.doesNotMatch(body, pattern, why);
+  }
+});
