@@ -5102,3 +5102,21 @@ everything else alive), and a leaked probe child can no longer hold a test
 file's event loop open. A stopped probe is also guaranteed silent now: a
 killed ping child still emits its exit, and its late answer used to overwrite
 whatever state the stop had just established.
+
+### Data starting to flow asks the question ping cannot
+
+**Asked:** Revolve reconnected and sending; disguise 1 stayed `connected`
+while Designer visibly received on id 1.
+
+The re-ask trigger was a *health transition*, and ping liveness removed the
+one this sequence used to produce: under the TCP-error model a Designer
+coming up flipped `refused → connected`; under ping the machine read
+`connected` throughout its boot, and the first datagrams drew no errors — no
+transition anywhere, so nothing asked disguise and the pill could not climb.
+
+The manager now watches `sending` as well: the first datagram after send
+quiet fires `onDestinationSendingStarted`, and the api asks disguise **only
+if no answer is standing** — nothing is forgotten, nothing re-asked, so an
+encoder stalling and resuming mid-show stays silent, and the flow-start ask
+is debounced like every other automatic one. Data beginning to flow is the
+moment "does it land?" becomes askable.

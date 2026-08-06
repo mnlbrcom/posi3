@@ -500,7 +500,7 @@ test('the network state is watched continuously, and only a change asks disguise
   // Or a confirmed `connected` becoming `receiving` would read as a change of
   // its own, and ask again about the answer that had just been applied.
   assert.match(manager, /d\.health === 'receiving' \|\| d\.health === 'mismatch' \? 'connected' : d\.health/);
-  assert.match(manager, /if \(before === undefined \|\| before === now\) continue;/,
+  assert.match(manager, /if \(before !== undefined && before !== now\) \{/,
     'and only a change is reported');
 
   const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
@@ -595,4 +595,35 @@ test('a body that stalls after 200 headers still hits the deadline', async (t) =
     () => inspectReceivers(d.host, { apiPort: d.apiPort, timeoutMs: 500 }),
     (err) => err.code === 'EDISGUISE_UNREACHABLE' && /did not answer/.test(err.message));
   assert.ok(Date.now() - started < 5000, 'bounded by the timeout, not by the server');
+});
+
+test('sending starting asks disguise — once, and only without an answer', () => {
+  // The sequence ping liveness cannot see: machine up throughout, Designer
+  // opened in between, encoder reconnected. No health transition anywhere, so
+  // the state-change trigger stayed silent and the pill sat at `connected`
+  // while the operator watched the axis move in Designer.
+  const { LinkManager } = require('../src/core/link-manager');
+  const manager = new LinkManager({ logger: { push() {} } });
+  const fired = [];
+  manager.onDestinationSendingStarted = (connId, d) => fired.push(d.id);
+
+  const frame = (sending) => ({ destinations: [{ id: 'd', health: 'connected', sending }] });
+  manager._watchDestinationHealth('c', frame(false));
+  manager._watchDestinationHealth('c', frame(true));
+  assert.deepEqual(fired, ['d'], 'the rise fires it');
+  manager._watchDestinationHealth('c', frame(true));
+  assert.deepEqual(fired, ['d'], 'staying up does not');
+  manager._watchDestinationHealth('c', frame(false));
+  manager._watchDestinationHealth('c', frame(true));
+  assert.deepEqual(fired, ['d', 'd'], 'a stall and resume is a fresh rise');
+
+  // And the api answers it only when there is no answer standing: an encoder
+  // stalling mid-show must not turn resumption into polling.
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  const handler = api.slice(api.indexOf('manager.onDestinationSendingStarted = '));
+  const body = handler.slice(0, handler.indexOf('\n  };'));
+  assert.match(body, /if \(manager\.disguiseChecks\.has\(dest\.id\)\) return;/,
+    'an answer already standing stays standing — nothing is forgotten, nothing re-asked');
+  assert.doesNotMatch(body, /disguiseChecks\.delete/,
+    'sending starting ends nothing, so it deletes nothing');
 });

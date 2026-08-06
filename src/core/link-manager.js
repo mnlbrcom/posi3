@@ -62,6 +62,10 @@ class LinkManager extends EventEmitter {
      * queried, which is the case disguise's documentation protects.
      */
     this._lastDestHealth = new Map();
+    /** Whether datagrams were flowing to each destination at the last tick. */
+    this._lastDestSending = new Map();
+    /** Set by the host: (connectionId, destination) => void. */
+    this.onDestinationSendingStarted = null;
 
     /** Set by the host: (connectionId, destination, health) => void. */
     this.onDestinationStateChange = null;
@@ -309,11 +313,13 @@ class LinkManager extends EventEmitter {
   forgetDestination(id) {
     this.disguiseChecks.delete(id);
     this._lastDestHealth.delete(id);
+    this._lastDestSending.delete(id);
   }
 
   forgetAllDestinations() {
     this.disguiseChecks.clear();
     this._lastDestHealth.clear();
+    this._lastDestSending.clear();
   }
 
   applyDisguiseChecks(t) {
@@ -348,8 +354,21 @@ class LinkManager extends EventEmitter {
       const now = d.health === 'receiving' || d.health === 'mismatch' ? 'connected' : d.health;
       const before = this._lastDestHealth.get(d.id);
       this._lastDestHealth.set(d.id, now);
-      if (before === undefined || before === now) continue;
-      if (this.onDestinationStateChange) this.onDestinationStateChange(id, d, now);
+      if (before !== undefined && before !== now) {
+        if (this.onDestinationStateChange) this.onDestinationStateChange(id, d, now);
+      }
+
+      // Sending starting is its own event. Under ping liveness a Designer
+      // coming up changes no health — the machine read `connected` while it
+      // booted, and the first datagrams draw no errors — so nothing ever
+      // asked disguise and the pill could not climb past `connected` while
+      // the operator watched the axis move. Data beginning to flow is the
+      // moment the question "does it land?" becomes askable.
+      const sentBefore = this._lastDestSending.get(d.id) || false;
+      this._lastDestSending.set(d.id, !!d.sending);
+      if (!sentBefore && d.sending) {
+        if (this.onDestinationSendingStarted) this.onDestinationSendingStarted(id, d);
+      }
     }
   }
 
