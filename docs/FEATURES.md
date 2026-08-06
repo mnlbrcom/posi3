@@ -5320,3 +5320,21 @@ only Remove, and only when there is more than one destination. The `enabled`
 flag itself stays in the schema and is still honoured everywhere (fanout,
 disguise asks, card labels), so a profile that carries a disabled destination
 keeps behaving as saved; there is simply no editor control for it any more.
+
+### Editor polish: IP wording, aligned Port, empty defaults, the note in its tile
+
+**Asked (2026-08-07):** the NavigatorDriver note moves into the Disguise tile
+and reads "The NavigatorDriver default port is 8000 and the axis ID must
+match the device ID."; the encoder's Label sits beside its Interface picker
+like the disguise rows; IP fields start empty; "address" becomes "IP"; and
+the encoder Port sat one line lower than its neighbour.
+
+All applied. The Port misalignment had a mechanism worth recording: the
+search status line lived *inside* the IP field's column, and `.row-inline`
+aligns to `flex-end`, so the shorter Port column bottom-aligned one line
+below its neighbour's label. `encoderAddressField` now hands back the
+control and the status separately, and the status renders under the row. New
+connections start with an empty encoder IP — the factory address is a hint
+below the field, not a value somebody typed — and the NavigatorDriver note
+sits directly under the DISGUISE SETTINGS title, reworded and pulling the
+port number from the constant.
