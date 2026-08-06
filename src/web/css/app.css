@@ -1096,6 +1096,12 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 10px 12px 4px; margin-bottom: 8px; background: var(--surface-2);
 }
+/* The editor's section tiles share the destination rows' box, so all three
+   sections of the form read as the same kind of thing. */
+.tile-body {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px 4px; margin-bottom: 8px; background: var(--surface-2);
+}
 /* A disabled destination stays visible and editable — it is a rig that is not
    in use tonight, not a mistake to be hidden. */
 .dest-row.off { opacity: .55; }

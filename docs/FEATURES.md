@@ -5293,3 +5293,15 @@ then the rest of the settings.
   *Settings* — velocity policy, coalesce policy, auto-start. The stray
   bottom-of-form "Encoder interface" block and its duplicated hint are gone
   into the Encoder tile.
+
+### The editor's three sections wear the same tile
+
+**Asked:** the Encoder section lacked the box the disguise rows have; box it,
+box the third section too, and retitle: ENCODER SETTINGS, DISGUISE SETTINGS,
+CONNECTION SETTINGS.
+
+The `tile()` helper now renders title-then-box (`.tile-body`, the same
+border/radius/surface the destination rows wear), so all three sections of
+the add/edit popup read as the same kind of thing. Titles renamed as
+specified; the small-caps treatment comes from the existing `.dest-title`
+rule unchanged.
