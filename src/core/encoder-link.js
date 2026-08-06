@@ -431,8 +431,15 @@ class EncoderLink extends EventEmitter {
         probeSentAt: 0,
         /** When TCP last proved this host alive. Stale once an error is newer. */
         aliveAt: 0,
-        /** The last handshake's verdict: true, false, or null for never asked. */
+        /** The last ping's verdict: true, false, or null for never asked. */
         destAlive: null,
+        /** When that verdict landed, and how many misses in a row. */
+        destAliveAt: 0,
+        pingFails: 0,
+        /** Whether this host has ever answered a ping — silence from one that
+         *  never has carries no information (a stealth firewall looks like
+         *  that), so only proven ping-speakers can be declared dead by ping. */
+        pingEverAnswered: false,
         /** When a datagram was last actually handed to this socket. */
         lastTxAt: 0,
         nextLivenessAt: 0,
@@ -970,7 +977,14 @@ class EncoderLink extends EventEmitter {
       sink.aliveProbe = null;
       if (alive === null) return;
       sink.destAlive = alive;
-      if (alive) sink.aliveAt = Date.now();
+      sink.destAliveAt = Date.now();
+      if (alive) {
+        sink.aliveAt = sink.destAliveAt;
+        sink.pingEverAnswered = true;
+        sink.pingFails = 0;
+      } else {
+        sink.pingFails++;
+      }
     });
     sink.aliveProbe = probe;
   }
@@ -993,12 +1007,12 @@ class EncoderLink extends EventEmitter {
   /**
    * Keep every destination's liveness current while nothing is being sent.
    *
-   * The send path carries its own evidence — ICMP answers packets — but it
-   * only runs when the encoder produces samples. During `connecting` and
-   * `reconnecting`, or with the encoder stalled, no packet is ever offered,
-   * so the handshake asks instead. One probe per sink per second, and only
-   * while the sink has been send-quiet: the moment real traffic resumes, the
-   * network's own answers take over.
+   * The send path carries its own evidence, but it is slow to admit a death:
+   * an unplugged LAN host draws no send error for the seconds ARP takes to
+   * give up — measured at eight to ten — while a ping needs no error at all,
+   * only the absence of a reply within its one-second deadline. So the pings
+   * continue while data flows, and a host that has been answering them going
+   * silent is read as gone within about two seconds instead of ten.
    */
   _startDestWatch() {
     if (this._destWatch) return;
@@ -1006,7 +1020,6 @@ class EncoderLink extends EventEmitter {
       const now = Date.now();
       for (const sink of this._sinks) {
         if (!sink.ready) continue;
-        if (sink.lastTxAt && now - sink.lastTxAt < DEST_SEND_QUIET_MS) continue;
         if (now < sink.nextLivenessAt) continue;
         sink.nextLivenessAt = now + OFFLINE_RETRY_MS;
         this._probeHostAlive(sink);
@@ -1881,6 +1894,18 @@ function destinationHealth(sink, running) {
   // The silence still has to have lasted. Errors recently, or suppressed sends,
   // mean not connected — otherwise the pill flipped for the second or two
   // between a trial resuming sends and the next error arriving.
+  // A ping-speaker that has stopped answering is gone, and the pings say so
+  // seconds before the send path can: an unplugged host draws no send error
+  // until ARP gives it up. Two misses in a row, and only from a host that has
+  // proven it answers pings — silence from one that never has carries no
+  // information, which is what a stealth firewall looks like, and that host's
+  // health stays with the send evidence. Freshness-bounded so a stale verdict
+  // cannot outlive the probes that produced it.
+  if (sink.pingEverAnswered && sink.pingFails >= 2 &&
+      Date.now() - sink.destAliveAt < 4000) {
+    return 'offline';
+  }
+
   // No datagram has been offered recently — the encoder is not producing —
   // so silence proves nothing and the ping answers instead. `idle` only for
   // the moment before the first one lands.

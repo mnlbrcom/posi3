@@ -5120,3 +5120,24 @@ if no answer is standing** — nothing is forgotten, nothing re-asked, so an
 encoder stalling and resuming mid-show stays silent, and the flow-start ask
 is debounced like every other automatic one. Data beginning to flow is the
 moment "does it land?" becomes askable.
+
+### An unplugged destination reads offline in ~2 s, not 10
+
+**Asked:** unplugging disguise 1 mid-stream took ten seconds to show offline —
+"should ping figure this out instantly?"
+
+It should, and the ten seconds were the send path's blind spot: an unplugged
+LAN host draws no send error for the eight-or-so seconds ARP takes to give it
+up (packets fly at a dead MAC, nothing objects), plus the two-second give-up.
+The pings had stood down while data flowed — and a ping needs no error at
+all, only the absence of a reply within its one-second deadline.
+
+The destination pings now continue through the stream, and **two consecutive
+misses from a host that has answered pings** read as `offline` — about two
+seconds after the cable comes out, no send error required. The condition
+carries the safeguard: silence from a host that has *never* answered a ping
+means nothing (that is what a stealth firewall looks like — the "US" laptop
+receives perfectly and answers no ping ever), so such hosts keep the send
+evidence as their judge. One answered ping clears the verdict, so a replug
+recovers as fast as it died. Freshness-bounded, so a stale verdict cannot
+outlive the probes that produced it.

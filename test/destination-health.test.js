@@ -380,3 +380,63 @@ test('a config match with nothing flowing is a match, not a delivery', () => {
   assert.equal(wrong.destinations[0].health, 'mismatch',
     'but a mismatch is about configuration and stands without data');
 });
+
+test('a ping-speaker going silent reads offline in seconds, mid-stream', async (t) => {
+  // Unplugging a destination while data flowed took ten seconds to show:
+  // an unplugged LAN host draws no send error until ARP gives it up, and the
+  // pings had stood down in favour of send evidence. They run through the
+  // stream now, and two consecutive misses from a host that has answered
+  // pings mean gone — no error needed, only the missing reply.
+  let answer = true;
+  const prev = EncoderLink.pingRunner;
+  EncoderLink.pingRunner = (host, onDone) => {
+    const timer = setTimeout(() => onDone(answer), 10);
+    return { kill: () => clearTimeout(timer) };
+  };
+  t.after(() => { EncoderLink.pingRunner = prev; });
+
+  const link = new EncoderLink({
+    id: 'pull', name: 'pull',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ id: 'd', name: 'd', host: '127.0.0.1', port: 65533, devid: 1 }]
+  });
+  t.after(() => { link.stop(); link.stopIdleProbe(); });
+  link._openUdp();
+  link._startDestWatch();
+  link._state = 'streaming';
+
+  const sink = link._sinks[0];
+  const health = () => link.snapshot().telemetry.destinations[0].health;
+
+  await until(() => sink.pingEverAnswered, 3000, 'the first answered ping');
+  // Data flowing, pings answering: healthy.
+  sink.lastTxAt = Date.now();
+  assert.equal(health(), 'connected');
+
+  // The cable comes out. Sends keep "succeeding" — ARP has not given up, so
+  // there are no errors to see — but the replies stop.
+  answer = false;
+  sink.lastTxAt = Date.now();
+  await until(() => sink.pingFails >= 2, 5000, 'two missed replies');
+  sink.lastTxAt = Date.now(); // still no send errors, and still:
+  assert.equal(health(), 'offline', 'the missing replies say gone before any send error can');
+
+  // And back: one answered ping clears the verdict.
+  answer = true;
+  await until(() => sink.pingFails === 0, 4000, 'the replug to be noticed');
+  sink.lastTxAt = Date.now();
+  assert.equal(health(), 'connected');
+});
+
+test('a host that never answered pings cannot be declared dead by them', () => {
+  // The stealth-firewall laptop: receives perfectly, answers no ping ever.
+  // Its silence carries no information, so its health stays with the send
+  // evidence — connected while packets leave and nothing objects.
+  const s = sink({
+    dest: { host: '127.0.0.1', port: 65533 },
+    pingEverAnswered: false, pingFails: 50, destAliveAt: Date.now(), destAlive: false,
+    lastTxAt: Date.now()
+  });
+  const { hostProvenBack } = require('../src/core/encoder-link');
+  assert.ok(hostProvenBack(s), 'never failed a send, so the send evidence stands');
+});
