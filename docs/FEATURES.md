@@ -5066,3 +5066,39 @@ Electron persists the zoom level per origin, so an out-of-range level from an
 earlier run is clamped once at launch — while the `--zoom` test hook stays
 deliberately unclamped, because `zoomcheck` proves the titlebar survives
 zooms the menu no longer offers. Pinned by `test/desktop-zoom.test.js`.
+
+### The probes become pings — disguise must never see us checking on it
+
+**Asked:** disguise 1 stayed `offline` after being plugged back in; then a
+live Designer popped "Error 0x2740: Only one usage of each socket address is
+normally permitted" at the operator — caused by posi3. Decision: "stay with
+the most easy ping to a system to check if it is offline or not, then move
+on."
+
+**Two defects found under this:**
+
+- **The replug was invisible because of a misplaced patch.** The probe-field
+  initialisers had been pasted into `_handleDisconnect` as well as the
+  constructor (the edit anchored on a code trio that exists in both places),
+  so every reconnect cycle nulled the timer handles — orphaning the intervals
+  and, across the stop/start cycles of a test session, *stacking* fresh ones
+  beside them. Removed; a regression test now forbids `_handleDisconnect`
+  from touching any probe field.
+- **The TCP handshake probe was a probe the probed software could see.** It
+  knocked on the very port disguise binds for its driver, once a second per
+  watcher — and Designer noticed, mid-session. Both probes (encoder idle,
+  destination watch) now use the system's `ping`: ICMP is answered by the
+  kernel, touches no port, and no application on the machine ever sees it.
+  The accepted trade, stated: a host whose firewall drops ICMP reads
+  `offline` even though it is up (macOS stealth mode does this — the "US"
+  laptop case); real disguise and encoder hardware answers ping.
+
+**Also measured on the way:** macOS `ping -W` (reply wait) miscounts even a
+loopback reply as lost, so darwin uses `-t` (deadline in seconds); and this
+development machine's stealth firewall drops loopback *self*-pings, which
+makes real ICMP unusable as a test fixture — under the node test runner the
+link therefore defaults to an injected fake pinger (TEST-NET-1 dead,
+everything else alive), and a leaked probe child can no longer hold a test
+file's event loop open. A stopped probe is also guaranteed silent now: a
+killed ping child still emits its exit, and its late answer used to overwrite
+whatever state the stop had just established.

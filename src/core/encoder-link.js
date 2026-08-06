@@ -24,6 +24,7 @@
  */
 
 const net = require('node:net');
+const { spawn } = require('node:child_process');
 const dgram = require('node:dgram');
 const { EventEmitter } = require('node:events');
 
@@ -84,51 +85,47 @@ const SEND_GIVE_UP_MS = 2000;
 const OFFLINE_RETRY_MS = 1000;
 
 /**
- * Proof that a host is up, rather than the absence of proof that it is down.
+ * Proof that a host is up, rather than the absence of proof that it is down —
+ * by the system's own `ping`, and deliberately nothing closer.
  *
- * UDP can only ever report failure, so recovery had to be inferred from silence
- * — and silence is exactly what a switched-off machine also produces, measured
- * at nine consecutive seconds at full send rate. Hence thirty seconds of quiet
- * before believing it, and hence a replugged cable sitting on `offline` for
- * half a minute while disguise was visibly receiving.
+ * The first version shook TCP hands with the destination's own port. It
+ * worked, and it was wrong: that port belongs to the software being fed, and
+ * disguise noticed the knocking — a live Designer popped
+ * "Error 0x2740: Only one usage of each socket address is normally permitted"
+ * at the operator, mid-session, caused by this app's liveness checks. A probe
+ * that the probed software can see is a probe too close.
  *
- * TCP settles it in one round trip. A completed handshake proves the host is
- * up; so does a refusal, because only a live machine sends RST. Either answer
- * is proof of life, and the port is the destination's own, so nothing new has
- * to be configured and nothing has to be listening on it.
- *
- * This is not the Designer Python API and runs no script: it is a connect and
- * an immediate close, the reachability test `ping` would give if raw sockets
- * did not need root. It runs only while a destination is already offline.
+ * ICMP echo is answered by the kernel: no port is touched, no application on
+ * the machine ever sees it, and it is exactly the "is it there" question being
+ * asked. The trade, accepted knowingly: a host whose firewall drops ICMP
+ * (macOS stealth mode does) reads offline even though it is up — for real
+ * disguise and encoder hardware that does not happen, and simplicity wins.
  */
-const HOST_ALIVE_TIMEOUT_MS = 800;
+const PING_TIMEOUT_MS = 900;
 
 /**
- * While a connection is *not* started, the encoder is probed with a TCP
- * handshake so its indicator can say what is true — `offline` for a device
- * that is unplugged, `connected` for one that answers. Without this, an idle
- * link's pill said `idle`, which describes posi3 and not the device: an
- * unplugged encoder and a healthy one looked identical until somebody
- * pressed Start.
+ * While a connection is *not* started, the encoder is pinged so its indicator
+ * can say what is true — `offline` for a device that is unplugged,
+ * `connected` for one that answers. Without this, an idle link's pill said
+ * `idle`, which describes posi3 and not the device: an unplugged encoder and
+ * a healthy one looked identical until somebody pressed Start.
  *
- * A handshake and an immediate close: no command is sent and nothing is
- * read, so the encoder's flash and configuration are untouched, and the
- * client slot is held for milliseconds. Never while running — a streaming
- * connection is its own proof.
+ * Ping, not a TCP connect: the encoder accepts only a handful of TCP clients
+ * and an ICMP echo consumes none of them, sends no command, and touches no
+ * flash. Never while running — a streaming connection is its own proof.
  */
 // Once a second, the cadence every liveness check here uses: an indicator is
 // only worth trusting if it admits a change about as fast as a person can
 // look at it. The timeout fits inside the interval so a dead host cannot
 // stretch the cadence.
 const IDLE_PROBE_MS = 1000;
-const IDLE_PROBE_TIMEOUT_MS = 900;
 
 /**
  * When no datagram has been offered to a sink for this long, the silence rule
- * has nothing to read: ICMP only ever answers a packet, so an unplugged
+ * has nothing to read: send errors only ever answer a packet, so an unplugged
  * destination behind an encoder that is not producing samples drew no
- * objection and wore `connected` on zero evidence. Past this quiet, the TCP
- * handshake is the evidence instead — the same rule the encoder side uses.
+ * objection and wore `connected` on zero evidence. Past this quiet, the ping
+ * is the evidence instead — the same rule the encoder side uses.
  */
 const DEST_SEND_QUIET_MS = 1500;
 
@@ -625,7 +622,7 @@ class EncoderLink extends EventEmitter {
       // A liveness connect outlives the link that opened it otherwise, and
       // stopping mid-outage is when one is most likely to be open.
       if (sink.aliveProbe) {
-        sink.aliveProbe.destroy();
+        sink.aliveProbe.kill();
         sink.aliveProbe = null;
       }
     }
@@ -694,12 +691,6 @@ class EncoderLink extends EventEmitter {
     this._prevPos = null;
     this._prevTs = null;
     this._prevMs = null;
-
-    /** What the idle handshake last proved: true, false, or null for not yet asked. */
-    this.encoderAlive = null;
-    this._idleProbeTimer = null;
-    this._idleProbe = null;
-    this._destWatch = null;
 
     if (this._socket) {
       this._socket.removeAllListeners();
@@ -943,36 +934,45 @@ class EncoderLink extends EventEmitter {
   }
 
   /**
-   * Ask TCP whether the machine is there. One attempt, never more than one open.
-   *
-   * Both a handshake and a refusal count: a host that RSTs is a host that is
-   * running an IP stack. Only a timeout, or the network saying the address is
-   * unreachable, leaves the question open — and then the thirty-second silence
-   * rule carries it, as before. So a firewall that drops everything degrades to
-   * exactly the old behaviour rather than to a wrong answer.
+   * One ICMP echo via the system's ping. Answers true (replied), false (no
+   * reply within the deadline), or null when ping itself could not run — and
+   * null changes nothing, because no evidence is not evidence of absence.
    */
+  _ping(host, onDone) {
+    // Test seam. Liveness tests assert the state machine, not the OS: real
+    // ICMP is unusable as a fixture — this development machine's stealth
+    // firewall drops even a loopback self-ping, and CI containers often
+    // cannot ping at all.
+    if (EncoderLink.pingRunner) return EncoderLink.pingRunner(host, onDone);
+    // Flags measured, not assumed. macOS `-W` (reply wait, ms) miscounts even
+    // a loopback reply as lost and exits 2, so darwin uses `-t` — the overall
+    // deadline in seconds — which exits 0 the moment the reply lands. Linux
+    // `-W` is per-reply and in seconds; Windows `-w` is in milliseconds.
+    const args = process.platform === 'win32'
+      ? ['-n', '1', '-w', String(PING_TIMEOUT_MS), host]
+      : process.platform === 'darwin'
+        ? ['-c', '1', '-t', '1', host]
+        : ['-c', '1', '-W', '1', host];
+    const child = spawn('ping', args, { stdio: 'ignore', timeout: PING_TIMEOUT_MS + 500 });
+    let settled = false;
+    child.on('exit', (code) => { if (!settled) { settled = true; onDone(code === 0); } });
+    child.on('error', () => { if (!settled) { settled = true; onDone(null); } });
+    return child;
+  }
+
+  /** Ask whether the destination's machine is there. One in flight, ever. */
   _probeHostAlive(sink) {
     if (sink.aliveProbe) return;
-
-    const socket = net.connect({ host: sink.dest.host, port: sink.dest.port });
-    sink.aliveProbe = socket;
-    socket.setTimeout(HOST_ALIVE_TIMEOUT_MS);
-
-    const settle = (alive) => {
-      if (sink.aliveProbe !== socket) return;
+    const probe = this._ping(sink.dest.host, (alive) => {
+      // A killed child still emits its exit: an answer from a probe that was
+      // stopped must not land, or it overwrites whatever stopped it.
+      if (sink.aliveProbe !== probe) return;
       sink.aliveProbe = null;
-      socket.destroy();
+      if (alive === null) return;
       sink.destAlive = alive;
       if (alive) sink.aliveAt = Date.now();
-    };
-    socket.on('connect', () => settle(true));
-    socket.on('timeout', () => settle(false));
-    // ECONNRESET as well as ECONNREFUSED: a port that accepts and drops is
-    // still a live machine.
-    socket.on('error', (err) => settle(err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET'));
-    // Never the reason a process stays up — this runs during an outage, which
-    // is exactly when someone is likely to be quitting.
-    socket.unref();
+    });
+    sink.aliveProbe = probe;
   }
 
   /**
@@ -1030,36 +1030,22 @@ class EncoderLink extends EventEmitter {
       this._idleProbeTimer = null;
     }
     if (this._idleProbe) {
-      this._idleProbe.destroy();
+      this._idleProbe.kill();
       this._idleProbe = null;
     }
   }
 
   _probeEncoderAlive() {
     if (this.running || this._idleProbe) return;
-    const { encoder } = this.config;
-    const socket = net.connect({
-      host: encoder.host,
-      port: encoder.port,
-      localAddress: encoder.localAddress || undefined
-    });
-    this._idleProbe = socket;
-    socket.setTimeout(IDLE_PROBE_TIMEOUT_MS);
-
-    const settle = (alive) => {
-      if (this._idleProbe !== socket) return;
+    const probe = this._ping(this.config.encoder.host, (alive) => {
+      // Same guard as the destination probe: a stopped probe stays silent.
+      if (this._idleProbe !== probe) return;
       this._idleProbe = null;
-      socket.destroy();
+      if (alive === null) return;
       this.encoderAlive = alive;
       this.emit('encoderEvent', { id: this.id, kind: 'encoderReachability', alive });
-    };
-    socket.on('connect', () => settle(true));
-    socket.on('timeout', () => settle(false));
-    // Unlike the destination probe, a refusal here is *not* proof of the thing
-    // that matters: an encoder always listens on its data port, so a machine
-    // that refuses is not an encoder ready to talk.
-    socket.on('error', () => settle(false));
-    socket.unref();
+    });
+    this._idleProbe = probe;
   }
 
   /** Said once per outage, whichever path noticed the destination was back. */
@@ -1865,7 +1851,7 @@ function sameValue(a, b) {
  * Has this destination stopped being in trouble?
  *
  * Three ways, in descending order of how much they prove. It has never failed;
- * TCP has since proved the machine alive; or it has simply been quiet long
+ * a ping has since proved the machine alive; or it has simply been quiet long
  * enough that a dead host would have said something by now.
  *
  * One function because the pill and the "reachable again" line both need the
@@ -1896,8 +1882,8 @@ function destinationHealth(sink, running) {
   // mean not connected — otherwise the pill flipped for the second or two
   // between a trial resuming sends and the next error arriving.
   // No datagram has been offered recently — the encoder is not producing —
-  // so the silence above proves nothing and the handshake answers instead.
-  // `idle` only for the moment before the first one lands.
+  // so silence proves nothing and the ping answers instead. `idle` only for
+  // the moment before the first one lands.
   if (!sink.lastTxAt || Date.now() - sink.lastTxAt >= DEST_SEND_QUIET_MS) {
     if (sink.destAlive === false) return 'offline';
     if (sink.destAlive === true) return 'connected';
@@ -1987,5 +1973,22 @@ function normaliseConfig(c) {
     notes: c.notes || ''
   };
 }
+
+/**
+ * Replaced by tests; null in production. See _ping.
+ *
+ * Under the node test runner a fake is the *default*: real ICMP is unusable
+ * as a fixture (a stealth firewall drops even loopback self-pings, and CI
+ * containers often cannot ping at all), and a leaked link's probe loop would
+ * hold a test file's event loop open forever — each tick's ping child is a
+ * live handle. TEST-NET-1 reads dead, everything else alive, on the next
+ * tick. Tests asserting specific liveness install their own runner anyway.
+ */
+EncoderLink.pingRunner = process.env.NODE_TEST_CONTEXT
+  ? (host, onDone) => {
+    const timer = setTimeout(() => onDone(!host.startsWith('192.0.2.')), 15);
+    return { kill: () => clearTimeout(timer) };
+  }
+  : null;
 
 module.exports = { EncoderLink, normaliseConfig, assertSafeValue, hostProvenBack };
