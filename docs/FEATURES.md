@@ -5305,3 +5305,18 @@ border/radius/surface the destination rows wear), so all three sections of
 the add/edit popup read as the same kind of thing. Titles renamed as
 specified; the small-caps treatment comes from the existing `.dest-title`
 rule unchanged.
+
+### The two tiles read as one form, and Enabled leaves the editor
+
+**Asked:** Name and Label are the same thing — one word for both; both tiles
+follow the same order (interface picker, label, ip, search, port, device ID
+on the disguise side); and the Enabled checkbox goes.
+
+Both tiles now open Interface → Label, then the address row: the encoder's
+address + Search + port, a destination's address + port + device ID. The
+connection's name field is titled Label like its destination counterparts.
+The Enabled checkbox is removed from the rows — the actions line now carries
+only Remove, and only when there is more than one destination. The `enabled`
+flag itself stays in the schema and is still honoured everywhere (fanout,
+disguise asks, card labels), so a profile that carries a disabled destination
+keeps behaving as saved; there is simply no editor control for it any more.
