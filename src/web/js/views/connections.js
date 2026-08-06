@@ -320,7 +320,7 @@ function destinationsEditor(c, nics, info) {
 
   const draw = () => {
     clear(list);
-    c.destinations.forEach((d, i) => list.appendChild(destinationRow(c, d, i, nics, draw)));
+    c.destinations.forEach((d, i) => list.appendChild(destinationRow(c, d, i, nics, info, draw)));
     list.appendChild(el('div', { class: 'dest-foot' },
       el('button', {
         class: 'btn sm', type: 'button', text: 'Add Destination',
@@ -347,13 +347,10 @@ function destinationsEditor(c, nics, info) {
   draw();
   return el('div', { class: 'dest-block' },
     el('div', { class: 'dest-title', text: 'Disguise Settings' }),
-    el('div', { class: 'hint', style: 'margin:0 0 6px' },
-      `The NavigatorDriver default port is ${info.constants.D3_FACTORY_PORT} ` +
-      'and the axis ID must match the device ID.'),
     list);
 }
 
-function destinationRow(c, d, index, nics, redraw) {
+function destinationRow(c, d, index, nics, info, redraw) {
   const only = c.destinations.length === 1;
 
   // The same shape as the encoder tile: interface, label, then where and
@@ -381,7 +378,11 @@ function destinationRow(c, d, index, nics, redraw) {
       field('Device ID', input({
         class: 'num-input', type: 'number', value: d.devid, style: 'width:88px',
         oninput: (e) => { d.devid = Number(e.target.value); }
-      }))),
+      },
+      ), index === 0
+        ? `The NavigatorDriver default port is ${info.constants.D3_FACTORY_PORT} ` +
+          'and the axis ID must match the device ID.'
+        : undefined)),
     only ? null : el('div', { class: 'dest-actions' },
       el('button', {
         class: 'btn sm ghost', type: 'button', text: 'Remove',

@@ -5338,3 +5338,9 @@ connections start with an empty encoder IP — the factory address is a hint
 below the field, not a value somebody typed — and the NavigatorDriver note
 sits directly under the DISGUISE SETTINGS title, reworded and pulling the
 port number from the constant.
+
+### The NavigatorDriver note sits under Device ID
+
+Clarified placement: not under the tile title but under the Device ID field —
+it is that field's explanation. Rendered as the field's own hint on the first
+destination row only, so a fan-out does not repeat it per row.
