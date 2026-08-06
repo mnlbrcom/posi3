@@ -272,6 +272,16 @@ class EncoderLink extends EventEmitter {
     this._idleProbeTimer = null;
     this._idleProbe = null;
     this._destWatch = null;
+    /**
+     * Whether each destination host has ever answered a ping, by host — on
+     * the *link*, not the sink, because sinks are transport and die with
+     * stop() while this is knowledge about a machine. Kept per-sink, a
+     * stop/start against an unplugged host forgot it had been a ping-speaker,
+     * which re-blinded the fast death path for exactly the ten seconds the
+     * fast path exists to remove. Bounded by the distinct hosts configured;
+     * pruned on reconfigure.
+     */
+    this._pingSpeakers = new Map();
     this._derivedVel = 0;
 
     this._latencyUs = new Float64Array(LATENCY_WINDOW);
@@ -384,6 +394,11 @@ class EncoderLink extends EventEmitter {
     this.stopIdleProbe();
     this.encoderAlive = null;
     this.config = normaliseConfig(Object.assign({}, this.config, config));
+    // Speaker memory follows the configuration: a host no longer configured
+    // takes its history with it.
+    for (const host of this._pingSpeakers.keys()) {
+      if (!this.config.destinations.some((d) => d.host === host)) this._pingSpeakers.delete(host);
+    }
     this._minSendGapMs = this.config.maxSendHz > 0 ? 1000 / this.config.maxSendHz : 0;
     if (wasRunning) this.start();
     else this.startIdleProbe();
@@ -438,8 +453,9 @@ class EncoderLink extends EventEmitter {
         pingFails: 0,
         /** Whether this host has ever answered a ping — silence from one that
          *  never has carries no information (a stealth firewall looks like
-         *  that), so only proven ping-speakers can be declared dead by ping. */
-        pingEverAnswered: false,
+         *  that), so only proven ping-speakers can be declared dead by ping.
+         *  Seeded from the link's memory so it survives sink rebuilds. */
+        pingEverAnswered: this._pingSpeakers.get(dest.host) === true,
         /** When a datagram was last actually handed to this socket. */
         lastTxAt: 0,
         nextLivenessAt: 0,
@@ -981,6 +997,7 @@ class EncoderLink extends EventEmitter {
       if (alive) {
         sink.aliveAt = sink.destAliveAt;
         sink.pingEverAnswered = true;
+        this._pingSpeakers.set(sink.dest.host, true);
         sink.pingFails = 0;
       } else {
         sink.pingFails++;
