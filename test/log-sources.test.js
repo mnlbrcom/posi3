@@ -498,3 +498,50 @@ test('a write-only variable is not reported unconfirmed for failing to read back
   assert.match(api, /results\.filter\(\(r\) => r\.verified === false\)/,
     'only an actual failure counts as not confirmed');
 });
+
+test('every indicator change writes one line; an unchanged pill writes none', async (t) => {
+  // The pills are the state; the log is the state *history*. Without this an
+  // operator could watch a destination die and find no timestamp for it —
+  // only the error messages, which arrive on their own schedule.
+  const { EncoderLink } = require('../src/core/encoder-link');
+  const prev = EncoderLink.pingRunner;
+  let answer = true;
+  EncoderLink.pingRunner = (host, onDone) => {
+    const timer = setTimeout(() => onDone(answer), 10);
+    return { kill: () => clearTimeout(timer) };
+  };
+  t.after(() => { EncoderLink.pingRunner = prev; });
+
+  const { manager } = apiWith();
+  t.after(() => manager.dispose());
+  const link = manager.upsert({
+    id: 'trace', name: 'Trace',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ id: 'd', name: 'disguise 9', host: '127.0.0.1', port: 65533, devid: 1 }]
+  });
+
+  const lines = () => manager.logger.tail({ limit: 200 })
+    .map((l) => l.text).filter((x) => /indicator:/.test(x));
+
+  // The idle handshake answers: the encoder pill's first *change* is traced.
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(lines().some((x) => /encoder indicator: idle → connected/.test(x)),
+    'the encoder pill establishing itself is history');
+
+  // And the device going away is one line with a timestamp, not silence.
+  answer = false;
+  await new Promise((r) => setTimeout(r, 2400));
+  assert.ok(lines().some((x) => /encoder indicator: connected → offline/.test(x)));
+
+  const count = lines().length;
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(lines().length, count,
+    'probes keep answering the same thing, and an unchanged pill is not news');
+
+  // Destinations trace through the tick; stopping traces the drop to idle.
+  manager._lastDestShown.set('d', 'receiving');
+  link._state = 'streaming';
+  manager.stop('trace');
+  assert.ok(lines().some((x) => /disguise 9 indicator: receiving → idle/.test(x)),
+    'the history does not end mid-air on whatever the pill last said');
+});

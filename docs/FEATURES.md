@@ -5163,3 +5163,22 @@ lives in one table: `test/destination-health-matrix.test.js` enumerates every
 evidence combination and the word the pill must say, through the real
 snapshot path. A change to the health rules edits the table first, sees every
 neighbour it touches, and only then the code.
+
+### Every indicator change is one log line — the state history, timed
+
+**Asked:** does every indicator change write a log entry? It should, to
+follow timings and state history separately from the actual error messages.
+
+It did not: encoder link states logged (`[streaming] …`), but the
+device-truth indicators were silent — the encoder pill's offline/connected
+and every destination pill change (including the climb to `receiving` and the
+two-second ping death) left no timestamp. The manager now traces both: one
+`info` line per *change*, in one shape — `encoder indicator: idle →
+connected`, `disguise 1 indicator: receiving → offline` — computed where the
+health is computed, so every browser and the log agree by construction.
+Changes only (the states are computed thirty times a second; an unchanged
+pill is not news); every pill's baseline is `idle` at registration, so the
+first establishment is a logged change; and stopping traces the drop to
+`idle`, so the history never ends mid-air. The manager's encoder mapping must
+match the browser's `encoderIndicator()` — the trace test holds them to the
+same words.

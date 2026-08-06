@@ -64,6 +64,15 @@ class LinkManager extends EventEmitter {
     this._lastDestHealth = new Map();
     /** Whether datagrams were flowing to each destination at the last tick. */
     this._lastDestSending = new Map();
+    /**
+     * The last *displayed* state per indicator, for the trace. Every change of
+     * any pill writes one info line — `disguise 1 indicator: connected →
+     * offline` — so the log carries the state history with its timings,
+     * separate from the error messages. Changes only: the states are computed
+     * thirty times a second and an unchanged pill is not news.
+     */
+    this._lastDestShown = new Map();
+    this._lastEncShown = new Map();
     /** Set by the host: (connectionId, destination) => void. */
     this.onDestinationSendingStarted = null;
 
@@ -105,14 +114,24 @@ class LinkManager extends EventEmitter {
         level: e.state === 'error' ? 'error' : 'info',
         text: `[${e.state}] ${e.detail}`
       });
+      this._traceEncoderIndicator(link);
     });
-    link.on('encoderEvent', (e) => this.emit('encoderEvent', e));
+    link.on('encoderEvent', (e) => {
+      if (e.kind === 'encoderReachability') this._traceEncoderIndicator(link);
+      this.emit('encoderEvent', e);
+    });
     link.on('fieldLayout', (e) => this.emit('fieldLayout', e));
     link.on('encoderMeta', (e) => this.emit('encoderMeta', e));
     link.on('log', (e) => this.logger.push(e));
 
     this._links.set(config.id, link);
     this._rates.set(config.id, { samples: [] });
+    // Every pill starts life saying `idle`, and that is the baseline the
+    // trace measures changes against — so the very first establishment
+    // (idle → connected, idle → offline) is a logged change, not a silent
+    // seed. Set before the probe starts, or its answer races the baseline.
+    this._lastEncShown.set(config.id, 'idle');
+    for (const d of config.destinations || []) this._lastDestShown.set(d.id, 'idle');
     // A registered link watches its encoder even while idle — that is what
     // lets the indicator say offline/connected instead of just "not started".
     link.startIdleProbe();
@@ -157,6 +176,11 @@ class LinkManager extends EventEmitter {
     const link = this._links.get(id);
     if (!link) throw new Error(`No such connection: ${id}`);
     link.stop();
+    // The tick only sees running links, so the drop to idle is traced here —
+    // otherwise the history ends mid-air on whatever the pill last said.
+    for (const d of link.config.destinations || []) {
+      this._traceDestIndicator(link, { id: d.id, name: d.name, host: d.host, port: d.port, health: 'idle' });
+    }
     this._syncTimer();
     return link;
   }
@@ -176,7 +200,13 @@ class LinkManager extends EventEmitter {
   /** @returns {number} how many links actually had to be stopped. */
   stopAll() {
     let stopped = 0;
-    for (const link of this._links.values()) if (link.stop()) stopped++;
+    for (const link of this._links.values()) {
+      if (!link.stop()) continue;
+      stopped++;
+      for (const d of link.config.destinations || []) {
+        this._traceDestIndicator(link, { id: d.id, name: d.name, host: d.host, port: d.port, health: 'idle' });
+      }
+    }
     this._syncTimer();
     return stopped;
   }
@@ -238,6 +268,7 @@ class LinkManager extends EventEmitter {
       const raw = link.telemetry();
       this._watchDestinationHealth(link.id, raw);
       const t = this.applyDisguiseChecks(raw);
+      for (const d of t.destinations || []) this._traceDestIndicator(link, d);
       const rate = this._rates.get(link.id);
       if (rate) {
         // Counters, not deltas: the oldest sample still inside the window and
@@ -314,12 +345,51 @@ class LinkManager extends EventEmitter {
     this.disguiseChecks.delete(id);
     this._lastDestHealth.delete(id);
     this._lastDestSending.delete(id);
+    this._lastDestShown.delete(id);
   }
 
   forgetAllDestinations() {
     this.disguiseChecks.clear();
     this._lastDestHealth.clear();
     this._lastDestSending.clear();
+    this._lastDestShown.clear();
+  }
+
+  /**
+   * What the encoder pill says, computed the way the browser computes it —
+   * the mapping in src/web/js/store.js encoderIndicator() must agree, and a
+   * test holds the two to the same table. One line per change.
+   */
+  _traceEncoderIndicator(link) {
+    const state = link._state;
+    const alive = link.encoderAlive;
+    const shown = state === 'streaming' ? 'sending'
+      : state === 'connected' ? 'starting'
+        : state !== 'idle' ? state
+          : alive === true ? 'connected'
+            : alive === false ? 'offline'
+              : 'idle';
+    const before = this._lastEncShown.get(link.id);
+    if (before === shown) return;
+    this._lastEncShown.set(link.id, shown);
+    if (before === undefined) return; // the first computation is not a change
+    this.logger.push({
+      id: link.id, name: link.config.name, dir: 'app', level: 'info',
+      text: `encoder indicator: ${before} → ${shown}`
+    });
+  }
+
+  /** One line per change of a destination pill, with the name the pill wears. */
+  _traceDestIndicator(link, d) {
+    const before = this._lastDestShown.get(d.id);
+    if (before === d.health) return;
+    this._lastDestShown.set(d.id, d.health);
+    if (before === undefined) return;
+    const label = d.name || `${d.host}:${d.port}`;
+    this.logger.push({
+      id: link.id, name: link.config.name, dir: 'app', level: 'info',
+      text: `${label} indicator: ${before} → ${d.health}`
+    });
   }
 
   applyDisguiseChecks(t) {
