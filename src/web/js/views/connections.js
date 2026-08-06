@@ -271,10 +271,10 @@ function encoderAddressField(c, nicOf) {
     }
   });
 
-  return el('div', {},
-    el('div', { class: 'addr-row' }, box, search),
-    options,
-    status);
+  return {
+    control: el('div', {}, el('div', { class: 'addr-row' }, box, search), options),
+    status
+  };
 }
 
 /** Two connections sharing a device ID collide silently inside disguise. */
@@ -341,17 +341,15 @@ function destinationsEditor(c, nics, info) {
           });
           draw();
         }
-      }),
-      el('span', {
-        class: 'hint',
-        text: `The NavigatorDriver port in disguise must match (it defaults to ${info.constants.D3_FACTORY_PORT}), ` +
-          'and the Axis id must match the device ID.'
       })));
   };
 
   draw();
   return el('div', { class: 'dest-block' },
     el('div', { class: 'dest-title', text: 'Disguise Settings' }),
+    el('div', { class: 'hint', style: 'margin:0 0 6px' },
+      `The NavigatorDriver default port is ${info.constants.D3_FACTORY_PORT} ` +
+      'and the axis ID must match the device ID.'),
     list);
 }
 
@@ -372,7 +370,7 @@ function destinationRow(c, d, index, nics, redraw) {
         oninput: (e) => { d.name = e.target.value; }
       }))),
     el('div', { class: 'row-inline' },
-      field('Disguise server address', input({
+      field('Disguise server IP', input({
         class: 'mono-input', value: d.host,
         oninput: (e) => { d.host = e.target.value.trim(); }
       })),
@@ -404,7 +402,7 @@ export async function openEditor(existing) {
     ? JSON.parse(JSON.stringify(existing))
     : {
       name: `Encoder ${store.connections.length + 1}`,
-      encoder: { host: info.constants.DEFAULT_ENCODER_IP, port: info.constants.DEFAULT_ENCODER_PORT, localAddress: null },
+      encoder: { host: '', port: info.constants.DEFAULT_ENCODER_PORT, localAddress: null },
       destinations: [{
         id: `dest-${Date.now()}`, name: '', host: '', port: info.constants.DEFAULT_D3_PORT,
         devid: nextDevid(), enabled: true, localAddress: null, localIfName: null, localPort: null
@@ -442,6 +440,8 @@ export async function openEditor(existing) {
     }
   }
 
+  const addr = encoderAddressField(c, () => c.encoder.localAddress);
+
   // The same tile structure as everywhere else: what a section is about, in
   // small caps, then its fields. Encoder first, then where its data goes,
   // then the behaviour settings.
@@ -458,20 +458,23 @@ export async function openEditor(existing) {
       // socket and each disguise socket independently, so an isolated encoder
       // network and a production disguise network can run at the same time.
       // Each destination below carries its own picker.
-      field('Interface',
-        select(nics, c.encoder.localAddress || '', (v) => {
-          c.encoder.localAddress = v || null;
-          c.encoder.localIfName = nicNameFor(nics, v);
-        }),
-        'Which NIC to reach the encoder from — Search with "Any" looks on every interface.'),
-      field('Label', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } })),
       el('div', { class: 'row-inline' },
-        field('Encoder address', encoderAddressField(c, () => c.encoder.localAddress)),
+        field('Interface',
+          select(nics, c.encoder.localAddress || '', (v) => {
+            c.encoder.localAddress = v || null;
+            c.encoder.localIfName = nicNameFor(nics, v);
+          })),
+        field('Label', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } }))),
+      el('div', { class: 'hint' },
+        'Which NIC to reach the encoder from — Search with "Any" looks on every interface.'),
+      el('div', { class: 'row-inline' },
+        field('Encoder IP', addr.control),
         field('Port', input({
           class: 'num-input shrink', type: 'number', value: c.encoder.port, style: 'width:90px',
           oninput: (e) => { c.encoder.port = Number(e.target.value); }
         }))),
-      el('div', { class: 'hint', style: 'margin:-8px 0 4px' },
+      addr.status,
+      el('div', { class: 'hint', style: 'margin:4px 0' },
         `Factory default is ${info.constants.DEFAULT_ENCODER_IP} on TCP ${info.constants.DEFAULT_ENCODER_PORT}. ` +
         'Hardware switch 2 in the connection cap forces that address regardless of what is programmed.')),
 
