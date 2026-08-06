@@ -155,8 +155,6 @@ function sanitiseConnection(raw) {
   if (raw.id) out.id = checkId(raw.id);
   out.name = String(raw.name || 'Encoder').slice(0, 120);
   out.autoStart = !!raw.autoStart;
-  out.logRaw = !!raw.logRaw;
-  out.notes = String(raw.notes || '').slice(0, 2000);
 
   const enc = raw.encoder || {};
   out.encoder = {
