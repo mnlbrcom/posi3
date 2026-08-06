@@ -23,6 +23,16 @@
  *   --coalesce N   records per TCP write      (1)
  *   --warmup PCT   discard this % up front    (10)
  *   --policy P     every|latest               (every)
+ *   --destinations N  fan out to N sinks on one socket (1)
+ *   --probes M     off|real                   (off)
+ *
+ * `--probes off` (the default) replaces the liveness ping runner with a
+ * no-op, so the numbers describe the pure forwarding path. `--probes real`
+ * leaves the production spawn-per-second ping engine running during the
+ * measurement — the comparison between the two is what decides whether that
+ * engine is allowed to stay (see docs/FEATURES.md for the dated baselines).
+ * Before this flag existed the bench always measured itself with probes
+ * running, so no honest number existed either way.
  */
 
 const net = require('node:net');
@@ -35,8 +45,16 @@ const opts = parseArgs(process.argv, {
   cycle: 2,
   coalesce: 1,
   warmup: 10,
-  policy: 'every'
+  policy: 'every',
+  destinations: 1,
+  probes: 'off'
 });
+
+if (opts.probes !== 'real') {
+  // A probe that never answers and never spawns: the single-flight guard sees
+  // it as forever in flight, so the dest watch costs one Map lookup a second.
+  EncoderLink.pingRunner = () => ({ kill() {} });
+}
 
 const sentAt = new Float64Array(opts.samples + 16);
 const latencies = [];
@@ -61,7 +79,7 @@ sink.on('message', (msg) => {
     if (!m) { malformed++; continue; }
     const pos = Number(m[2]);
     if (pos >= sentAt.length || sentAt[pos] === 0) { malformed++; continue; }
-    if (seen[pos]) { duplicates++; continue; }
+    if (seen[pos]) { duplicates++; continue; } // expected fanout re-delivery when --destinations > 1
     seen[pos] = 1;
     received++;
     latencies.push((now - sentAt[pos]) * 1000); // microseconds
@@ -139,6 +157,7 @@ function finish() {
   console.log(`sent ${opts.samples}  received ${received}  ` +
     `lost ${opts.samples - received}  duplicates ${duplicates}  malformed ${malformed}`);
   console.log(`cycle ${opts.cycle} ms   coalesce ${opts.coalesce}   policy ${opts.policy}   ` +
+    `fanout ${Math.max(1, opts.destinations)}   probes ${opts.probes === 'real' ? 'real' : 'off'}   ` +
     `(discarded first ${opts.warmup}% as warm-up)`);
   console.log('');
   console.log(`  mean   ${mean.toFixed(1).padStart(8)} µs`);
@@ -168,7 +187,11 @@ sink.bind(0, '127.0.0.1', () => {
       id: 'bench',
       name: 'bench',
       encoder: { host: '127.0.0.1', port: encPort },
-      d3: { host: '127.0.0.1', port: sinkPort, devid: 1 },
+      // The current shape, not the schema-1 `d3:` mirror — and N sinks, so
+      // the bench exercises the same fanout loop the show runs.
+      destinations: Array.from({ length: Math.max(1, opts.destinations) }, (_, i) => ({
+        id: `bench-${i + 1}`, host: '127.0.0.1', port: sinkPort, devid: i + 1
+      })),
       velocityPolicy: 'zero',
       udpSendPolicy: opts.policy,
       reconnect: { enabled: false }

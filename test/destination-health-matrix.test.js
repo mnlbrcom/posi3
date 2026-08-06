@@ -30,7 +30,7 @@ function sink(over) {
     dest: { host: 'h', port: 1 },
     ready: true, offline: false,
     tx: 0, txErrors: 0, lastError: null, lastErrorCode: null, lastErrorAt: 0,
-    failingSince: 0, suppressed: 0, trialUntil: 0,
+    failingSince: 0, suppressed: 0, trialUntil: 0, recovered: false,
     aliveAt: 0, destAlive: null, destAliveAt: 0, lastTxAt: 0,
     pingFails: 0, pingEverAnswered: false
   }, over);
