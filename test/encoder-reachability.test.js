@@ -174,3 +174,25 @@ test('a disconnect must not orphan the watches or wipe their answers', async (t)
       `_handleDisconnect must not touch ${field} — a reconnect is not a teardown`);
   }
 });
+
+test('speaker memory survives stop and start', async (t) => {
+  // The reported loop: unplug, stop, start — and the pill sat at `connected`
+  // for ten seconds again. Fresh sinks forgot the host had been answering
+  // pings, and an unplugged host can never re-earn the status, so the fast
+  // death path was blind exactly when it was wanted. The memory lives on the
+  // link now; sinks are transport and die, knowledge about a machine does not.
+  installFakePing(t);
+  const l = new EncoderLink({
+    id: 'mem', name: 'mem',
+    encoder: { host: '127.0.0.1', port: 65534 },
+    destinations: [{ id: 'd', host: '127.0.0.1', port: 65533, devid: 1 }]
+  });
+  t.after(() => { l.stop(); l.stopIdleProbe(); });
+
+  l.start();
+  await until(() => l._sinks[0] && l._sinks[0].pingEverAnswered, 3000, 'the first answer');
+  l.stop();
+  l.start();
+  assert.equal(l._sinks[0].pingEverAnswered, true,
+    'a fresh sink is seeded with what the link already knows about this host');
+});

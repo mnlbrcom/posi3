@@ -5141,3 +5141,25 @@ receives perfectly and answers no ping ever), so such hosts keep the send
 evidence as their judge. One answered ping clears the verdict, so a replug
 recovers as fast as it died. Freshness-bounded, so a stale verdict cannot
 outlive the probes that produced it.
+
+### Speaker memory survives stop/start — and the health rules get one table
+
+**Asked:** disguise 1 unplugged read `connected` again after a stop/start —
+"we are running loops and fixing one thing again breaks another."
+
+**The regression:** the fast ping-death path requires the host to have
+*answered* pings before its silence counts (the stealth-laptop safeguard) —
+and that flag lived on the sink, which `stop()` destroys. A fresh sink after
+stop/start knew nothing, an unplugged host can never re-earn the status, so
+the fast path was blind for exactly the ten seconds it exists to remove. The
+memory now lives on the link, keyed by host: sinks are transport and die,
+knowledge about a machine does not. Pruned when reconfigure drops the host.
+
+**The loop, named and answered:** destination health is judged from five
+kinds of evidence — running, send recency, send errors and their quiet, ping
+verdicts, the disguise answer — and the judgement had accreted as guard
+clauses, one per fix, each edited blind to the rest. The whole contract now
+lives in one table: `test/destination-health-matrix.test.js` enumerates every
+evidence combination and the word the pill must say, through the real
+snapshot path. A change to the health rules edits the table first, sees every
+neighbour it touches, and only then the code.
