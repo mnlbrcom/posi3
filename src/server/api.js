@@ -642,6 +642,30 @@ function createApi(ctx) {
     establishState(conn, live, { auto: true, recheck: 1 }).catch(() => { /* silent */ });
   };
 
+  /**
+   * Data has started flowing to a destination that has no disguise answer.
+   *
+   * Not a state change — nothing ended, so nothing is forgotten — and not a
+   * repeat either: with an answer already standing this stays quiet, so an
+   * encoder stalling and resuming mid-show asks nothing. It exists for the
+   * sequence ping liveness cannot see: machine up throughout, Designer opened
+   * somewhere in between, encoder reconnected — no health transition
+   * anywhere, and the operator watching the axis move under a pill stuck at
+   * `connected`.
+   */
+  manager.onDestinationSendingStarted = (connId, dest) => {
+    if (manager.disguiseChecks.has(dest.id)) return;
+    const conn = store.find(connId);
+    if (!conn) return;
+    const live = (conn.destinations || []).find((d) => d.id === dest.id);
+    if (!live || live.enabled === false) return;
+    if (noApi.has(dest.id)) return;
+    const last = lastAutoAsk.get(dest.id) || 0;
+    if (Date.now() - last < AUTO_ASK_GAP_MS) return;
+    lastAutoAsk.set(dest.id, Date.now());
+    establishState(conn, live, { auto: true, recheck: 1 }).catch(() => { /* silent */ });
+  };
+
   const establishAll = (conn) => {
     let delay = 1500;
     for (const dest of conn.destinations || []) {
