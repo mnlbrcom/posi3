@@ -229,31 +229,33 @@ test('a host proven alive by TCP does not also have to wait out the silence', ()
     'drops everything degrades to the old behaviour, not to a wrong answer');
 });
 
-test('a refusal counts as proof of life, an unroutable address does not', async (t) => {
-  // Only a live machine sends RST. This is the case that matters most, because
-  // a disguise host with nothing on the UDP port is exactly the rig that was
-  // sitting on `offline` while the show ran.
-  const probe = dgram.createSocket('udp4');
-  const port = await new Promise((r) => probe.bind(0, '127.0.0.1', () => r(probe.address().port)));
-  await new Promise((r) => probe.close(r));
-
+test('an answered ping counts as proof of life, an unanswered one does not', async (t) => {
+  // Ping, deliberately, and nothing closer: the TCP version of this probe
+  // knocked on the destination's own port and a live Designer popped
+  // "Error 0x2740" at the operator. ICMP touches no port.
+  const prev = EncoderLink.pingRunner;
+  EncoderLink.pingRunner = (host, onDone) => {
+    const timer = setTimeout(() => onDone(!host.startsWith('192.0.2.')), 15);
+    return { kill: () => clearTimeout(timer) };
+  };
+  t.after(() => { EncoderLink.pingRunner = prev; });
   const link = new EncoderLink({
     id: 'alive', name: 'alive',
     // Never a real encoder address: this link is never started, but a fixture
     // that could reach hardware has cost flash writes here before.
     encoder: { host: '127.0.0.1', port: 65534 },
-    destinations: [{ id: 'd', host: '127.0.0.1', port }]
+    destinations: [{ id: 'd', host: '127.0.0.1', port: 65533 }]
   });
   t.after(() => link.stop());
 
-  const refused = sink({ dest: { host: '127.0.0.1', port } });
-  link._probeHostAlive(refused);
-  await until(() => refused.aliveAt > 0, 3000, 'a refusal to be read as alive');
+  const here = sink({ dest: { host: '127.0.0.1', port: 65533 } });
+  link._probeHostAlive(here);
+  await until(() => here.aliveAt > 0, 4000, 'loopback to answer');
 
   // 192.0.2.0/24 is TEST-NET-1, reserved by RFC 5737 and routed nowhere.
   const gone = sink({ dest: { host: '192.0.2.1', port: 6000 } });
   link._probeHostAlive(gone);
-  await sleep(1200);
+  await sleep(2200);
   assert.equal(gone.aliveAt, 0, 'nothing answered, so nothing is claimed');
   assert.equal(gone.aliveProbe, null, 'and the attempt was cleaned up');
 });
@@ -325,10 +327,16 @@ test('a recovery announcement counts this outage, not the whole run', async (t) 
   assert.equal(sink.txErrors, 7, 'while the cumulative counter keeps the run total');
 });
 
-test('with nothing sent, the handshake decides — silence is not evidence', async (t) => {
+test('with nothing sent, the ping decides — silence is not evidence', async (t) => {
+  const prev = EncoderLink.pingRunner;
+  EncoderLink.pingRunner = (host, onDone) => {
+    const timer = setTimeout(() => onDone(!host.startsWith('192.0.2.')), 15);
+    return { kill: () => clearTimeout(timer) };
+  };
+  t.after(() => { EncoderLink.pingRunner = prev; });
   // The reported case: encoder unplugged, so no samples and no datagrams —
   // and the unplugged destination wore `connected` on zero evidence, because
-  // ICMP only ever answers a packet nobody was sending.
+  // send errors only ever answer a packet nobody was sending.
   const link = new EncoderLink({
     id: 'quiet', name: 'quiet',
     encoder: { host: '127.0.0.1', port: 65534 },
@@ -336,8 +344,8 @@ test('with nothing sent, the handshake decides — silence is not evidence', asy
       // TEST-NET-1: unroutable, so the handshake fails without a packet
       // leaving the machine.
       { id: 'gone', name: 'gone', host: '192.0.2.1', port: 6000, devid: 1 },
-      // Loopback: this machine is up, and for a destination a refusal proves
-      // it — "US is connected but not receiving; it is this laptop".
+      // Loopback: this machine is up and answers its own ping —
+      // "US is connected but not receiving; it is this laptop".
       { id: 'here', name: 'here', host: '127.0.0.1', port: 65533, devid: 2 }
     ]
   });
