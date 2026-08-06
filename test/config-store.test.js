@@ -253,3 +253,23 @@ test('schema 5: dead keys are stripped at every load, at every depth', () => {
   });
   assert.equal(withPending.encoder.pendingHost, '192.0.2.30');
 });
+
+test('an old schema is rewritten to disk at load, not at the next save', () => {
+  // "Remove the stale keys" means from the file: a profile never edited again
+  // must not carry them forever just because nothing triggered a save.
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({
+    version: 4, settings: { defaultVelocityPolicy: 'zero' },
+    connections: [{
+      id: 'c', name: 'A', logRaw: true,
+      encoder: { host: '192.0.2.20', port: 6000 },
+      destinations: [{ id: 'd', host: '192.0.2.4', port: 6000, devid: 1 }]
+    }]
+  }));
+
+  loaded(dir);
+  const onDisk = JSON.parse(fs.readFileSync(path.join(dir, 'profile.json'), 'utf8'));
+  assert.equal(onDisk.version, 5, 'the file itself is upgraded');
+  assert.equal('logRaw' in onDisk.connections[0], false);
+  assert.equal('defaultVelocityPolicy' in onDisk.settings, false);
+});

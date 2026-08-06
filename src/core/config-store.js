@@ -122,6 +122,12 @@ class ConfigStore {
     const primary = this._tryRead(this.file);
     if (primary.ok) {
       this._adopt(primary.data);
+      // An old schema is rewritten now, not at the next incidental save:
+      // "remove the stale keys" means from the file, and a profile that is
+      // never edited again would otherwise carry them forever.
+      if (!this.readOnly && Number(primary.data.version) !== SCHEMA_VERSION) {
+        this.save({ immediate: true });
+      }
       return this.profile;
     }
 
