@@ -358,6 +358,8 @@ function destinationsEditor(c, nics, info) {
 function destinationRow(c, d, index, nics, redraw) {
   const only = c.destinations.length === 1;
 
+  // The same shape as the encoder tile: interface, label, then where and
+  // what — so the two sections read as variations of one form.
   return el('div', { class: 'dest-row' + (d.enabled === false ? ' off' : '') },
     el('div', { class: 'row-inline' },
       field('Interface',
@@ -365,29 +367,25 @@ function destinationRow(c, d, index, nics, redraw) {
           d.localAddress = v || null;
           d.localIfName = nicNameFor(nics, v);
         })),
-      field(index === 0 ? 'disguise server address' : 'Address', input({
+      field('Label', input({
+        value: d.name, placeholder: index === 0 ? 'e.g. director' : 'e.g. understudy',
+        oninput: (e) => { d.name = e.target.value; }
+      }))),
+    el('div', { class: 'row-inline' },
+      field('Disguise server address', input({
         class: 'mono-input', value: d.host,
         oninput: (e) => { d.host = e.target.value.trim(); }
       })),
       field('Port', input({
         class: 'num-input', type: 'number', value: d.port, style: 'width:88px',
         oninput: (e) => { d.port = Number(e.target.value); }
-      }))),
-    el('div', { class: 'row-inline' },
+      })),
       field('Device ID', input({
         class: 'num-input', type: 'number', value: d.devid, style: 'width:88px',
         oninput: (e) => { d.devid = Number(e.target.value); }
-      })),
-      field('Label', input({
-        value: d.name, placeholder: index === 0 ? 'e.g. director' : 'e.g. understudy',
-        oninput: (e) => { d.name = e.target.value; }
       }))),
-    el('div', { class: 'dest-actions' },
-      checkbox('Enabled', d.enabled !== false, (v) => {
-        d.enabled = v;
-        redraw();
-      }),
-      only ? null : el('button', {
+    only ? null : el('div', { class: 'dest-actions' },
+      el('button', {
         class: 'btn sm ghost', type: 'button', text: 'Remove',
         onclick: () => { c.destinations.splice(index, 1); redraw(); }
       })));
@@ -466,7 +464,7 @@ export async function openEditor(existing) {
           c.encoder.localIfName = nicNameFor(nics, v);
         }),
         'Which NIC to reach the encoder from — Search with "Any" looks on every interface.'),
-      field('Name', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } })),
+      field('Label', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } })),
       el('div', { class: 'row-inline' },
         field('Encoder address', encoderAddressField(c, () => c.encoder.localAddress)),
         field('Port', input({
