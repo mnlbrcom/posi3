@@ -36,7 +36,7 @@ function stripUnsafeKeys(value) {
   return value;
 }
 const {
-  scanSubnet, scannableInterfaces, readVariablesOnce, writeVariablesOnce, probe
+  scanSubnet, scanAllSubnets, scannableInterfaces, readVariablesOnce, writeVariablesOnce, probe
 } = require('../core/discover');
 const flashBudget = require('../core/flash-budget');
 const { inspectReceivers } = require('../core/disguise-api');
@@ -727,11 +727,12 @@ function createApi(ctx) {
      * scanner with an HTTP front end.
      */
     discoverEncoders: async ({ localAddress, port }) => {
-      const nic = checkHost(localAddress, 'Interface address');
-      return scanSubnet({
-        localAddress: nic,
-        port: port === undefined || port === null ? undefined : checkPort(port, 'Encoder port')
-      });
+      const p = port === undefined || port === null ? undefined : checkPort(port, 'Encoder port');
+      // No interface named means "Any": every scannable NIC in turn. The
+      // range is still derived from each NIC's own netmask, never from the
+      // caller, so this cannot be pointed at someone else's network.
+      if (!localAddress) return scanAllSubnets({ port: p });
+      return scanSubnet({ localAddress: checkHost(localAddress, 'Interface address'), port: p });
     },
 
     // -- mapping helper -----------------------------------------------------

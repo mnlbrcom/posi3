@@ -5263,3 +5263,33 @@ in it (appears only once an address is programmed — the whitelist must not
 eat it, and the migration test pins exactly that). All writers of the dead
 fields removed (`config-store.js`, `validate.js`, `encoder-link.js`
 normalise).
+
+## 2026-08-06 — "Any" searches everywhere, and the editor becomes tiles
+
+**Asked:** with the interface on "Any", encoder Search refused ("Choose an
+encoder interface below first"). It should search every available NIC — only
+the ones actually present. And the add/edit popup should follow the tile
+structure: an Encoder tile (interface picker, name, address with Search,
+port), a Disguise Destinations tile (per-destination interface picker, server
+address, port, device ID, label, enable checkbox, Add Destination below),
+then the rest of the settings.
+
+**Built:**
+
+- **`scanAllSubnets` in discover.js**: every scannable interface in turn —
+  sequential, so the probe burst stays one subnet wide at a time; a host
+  reachable from two NICs is offered once; interfaces too large or degenerate
+  to walk are reported as `skipped`, never silently ignored. The api treats a
+  missing `localAddress` as Any; the range is still derived from each NIC's
+  own netmask, never from the caller. The refusal is gone — "Any" is where a
+  search *starts*, since the operator is searching precisely because they do
+  not know which NIC the encoder hangs off — and the status line names every
+  interface walked and every one skipped.
+- **The editor is three tiles** in the page's own tile idiom (small-caps
+  title, then fields): *Encoder* — interface, name, address + Search, port,
+  and the factory-default note; *Disguise Destinations* — per destination:
+  interface, server address, port on one row, device ID and label on the
+  next, the enable checkbox and Remove below, Add Destination at the foot;
+  *Settings* — velocity policy, coalesce policy, auto-start. The stray
+  bottom-of-form "Encoder interface" block and its duplicated hint are gone
+  into the Encoder tile.

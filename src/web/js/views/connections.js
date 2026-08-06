@@ -211,16 +211,14 @@ function encoderAddressField(c, nicOf) {
   const search = el('button', {
     class: 'btn sm', type: 'button', text: 'Search',
     onclick: async () => {
-      const nic = nicOf();
-      if (!nic) {
-        // The scan needs a subnet, and "Any" does not name one.
-        setText(status, 'Choose an encoder interface below first — the search needs a subnet to look in.');
-        status.className = 'hint warn-text';
-        return;
-      }
+      // "Any" searches every interface this machine has, one subnet at a
+      // time — it used to refuse, which made the least-informed moment (you
+      // are searching *because* you do not know where the encoder hangs) the
+      // most demanding one.
+      const nic = nicOf() || null;
       search.disabled = true;
       status.className = 'hint';
-      setText(status, 'searching…');
+      setText(status, nic ? 'searching…' : 'searching every interface…');
       try {
         const res = await window.d3d.net.discoverEncoders(nic, Number(c.encoder.port) || undefined);
         clear(options);
@@ -233,9 +231,19 @@ function encoderAddressField(c, nicOf) {
           }));
         }
         const kin = res.silentKin || [];
-        if (res.found.length) {
+        // One interface answers with `interface`; the Any scan answers with
+        // the list it walked and anything too large to walk.
+        const names = res.interface ? [res.interface.name] : (res.interfaces || []).map((n) => n.name);
+        const where = names.length ? names.join(', ') : 'this machine';
+        const skipped = (res.skipped || []).length
+          ? ` (${res.skipped.map((n) => `${n.name} skipped — ${n.hosts.toLocaleString('en-US')} hosts`).join(', ')})`
+          : '';
+        if (!res.interface && !names.length) {
+          status.className = 'hint warn-text';
+          setText(status, 'No scannable interface on this machine' + skipped + '.');
+        } else if (res.found.length) {
           setText(status, `${res.found.length} found of ${res.scanned} addresses on ` +
-            `${res.interface.name} — ${res.found.map((h) => h.host).join(', ')}`);
+            `${where} — ${res.found.map((h) => h.host).join(', ')}${skipped}`);
         } else if (kin.length) {
           // Seen on the wire but not answering: almost always an encoder
           // holding an address on another subnet.
@@ -246,7 +254,7 @@ function encoderAddressField(c, nicOf) {
             `switch 2 in the connection cap forces ${info.constants.DEFAULT_ENCODER_IP} after a power cycle.`);
         } else {
           status.className = 'hint';
-          setText(status, `Nothing answering on ${res.scanned} addresses on ${res.interface.name}. ` +
+          setText(status, `Nothing answering on ${res.scanned} addresses on ${where}${skipped}. ` +
             'If the encoder is on another subnet, switch 2 in the connection cap forces ' +
             `${info.constants.DEFAULT_ENCODER_IP} after a power cycle.`);
         }
@@ -343,7 +351,7 @@ function destinationsEditor(c, nics, info) {
 
   draw();
   return el('div', { class: 'dest-block' },
-    el('div', { class: 'dest-title', text: 'disguise destinations' }),
+    el('div', { class: 'dest-title', text: 'Disguise Destinations' }),
     list);
 }
 
@@ -352,6 +360,11 @@ function destinationRow(c, d, index, nics, redraw) {
 
   return el('div', { class: 'dest-row' + (d.enabled === false ? ' off' : '') },
     el('div', { class: 'row-inline' },
+      field('Interface',
+        select(nics, d.localAddress || '', (v) => {
+          d.localAddress = v || null;
+          d.localIfName = nicNameFor(nics, v);
+        })),
       field(index === 0 ? 'disguise server address' : 'Address', input({
         class: 'mono-input', value: d.host,
         oninput: (e) => { d.host = e.target.value.trim(); }
@@ -359,21 +372,16 @@ function destinationRow(c, d, index, nics, redraw) {
       field('Port', input({
         class: 'num-input', type: 'number', value: d.port, style: 'width:88px',
         oninput: (e) => { d.port = Number(e.target.value); }
-      })),
+      }))),
+    el('div', { class: 'row-inline' },
       field('Device ID', input({
         class: 'num-input', type: 'number', value: d.devid, style: 'width:88px',
         oninput: (e) => { d.devid = Number(e.target.value); }
-      }))),
-    el('div', { class: 'row-inline' },
+      })),
       field('Label', input({
         value: d.name, placeholder: index === 0 ? 'e.g. director' : 'e.g. understudy',
         oninput: (e) => { d.name = e.target.value; }
-      })),
-      field('Interface',
-        select(nics, d.localAddress || '', (v) => {
-          d.localAddress = v || null;
-          d.localIfName = nicNameFor(nics, v);
-        }))),
+      }))),
     el('div', { class: 'dest-actions' },
       checkbox('Enabled', d.enabled !== false, (v) => {
         d.enabled = v;
@@ -436,53 +444,54 @@ export async function openEditor(existing) {
     }
   }
 
+  // The same tile structure as everywhere else: what a section is about, in
+  // small caps, then its fields. Encoder first, then where its data goes,
+  // then the behaviour settings.
+  const tile = (title, ...children) => el('div', { class: 'dest-block' },
+    el('div', { class: 'dest-title', text: title }),
+    ...children);
+
   const body = [
-    field('Name', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } })),
-
-    el('div', { class: 'row-inline' },
-      field('Encoder address', encoderAddressField(c, () => c.encoder.localAddress)),
-      field('Port', input({
-        class: 'num-input shrink', type: 'number', value: c.encoder.port, style: 'width:90px',
-        oninput: (e) => { c.encoder.port = Number(e.target.value); }
-      }))),
-    el('div', { class: 'hint', style: 'margin:-8px 0 12px' },
-      `Factory default is ${info.constants.DEFAULT_ENCODER_IP} on TCP ${info.constants.DEFAULT_ENCODER_PORT}. ` +
-      'Hardware switch 2 in the connection cap forces that address regardless of what is programmed.'),
-
-    destinationsEditor(c, nics, info),
-
-    // Two pickers, not one. The bridge has always bound the encoder socket and
-    // the disguise socket independently — the form just tied them together, so
-    // there was no way to receive on the encoder's isolated network and send to
-    // disguise on the production one, which is a normal show topology.
-    el('div', { class: 'row-inline' },
-      field('Encoder interface',
+    tile('Encoder',
+      // Two pickers in this form, not one: the bridge binds the encoder
+      // socket and each disguise socket independently, so an isolated encoder
+      // network and a production disguise network can run at the same time.
+      // Each destination below carries its own picker.
+      field('Interface',
         select(nics, c.encoder.localAddress || '', (v) => {
           c.encoder.localAddress = v || null;
           c.encoder.localIfName = nicNameFor(nics, v);
         }),
-        'Which NIC to reach the encoder from.'),
-      el('div')),
-    el('div', { class: 'hint', style: 'margin:-8px 0 12px' },
-      'Which NIC to reach the encoder from. Each destination has its own interface ' +
-      'setting above, so an isolated encoder network and a production disguise ' +
-      'network can be used at the same time.'),
+        'Which NIC to reach the encoder from — Search with "Any" looks on every interface.'),
+      field('Name', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } })),
+      el('div', { class: 'row-inline' },
+        field('Encoder address', encoderAddressField(c, () => c.encoder.localAddress)),
+        field('Port', input({
+          class: 'num-input shrink', type: 'number', value: c.encoder.port, style: 'width:90px',
+          oninput: (e) => { c.encoder.port = Number(e.target.value); }
+        }))),
+      el('div', { class: 'hint', style: 'margin:-8px 0 4px' },
+        `Factory default is ${info.constants.DEFAULT_ENCODER_IP} on TCP ${info.constants.DEFAULT_ENCODER_PORT}. ` +
+        'Hardware switch 2 in the connection cap forces that address regardless of what is programmed.')),
 
-    field('Velocity sent to disguise',
-      segmented([
-        { value: 'zero', label: 'Zero', title: 'Matches the original driver exactly — disguise derives velocity itself' },
-        { value: 'passthrough', label: 'From encoder', title: "Forward the encoder's own signed steps/s" }
-      ], c.velocityPolicy, (v) => { c.velocityPolicy = v; }),
-      'Zero reproduces the original d3driver.exe byte for byte, so existing disguise projects behave identically.'),
+    destinationsEditor(c, nics, info),
 
-    field('When records arrive coalesced',
-      segmented([
-        { value: 'every', label: 'Forward every', title: 'Original behaviour; best for velocity derivation in disguise' },
-        { value: 'latest', label: 'Newest only', title: 'Lowest latency when only current position matters' }
-      ], c.udpSendPolicy, (v) => { c.udpSendPolicy = v; }),
-      'TCP can deliver several samples in one read. Forward every keeps the motion continuous; newest only sends the latest and drops the rest.'),
+    tile('Settings',
+      field('Velocity sent to disguise',
+        segmented([
+          { value: 'zero', label: 'Zero', title: 'Matches the original driver exactly — disguise derives velocity itself' },
+          { value: 'passthrough', label: 'From encoder', title: "Forward the encoder's own signed steps/s" }
+        ], c.velocityPolicy, (v) => { c.velocityPolicy = v; }),
+        'Zero reproduces the original d3driver.exe byte for byte, so existing disguise projects behave identically.'),
 
-    checkbox('Start this connection automatically when the app launches', c.autoStart, (v) => { c.autoStart = v; })
+      field('When records arrive coalesced',
+        segmented([
+          { value: 'every', label: 'Forward every', title: 'Original behaviour; best for velocity derivation in disguise' },
+          { value: 'latest', label: 'Newest only', title: 'Lowest latency when only current position matters' }
+        ], c.udpSendPolicy, (v) => { c.udpSendPolicy = v; }),
+        'TCP can deliver several samples in one read. Forward every keeps the motion continuous; newest only sends the latest and drops the rest.'),
+
+      checkbox('Start this connection automatically when the app launches', c.autoStart, (v) => { c.autoStart = v; }))
   ];
 
   const ok = await confirmModal({

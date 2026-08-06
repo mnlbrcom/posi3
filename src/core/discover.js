@@ -547,7 +547,41 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
   });
 }
 
+/**
+ * Scan every scannable interface in turn — the "Any" answer.
+ *
+ * "Any" is where a search usually starts: the operator does not know which
+ * NIC the encoder hangs off, or they would not be searching. Refusing with
+ * "pick an interface first" made the least-informed moment the most demanding
+ * one. Sequential per interface, so the probe burst stays one subnet wide at
+ * a time; interfaces too large to scan are reported as skipped rather than
+ * silently ignored, and a host reachable from two NICs is offered once.
+ */
+async function scanAllSubnets(opts = {}) {
+  const out = { interfaces: [], scanned: 0, found: [], silentKin: [], skipped: [] };
+  const seenHosts = new Set();
+  const seenKin = new Set();
+  for (const nic of scannableInterfaces()) {
+    if (!nic.scannable) {
+      out.skipped.push(nic);
+      continue;
+    }
+    const r = await scanSubnet({ localAddress: nic.address, port: opts.port, timeoutMs: opts.timeoutMs });
+    out.interfaces.push(nic);
+    out.scanned += r.scanned;
+    for (const f of r.found) {
+      if (!seenHosts.has(f.host)) { seenHosts.add(f.host); out.found.push(f); }
+    }
+    for (const k of r.silentKin) {
+      if (!seenKin.has(k.mac)) { seenKin.add(k.mac); out.silentKin.push(k); }
+    }
+  }
+  out.found.sort((a, b) => ipToInt(a.host) - ipToInt(b.host));
+  return out;
+}
+
 module.exports = {
-  scanSubnet, scannableInterfaces, probe, readVariablesOnce, writeVariablesOnce, hostsInSubnet, subnetSize, maskBits,
+  scanSubnet, scanAllSubnets, scannableInterfaces, probe, readVariablesOnce, writeVariablesOnce,
+  hostsInSubnet, subnetSize, maskBits,
   ipToInt, intToIp, normaliseMac, arpNeighbours, ENCODER_PORT, MAX_HOSTS, ENCODER_OUIS
 };

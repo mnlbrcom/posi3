@@ -146,3 +146,37 @@ test('reading the neighbour table never throws, whatever the platform prints', a
     assert.match(n.mac, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/);
   }
 });
+
+test('the Any scan walks every scannable interface and answers once per host', async () => {
+  // "Any" is where a search starts — the operator is searching because they
+  // do not know which NIC the encoder hangs off. Refusing with "pick an
+  // interface first" made the least-informed moment the most demanding one.
+  const { scanAllSubnets } = require('../src/core/discover');
+  // Real interfaces on this machine, but a port that nothing answers and the
+  // shortest timeout the probe allows: the shape is under test, not the rig.
+  const res = await scanAllSubnets({ port: 65533, timeoutMs: 120 });
+  assert.ok(Array.isArray(res.interfaces), 'the interfaces walked are named');
+  assert.ok(Array.isArray(res.skipped), 'and the ones it cannot walk are reported, not ignored');
+  for (const nic of res.skipped) {
+    assert.equal(nic.scannable, false, 'skipped means unscannable — too large, or degenerate');
+  }
+  assert.ok(Array.isArray(res.found));
+  const hosts = res.found.map((f) => f.host);
+  assert.equal(new Set(hosts).size, hosts.length, 'a host reachable twice is offered once');
+});
+
+test('the api treats a missing interface as Any, not as an error', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
+  const op = api.slice(api.indexOf('discoverEncoders:'));
+  const body = op.slice(0, op.indexOf('\n    },'));
+  assert.match(body, /if \(!localAddress\) return scanAllSubnets/,
+    'no interface named means every scannable one');
+  assert.match(body, /checkHost\(localAddress/, 'a named one is still validated');
+
+  const view = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'connections.js'), 'utf8');
+  assert.doesNotMatch(view, /Choose an encoder interface below first/,
+    'and the form no longer refuses the Any search');
+});
