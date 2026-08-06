@@ -41,7 +41,6 @@ const {
 
 /** Ring of send buffers: dgram may hold one until the write completes. */
 const POOL_SIZE = 8;
-/** Recent arrival→send measurements, in microseconds. */
 /**
  * How long ordinary sending must stay clean before a destination is called back.
  *
@@ -366,7 +365,7 @@ class EncoderLink extends EventEmitter {
    */
   stop() {
     const holdsNothing = !this._socket && !this._sinks.length &&
-      !this._reconnectTimer && !this._watchdog;
+      !this._reconnectTimer && !this._watchdog && !this._destWatch;
     if (this._state === STATE.IDLE && holdsNothing) return false;
     this._stopping = true;
     this._stopDestWatch();
@@ -465,6 +464,8 @@ class EncoderLink extends EventEmitter {
         trialUntil: 0,
         /** Whether this outage has already been announced. Cleared on recovery. */
         downAnnounced: false,
+        /** Whether the current outage's end has been announced. */
+        recovered: false,
         /** txErrors when the current outage began, so its own count can be told. */
         errorsAtOutageStart: 0,
         /**
@@ -977,6 +978,9 @@ class EncoderLink extends EventEmitter {
         ? ['-c', '1', '-t', '1', host]
         : ['-c', '1', '-W', '1', host];
     const child = spawn('ping', args, { stdio: 'ignore', timeout: PING_TIMEOUT_MS + 500 });
+    // Never the reason the process stays up: a probe in flight at quit time
+    // would otherwise hold the event loop for up to its own deadline.
+    child.unref();
     let settled = false;
     child.on('exit', (code) => { if (!settled) { settled = true; onDone(code === 0); } });
     child.on('error', () => { if (!settled) { settled = true; onDone(null); } });

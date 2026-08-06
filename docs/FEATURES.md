@@ -5182,3 +5182,46 @@ first establishment is a logged change; and stopping traces the drop to
 `idle`, so the history never ends mid-air. The manager's encoder mapping must
 match the browser's `encoderIndicator()` — the trace test holds them to the
 same words.
+
+## 2026-08-06 — Core-path integrity: the bench measures honestly, and the numbers are in
+
+**Asked:** "make sure the core application … stay[s] clean and its integrety
+is given at all times" — with the decision to *measure first* before touching
+the ping engine. (Full triage in `change.md`.)
+
+**Bench honesty:** `tools/latency-bench.js` gained `--probes off|real`
+(off = a no-op ping runner, the pure path; real = the production
+spawn-per-second engine live during measurement) and `--destinations N`, so
+it exercises the real fanout loop instead of the schema-1 single-destination
+shape. Before this, the bench always measured itself with probes running.
+
+**Baselines, 2026-08-06, Apple Silicon dev machine, 20 000 samples,
+`--cycle 2 --coalesce 2 --destinations 3` (60 000 packets, 0 lost,
+0 malformed in every run):**
+
+| metric | probes off | probes real |
+|---|---|---|
+| mean | 360.9 µs | 359.8 µs |
+| p50 | 314.6 µs | 314.3 µs |
+| p99 | 889.9 µs | 871.7 µs |
+| p99.9 | 1 374 µs | 1 350 µs |
+| max | **2 879 µs** | **6 771 µs** |
+
+Repeat runs (10 000 samples): probes-off max 1.5–2.9 ms; probes-real max
+**5.8–6.8 ms in every run**, one run's p99.9 at 2.4 ms. Link-internal
+parse→send stayed p50 ≈ 40 µs / p99 ≤ 390 µs throughout.
+
+**Gate verdict:** through p99.9 the spawn engine costs nothing; the worst
+single sample reproducibly takes a ~4 ms stall from a `ping` fork on the
+forwarding thread. That exceeds the 2 ms bench cycle every run (on the rig's
+8–18 ms cycles it still fits inside one cycle). Per the approved plan this
+trips the gate: the persistent-ping engine — one long-running `ping` per
+destination host, replies read from stdout, zero recurring spawns — is now a
+follow-up awaiting the user's go. Until then the numbers above are the
+recorded cost.
+
+**Hardening in the same change:** ping children are `unref()`d (a probe in
+flight at quit no longer holds the process); `stop()`'s early-return guard
+also checks the destination watch; `sink.recovered` is declared in the sink
+literal (it sprang into existence undefined) and in the matrix fixture; an
+orphaned doc comment left by a moved constant is gone.
