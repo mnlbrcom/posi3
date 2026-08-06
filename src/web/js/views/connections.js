@@ -351,7 +351,7 @@ function destinationsEditor(c, nics, info) {
 
   draw();
   return el('div', { class: 'dest-block' },
-    el('div', { class: 'dest-title', text: 'Disguise Destinations' }),
+    el('div', { class: 'dest-title', text: 'Disguise Settings' }),
     list);
 }
 
@@ -447,12 +447,15 @@ export async function openEditor(existing) {
   // The same tile structure as everywhere else: what a section is about, in
   // small caps, then its fields. Encoder first, then where its data goes,
   // then the behaviour settings.
+  // Title, then one box around the section's fields — the same box the
+  // destination rows wear, so all three sections read as the same kind of
+  // thing.
   const tile = (title, ...children) => el('div', { class: 'dest-block' },
     el('div', { class: 'dest-title', text: title }),
-    ...children);
+    el('div', { class: 'tile-body' }, ...children));
 
   const body = [
-    tile('Encoder',
+    tile('Encoder Settings',
       // Two pickers in this form, not one: the bridge binds the encoder
       // socket and each disguise socket independently, so an isolated encoder
       // network and a production disguise network can run at the same time.
@@ -476,7 +479,7 @@ export async function openEditor(existing) {
 
     destinationsEditor(c, nics, info),
 
-    tile('Settings',
+    tile('Connection Settings',
       field('Velocity sent to disguise',
         segmented([
           { value: 'zero', label: 'Zero', title: 'Matches the original driver exactly — disguise derives velocity itself' },
