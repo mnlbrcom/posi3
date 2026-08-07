@@ -464,8 +464,6 @@ export async function openEditor(existing) {
             c.encoder.localIfName = nicNameFor(nics, v);
           })),
         field('Label', input({ value: c.name, oninput: (e) => { c.name = e.target.value; } }))),
-      el('div', { class: 'hint' },
-        'Which NIC to reach the encoder from — Search with "Any" looks on every interface.'),
       el('div', { class: 'row-inline' },
         field('Encoder IP', addr.control),
         field('Port', input({
