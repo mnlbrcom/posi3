@@ -16,6 +16,7 @@ OPEN
 - App name MacOs and Windows conistent, also in the OS Menus.
 - Encoder Config Indicator Idle should be offline. Idle should be connected but not started? 
 - Settings - About tile, state the encoder string to the navigator driver string short golden bytes "1:12345,0;\n"
+- Check Auto Start after reboot (macOS & win)
 - States for Encoders? Offline(off/unplugged) Connected(stopped) Sending(start)
 - A1. DISGUISE MAPPING SCREEN still optimising
 - A2. ZERO / PRESET 0 needs fix same thing.

@@ -13,7 +13,7 @@ const path = require('node:path');
 const { URL } = require('node:url');
 
 const { SseHub, bridgeEvents } = require('./sse');
-const { createGuard, SECURITY_HEADERS } = require('./security');
+const { createGuard, SECURITY_HEADERS, SESSION_COOKIE, SESSION_MS } = require('./security');
 
 const WEB_ROOT = path.join(__dirname, '..', 'web');
 
@@ -87,7 +87,7 @@ function createServer(opts) {
   const hub = new SseHub();
   bridgeEvents(manager, hub);
 
-  const guard = createGuard({ bindHost, port, token });
+  const guard = createGuard({ bindHost, port, token, password: opts.password });
 
   const send = (res, code, body, headers = {}) => {
     const payload = Buffer.from(body);
@@ -129,12 +129,59 @@ function createServer(opts) {
     const pathname = url.pathname;
     const isApi = pathname.startsWith('/api/');
 
-    const denied = guard.check(req, url, { mutating: isApi && req.method === 'POST' });
-    if (denied) {
-      return isApi
-        ? sendJson(res, denied.code, { ok: false, error: { code: 'EDENIED', message: denied.message } })
-        : send(res, denied.code, denied.message, { 'Content-Type': 'text/plain' });
+    // The only three paths served without authentication, and they exist so a
+    // browser has somewhere to type the password. Everything else, including
+    // every other static file, stays behind the guard.
+    const isLoginSurface = pathname === '/login' || pathname === '/login.html' ||
+      pathname === '/js/login.js' || pathname === '/css/app.css';
+
+    if (pathname === '/api/login' && req.method === 'POST') {
+      if (!guard.checkHostHeader(req)) {
+        return sendJson(res, 421, { ok: false, error: { code: 'EDENIED', message: 'Unrecognised Host header' } });
+      }
+      let body = {};
+      try { body = await readBody(req); } catch { /* an empty body fails below */ }
+      const stored = opts.password ? opts.password() : null;
+      if (!stored) {
+        // Nothing to log in to: no password is set, so the guard is not
+        // asking for one and a session would mean nothing.
+        return sendJson(res, 200, { ok: true, data: { open: true } });
+      }
+      const { passwordMatches } = require('./security');
+      if (!passwordMatches(body && body.password, stored)) {
+        // Deliberately vague and deliberately slow-ish by construction:
+        // scrypt is the delay, and naming which half was wrong helps nobody
+        // who is entitled to be here.
+        return sendJson(res, 401, { ok: false, error: { code: 'EDENIED', message: 'That password was not accepted.' } });
+      }
+      const id = guard.sessions.issue();
+      return sendJson(res, 200, { ok: true, data: { ok: true } }, {
+        // HttpOnly so no script can read it, SameSite=Strict so no other
+        // site can ride it, and no Secure flag because a show LAN has no
+        // certificate and the alternative is a cookie the browser drops.
+        'Set-Cookie': `${SESSION_COOKIE}=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_MS / 1000)}`
+      });
     }
+
+    const denied = isLoginSurface ? null : guard.check(req, url, { mutating: isApi && req.method === 'POST' });
+    if (denied) {
+      if (isApi) {
+        return sendJson(res, denied.code, { ok: false, error: { code: 'EDENIED', message: denied.message } });
+      }
+      // A browser asking for a page gets the password prompt, not a wall of
+      // text it cannot act on — but only when a password is what would
+      // satisfy the guard. Under an explicit token the prompt cannot help,
+      // and sending a browser there would bounce it between /login and / for
+      // ever. A bad Host header is never redirected either: that is an attack
+      // signature, and answering it with a login form would be an invitation.
+      if (denied.code === 401 && opts.password && opts.password()) {
+        res.writeHead(302, Object.assign({ Location: '/login' }, SECURITY_HEADERS));
+        return res.end();
+      }
+      return send(res, denied.code, denied.message, { 'Content-Type': 'text/plain' });
+    }
+
+    if (pathname === '/login') return serveStatic(req, res, '/login.html');
 
     if (pathname === '/api/events') {
       if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: { code: 'EMETHOD', message: 'GET only' } });
@@ -195,6 +242,7 @@ function createServer(opts) {
   return {
     server,
     hub,
+    sessions: guard.sessions,
     listen: () => new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, bindHost, () => {

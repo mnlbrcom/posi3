@@ -28,13 +28,21 @@ function defaultSettings() {
     launchAtLogin: false,
     logToFile: false,
     /**
-     * The web UI's own listener. Loopback by default — the desktop window and
-     * a browser on this machine reach it, nothing else does. Widening it turns
-     * on token authentication (see src/server/security.js), because these
-     * operations can write encoder flash and change a device's IP address.
+     * The web UI's own listener.
+     *
+     * Loopback *here*, deliberately: this shape is also what fills in a
+     * missing key on an old profile, and a profile that has been closed for
+     * a year must not silently open because it was loaded by a newer build.
+     * A brand-new profile is created reachable instead — see `load()`.
      */
     webPort: 8710,
-    webBindHost: '127.0.0.1'
+    webBindHost: '127.0.0.1',
+    /**
+     * The web password as a salted scrypt hash, or null for none. Never the
+     * password itself: this file gets copied between machines and pasted into
+     * support threads. Written only by the securitySetPassword operation.
+     */
+    webPassword: null
   };
 }
 
@@ -132,7 +140,20 @@ class ConfigStore {
     }
 
     if (primary.missing) {
-      this.profile = { version: SCHEMA_VERSION, settings: defaultSettings(), connections: [] };
+      // A first run is reachable on the network, like the tools this sits
+      // beside on a show rack: one app on one machine, opened from whatever
+      // laptop is to hand. Nobody can widen it from the machine's own screen
+      // if they are not standing at the machine, which is the situation this
+      // exists to solve. No password until someone sets one, and both the
+      // startup log and the Settings screen say so plainly.
+      //
+      // Only ever on a *new* profile: an existing one keeps whatever it says,
+      // and a missing key falls back to loopback via defaultSettings().
+      this.profile = {
+        version: SCHEMA_VERSION,
+        settings: Object.assign(defaultSettings(), { webBindHost: '0.0.0.0' }),
+        connections: []
+      };
       return this.profile;
     }
 

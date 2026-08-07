@@ -19,6 +19,7 @@ const {
   checkSettings, sanitiseConnection, listInterfaces
 } = require('./validate');
 const { migrateConnection, SCHEMA_VERSION } = require('../core/config-store');
+const { hashPassword } = require('./security');
 
 /**
  * Remove the three keys that read or write the prototype chain, at every
@@ -857,6 +858,32 @@ function createApi(ctx) {
       if (!Array.isArray(ids)) fail('EINVAL', 'Expected an array of ids');
       store.reorder(ids.map(checkId));
       return announce(store.profile.connections.map((c) => c.id));
+    },
+
+    /**
+     * Set or clear the web-interface password.
+     *
+     * Its own operation, not a settings field: what arrives here is the
+     * password itself, and it must be hashed before it can be stored. Routing
+     * it through the generic settings merge would put a plaintext password in
+     * the profile the first time somebody posted the wrong shape.
+     *
+     * Clearing is deliberately possible — an operator who wants an open panel
+     * on a closed show LAN is making a choice the app supports and records.
+     * Either way every existing browser session ends: the rules changed.
+     */
+    securitySetPassword: ({ password }) => {
+      const pw = password == null ? '' : String(password);
+      if (pw && pw.length < 4) fail('EINVAL', 'Use at least 4 characters, or leave it empty for no password');
+      if (pw.length > 200) fail('EINVAL', 'That password is too long');
+      const stored = pw ? hashPassword(pw) : null;
+      store.setSettings({ webPassword: stored });
+      if (ctx.onSessionsInvalidated) ctx.onSessionsInvalidated();
+      userLog(null, pw
+        ? 'set the web interface password — existing browser sessions were signed out'
+        : 'removed the web interface password — anyone on the network can reach posi3',
+      pw ? 'info' : 'warn');
+      return announce({ passwordSet: !!stored });
     },
 
     configSetSettings: (partial) => {

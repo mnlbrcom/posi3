@@ -10,7 +10,24 @@
  * on a show floor means losing the encoder until someone can reach the
  * hardware.
  *
- * So: loopback by default, and anything wider is opt-in and needs a token.
+ * So: loopback by default, and anything wider is opt-in.
+ *
+ * Beyond loopback, access is what the operator chose in Settings:
+ *
+ *   password set     a browser logs in once and carries a session cookie;
+ *                    scripts may present the password as a Bearer token.
+ *   no password      open to anyone who knows the address and port.
+ *
+ * The open case is deliberate and is the operator's decision to make — a show
+ * LAN is often a closed island with no route off it, and a password prompt in
+ * front of a rig that four people share during a get-in is friction with no
+ * one to protect against. It is never the *default*: it takes both widening
+ * the bind and leaving the password empty, and the app says plainly in
+ * Settings and in the log what that means.
+ *
+ * Requests that arrive on loopback are always allowed. The password guards the
+ * network; anybody at the machine's own keyboard can already quit the app or
+ * edit the profile, so demanding it there would protect nothing.
  */
 
 const crypto = require('node:crypto');
@@ -22,6 +39,76 @@ function isLoopback(host) {
 function newToken() {
   return crypto.randomBytes(24).toString('base64url');
 }
+
+/**
+ * Store a password as a salted scrypt hash, never as itself.
+ *
+ * The profile is a plain JSON file an operator may well copy to another
+ * machine or paste into a support thread; a password sitting in it as text
+ * would leak the moment that happens. scrypt because it is in Node's own
+ * crypto and is deliberately slow to brute-force.
+ */
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('base64');
+  return { salt, hash: crypto.scryptSync(String(password), salt, 32).toString('base64'), v: 1 };
+}
+
+function passwordMatches(password, stored) {
+  if (!stored || !stored.salt || !stored.hash) return false;
+  if (!password) return false;
+  let candidate;
+  try {
+    candidate = crypto.scryptSync(String(password), stored.salt, 32);
+  } catch {
+    return false;
+  }
+  const expected = Buffer.from(String(stored.hash), 'base64');
+  if (candidate.length !== expected.length) return false;
+  return crypto.timingSafeEqual(candidate, expected);
+}
+
+/**
+ * Browser sessions, in memory only.
+ *
+ * A restart logs everyone out, which for a tool that is restarted between
+ * shows is the right trade: nothing to persist, nothing to leak, and no
+ * session outliving the configuration it was issued under.
+ */
+const SESSION_MS = 12 * 60 * 60 * 1000;
+
+function createSessions(now = () => Date.now()) {
+  const live = new Map();
+  return {
+    issue() {
+      const id = crypto.randomBytes(24).toString('base64url');
+      live.set(id, now() + SESSION_MS);
+      return id;
+    },
+    valid(id) {
+      if (!id) return false;
+      const until = live.get(id);
+      if (!until) return false;
+      if (until <= now()) { live.delete(id); return false; }
+      return true;
+    },
+    /** Every session, gone: called when the password changes or is cleared. */
+    clear() { live.clear(); },
+    get size() { return live.size; }
+  };
+}
+
+/** The session cookie, parsed without a dependency. */
+function cookieValue(req, name) {
+  const raw = String(req.headers.cookie || '');
+  for (const part of raw.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
+}
+
+const SESSION_COOKIE = 'posi3_session';
 
 /** Timing-safe compare that tolerates length mismatch. */
 function tokenMatches(a, b) {
@@ -36,10 +123,17 @@ function tokenMatches(a, b) {
  * @param {object} opts
  * @param {string} opts.bindHost
  * @param {number} opts.port
- * @param {string|null} opts.token  required when not bound to loopback
+ * @param {string|null} [opts.token]        legacy/scripting override
+ * @param {() => object|null} [opts.password]  the stored hash, read live
+ * @param {object} [opts.sessions]          from createSessions()
  */
 function createGuard(opts) {
   const loopbackOnly = isLoopback(opts.bindHost);
+  const sessions = opts.sessions || createSessions();
+  // Read through a function, not captured: the operator can set or clear the
+  // password while the server runs, and the guard must obey the new answer on
+  // the very next request rather than at the next restart.
+  const storedPassword = opts.password || (() => null);
 
   /**
    * Reject requests whose Host header we do not recognise.
@@ -76,12 +170,31 @@ function createGuard(opts) {
     return ct === 'application/json';
   }
 
-  function checkToken(req, url) {
-    if (loopbackOnly && !opts.token) return true;
-    if (!opts.token) return false;
+  /** Requests originating on this machine are always allowed. */
+  function fromLoopback(req) {
+    const addr = (req.socket && req.socket.remoteAddress) || '';
+    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+  }
+
+  const presented = (req, url) => {
     const header = String(req.headers.authorization || '');
-    const bearer = header.startsWith('Bearer ') ? header.slice(7) : null;
-    return tokenMatches(bearer || url.searchParams.get('token'), opts.token);
+    return (header.startsWith('Bearer ') ? header.slice(7) : null) || url.searchParams.get('token');
+  };
+
+  function checkAuth(req, url) {
+    // An explicit token is a deliberate instruction and outranks everything:
+    // `--token` on the headless flag means "require exactly this", including
+    // from this machine. The desktop window carries it for the same reason.
+    if (opts.token) return tokenMatches(presented(req, url), opts.token);
+
+    // Otherwise this machine is always allowed. The password guards the
+    // network; anyone at this keyboard can already edit the profile.
+    if (loopbackOnly || fromLoopback(req)) return true;
+
+    const pw = storedPassword();
+    if (!pw) return true; // open on the network, as chosen and as logged
+    if (sessions.valid(cookieValue(req, SESSION_COOKIE))) return true;
+    return passwordMatches(presented(req, url), pw);
   }
 
   /** @returns {{code:number, message:string}|null} null when the request may proceed */
@@ -89,8 +202,8 @@ function createGuard(opts) {
     if (!checkHostHeader(req)) {
       return { code: 421, message: 'Unrecognised Host header' };
     }
-    if (!checkToken(req, url)) {
-      return { code: 401, message: 'Missing or invalid access token' };
+    if (!checkAuth(req, url)) {
+      return { code: 401, message: 'A password is required to reach posi3 over the network' };
     }
     if (mutating && !checkContentType(req)) {
       return { code: 415, message: 'Mutations require Content-Type: application/json' };
@@ -98,7 +211,7 @@ function createGuard(opts) {
     return null;
   }
 
-  return { check, loopbackOnly };
+  return { check, checkHostHeader, loopbackOnly, sessions, fromLoopback };
 }
 
 /**
@@ -129,4 +242,7 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'no-referrer'
 };
 
-module.exports = { createGuard, newToken, isLoopback, SECURITY_HEADERS };
+module.exports = {
+  createGuard, newToken, isLoopback, SECURITY_HEADERS,
+  hashPassword, passwordMatches, createSessions, cookieValue, SESSION_COOKIE, SESSION_MS
+};

@@ -177,6 +177,9 @@ if (!window.d3d) {
   window.d3d = {
     appInfo: () => call('appInfo'),
 
+    security: {
+      setPassword: (password) => call('securitySetPassword', { password })
+    },
     config: {
       get: () => call('configGet'),
       saveConnection: (conn) => call('configSaveConnection', conn),
