@@ -315,6 +315,16 @@ function checkSettings(partial) {
         out[key] = host;
         break;
       }
+      case 'webPassword': {
+        // Only the shape the app itself writes, and only ever as a hash — a
+        // client cannot post a password here and have it stored verbatim.
+        if (value === null) { out[key] = null; break; }
+        const ok = value && typeof value === 'object' &&
+          typeof value.salt === 'string' && typeof value.hash === 'string';
+        if (!ok) fail('EINVAL', 'The web password is set through Settings, not written directly');
+        out[key] = { salt: value.salt, hash: value.hash, v: 1 };
+        break;
+      }
       case 'autoStartOnLaunch':
       case 'startMinimized':
       case 'launchAtLogin':

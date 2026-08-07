@@ -31,7 +31,11 @@ test('a fresh directory yields usable defaults', () => {
   assert.equal(s.profile.version, SCHEMA_VERSION);
   assert.deepEqual(s.profile.connections, []);
   assert.equal(s.settings.webPort, 8710);
-  assert.equal(s.settings.webBindHost, '127.0.0.1');
+  // A first run is created reachable on the network — one app on one machine,
+  // opened from whatever laptop is to hand. See test/web-access.test.js for
+  // the rule that an *existing* profile is never widened by a newer build.
+  assert.equal(s.settings.webBindHost, '0.0.0.0');
+  assert.equal(s.settings.webPassword, null);
   assert.equal(s.readOnly, false);
 });
 

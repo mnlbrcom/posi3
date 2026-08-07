@@ -127,6 +127,28 @@ button, input, select, textarea { font-family: inherit; }
    controls above: correct-looking markup, wrong font, invisible until measured. */
 code { font-family: var(--mono); }
 
+/* ------------------------------------------------------------------- login */
+/* The one page served without authentication. Centred card, the app's own
+   wordmark, nothing else to look at or click. */
+.login-body {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px;
+}
+.login-card {
+  width: 100%; max-width: 340px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); padding: 22px 20px 20px;
+}
+.login-mark { justify-content: flex-start; margin-bottom: 2px; }
+.login-sub {
+  font-family: var(--mono); font-size: var(--fs-label); font-weight: 500;
+  color: var(--text-faint); margin-bottom: 18px;
+}
+.login-card .field { margin-bottom: 14px; }
+.login-card .btn { width: 100%; justify-content: center; }
+
 /* ---------------------------------------------------------------- titlebar */
 
 .titlebar {

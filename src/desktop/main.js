@@ -261,7 +261,7 @@ function createWindow() {
   // files included — so the bare URL made the app render its own 401 the
   // moment webBindHost was widened. The desktop window authenticates exactly
   // like the browser it is.
-  mainWindow.loadURL(webUrlWithToken());
+  mainWindow.loadURL(windowUrl());
 
   // Test hook, not a feature: tools/zoomcheck.js relaunches the app at fixed
   // zoom factors to prove the titlebar stays clear of the traffic lights.
@@ -291,7 +291,10 @@ function createWindow() {
     // with our URL and is somebody else's server. Defence in depth — the CSP
     // already blocks the injection this would need.
     let ok = false;
-    try { ok = new URL(url).origin === new URL(svc.url).origin; } catch { /* not a URL */ }
+    try {
+      const target = new URL(url).origin;
+      ok = target === new URL(windowUrl()).origin || target === new URL(svc.url).origin;
+    } catch { /* not a URL */ }
     if (!ok) event.preventDefault();
   });
 
@@ -399,6 +402,21 @@ function stepZoom(direction) {
 
 function webUrlWithToken() {
   return svc.token ? `${svc.url}/?token=${encodeURIComponent(svc.token)}` : svc.url;
+}
+
+/**
+ * The window's own URL: always loopback.
+ *
+ * `svc.url` is the address to *tell someone else*, and with a wide bind that
+ * is a LAN address — which the password guards. The app would then have
+ * demanded a password of itself. Requests from this machine are always
+ * allowed, so the window loads loopback and never asks.
+ */
+function windowUrl() {
+  const port = (svc.http.server.address() || {}).port || svc.store.settings.webPort;
+  const base = `http://127.0.0.1:${port}`;
+  // An explicit token outranks loopback by design, so the window presents it.
+  return svc.token ? `${base}/?token=${encodeURIComponent(svc.token)}` : base;
 }
 
 // ---------------------------------------------------------------------------

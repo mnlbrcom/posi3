@@ -103,6 +103,12 @@ test('with a token, every shared URL carries it — window, lock, and guard agre
 
   const desktop = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'desktop', 'main.js'), 'utf8');
-  assert.match(desktop, /mainWindow\.loadURL\(webUrlWithToken\(\)\)/,
-    'and the window authenticates exactly like the browser it is');
+  // The window loads loopback — with a wide bind, svc.url is a LAN address
+  // the password guards, and the app would have locked itself out — but it
+  // still presents an explicit token, which outranks loopback by design.
+  assert.match(desktop, /mainWindow\.loadURL\(windowUrl\(\)\)/);
+  const fn = desktop.slice(desktop.indexOf('function windowUrl'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  assert.match(body, /127\.0\.0\.1/, 'the window is always local');
+  assert.match(body, /svc\.token/, 'and carries a token when one was demanded');
 });

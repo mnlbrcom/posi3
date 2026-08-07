@@ -5376,3 +5376,58 @@ disguise's own default) — the form contradicted its own note. New
 destinations now start at 8000. Both constants stay: 6000 is still what the
 existing show projects are configured for, and a second destination still
 copies the first's port rather than resetting to any default.
+
+## 2026-08-07 — Reachable over the network, with an optional password
+
+**Asked:** pick a host interface in Settings — or "Any" — so the web interface
+is reachable for anyone on the network; replace the token with an easy
+password set in Settings; make the password **optional**, and with none, open
+to anyone who knows the address and port. Then: it should work the way
+Bitfocus Companion does — one app running on a system, reachable from
+everywhere.
+
+**The access model, in one place** (`src/server/security.js`):
+
+| situation | who gets in |
+|---|---|
+| bound to loopback | only this machine — nobody else can connect at all |
+| bound wide, password set | a browser logs in once and carries a session cookie; scripts may present the password as a Bearer token |
+| bound wide, no password | open, deliberately, and said so in the log at every start |
+| explicit `--token` | outranks everything, including loopback (the headless flag and the desktop window honour it) |
+
+**Requests from this machine never need the password.** It guards the network;
+anyone at the machine's own keyboard can already quit the app or edit the
+profile, so asking there would protect nothing — and it is what keeps the
+desktop window working with a wide bind. The window therefore loads loopback
+explicitly rather than `svc.url`, which is a LAN address when bound wide and
+would have locked the app out of itself.
+
+**The password is stored as a salted scrypt hash, never as itself** — the
+profile gets copied between machines and pasted into support threads. A
+dedicated `securitySetPassword` operation does the hashing, so a password can
+never reach the profile verbatim through the generic settings merge, and
+validation refuses any hand-written shape. Changing or clearing it ends every
+existing browser session.
+
+**The login page** (`src/web/login.html` + `js/login.js`) is the only thing
+served unauthenticated, alongside its script and the stylesheet — the app's
+own bundle stays behind the guard, and a browser asking for a page gets a
+302 to the prompt instead of a wall of text. Under a token rather than a
+password there is no redirect: the prompt could not satisfy it, and sending a
+browser there would bounce it between `/login` and `/` for ever.
+
+**Settings gained a Web interface panel**: reachable-from picker (this machine
+only / any interface / each NIC), port, password with Set and Remove, the
+list of addresses the UI is actually open at, and a warning banner whenever
+the combination is wide-and-open.
+
+**A new profile is created reachable** (`webBindHost: '0.0.0.0'`, no
+password), which is the Companion shape and the point of the exercise: nobody
+can widen the bind from the machine's own screen if they are not standing at
+the machine. Only on a *brand-new* profile — the shape that fills a missing
+key stays loopback, so a profile that has been closed for a year is never
+silently opened by a newer build.
+
+Behavioural tests throughout (`test/web-access.test.js`, 9 tests over real
+HTTP against a real server): a guard is exactly the kind of thing that passes
+a source-level test and fails on the wire.

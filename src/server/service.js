@@ -18,7 +18,8 @@ const { LogFile } = require('../core/log-file');
 const { acquire } = require('../core/instance-lock');
 const { createApi } = require('./api');
 const { createServer } = require('./http');
-const { newToken, isLoopback } = require('./security');
+const { isLoopback } = require('./security');
+const { listInterfaces } = require('./validate');
 
 /** Where the profile lives when Electron is not around to tell us. */
 function defaultDataDir() {
@@ -107,8 +108,10 @@ async function startService(opts = {}) {
   }
 
   // Reaching beyond loopback exposes flash writes and the encoder's IP
-  // settings to the whole LAN, so it is never token-less.
-  const token = opts.token || (isLoopback(bindHost) ? null : newToken());
+  // settings to the whole LAN. What guards that is now the operator's own
+  // choice in Settings — a password, or knowingly none — so no token is
+  // invented here. `opts.token` remains for scripting and the headless flag.
+  const token = opts.token || null;
 
   // Set once the HTTP server exists; every config mutation pokes it so other
   // open browsers refetch instead of quietly showing stale settings.
@@ -123,6 +126,8 @@ async function startService(opts = {}) {
       logFile.setVerbose(!!settings.logToFile);
       if (opts.onSettings) opts.onSettings(settings);
     },
+    // A changed password must not leave yesterday's browsers logged in.
+    onSessionsInvalidated: () => { if (http && http.sessions) http.sessions.clear(); },
     env: () => Object.assign({
       version: require('../../package.json').version,
       platform: process.platform,
@@ -133,7 +138,14 @@ async function startService(opts = {}) {
       // `env` is evaluated lazily per request and spread into JSON, so this is
       // the live bound port, not a function and not the requested one.
       port: (http.server.address() || {}).port || port,
-      tokenRequired: !!token
+      tokenRequired: !!token,
+      passwordSet: !!store.settings.webPassword,
+      // Every address this machine can be reached on *from the network*, not
+      // merely the first: a show server has several NICs and the one the
+      // operator's laptop is on is rarely the one that sorts first. Loopback
+      // is excluded — it is not an address anyone else can use, and listing
+      // it under "reachable" would be an invitation to type the wrong one.
+      addresses: listInterfaces().filter((i) => !i.internal).map((i) => i.address)
     }, opts.env || {})
   });
 
@@ -141,8 +153,25 @@ async function startService(opts = {}) {
   // round trip through the config store.
   for (const conn of store.connections) manager.upsert(conn);
 
-  const http = createServer({ api, manager, bindHost, port, token });
+  const http = createServer({
+    api, manager, bindHost, port, token,
+    // Read per request, so setting or clearing the password in Settings takes
+    // effect at once rather than at the next restart.
+    password: () => store.settings.webPassword || null
+  });
   logFile.note(`posi3 ${require('../../package.json').version} starting — profile ${dataDir}`, 'warn');
+  // The access posture, in the record, at every start. An operator who widened
+  // the bind months ago and forgot should find it here rather than discover it.
+  if (!isLoopback(bindHost)) {
+    const how = token ? 'an access token is required'
+      : store.settings.webPassword ? 'a password is required'
+        : 'NO PASSWORD IS SET — anyone on this network who knows the address can control the rig';
+    logger.push({
+      level: store.settings.webPassword || token ? 'info' : 'warn',
+      dir: 'app',
+      text: `Web interface reachable on the network at ${http.url()} — ${how}.`
+    });
+  }
   announceConfigChange = () => http.hub.broadcast('configChanged', { t: Date.now() });
   try {
     await http.listen();

@@ -2,8 +2,84 @@
  * Application settings, plus the notes an operator actually needs at a venue.
  */
 
-import { el, clear, toast, select, checkbox, panel } from '../ui.js';
+import { el, clear, toast, select, checkbox, panel, input, field } from '../ui.js';
 import { store } from '../store.js';
+
+/**
+ * Who can reach this interface, and from where.
+ *
+ * Bind address and port take effect at the next start — the socket is opened
+ * before any of this is reachable — so the panel says so rather than letting
+ * an operator wonder why nothing changed. The password takes effect at once.
+ */
+function webAccessPanel(s, info, save) {
+  const nics = [
+    { value: '127.0.0.1', label: 'This machine only (127.0.0.1)' },
+    { value: '0.0.0.0', label: 'Any interface — reachable on the network' }
+  ].concat((info.interfaces || [])
+    .filter((i) => !i.internal)
+    .map((i) => ({ value: i.address, label: `${i.name} only — ${i.address}` })));
+
+  const pw = input({ type: 'password', placeholder: info.passwordSet ? '••••••••' : 'no password set' });
+
+  const open = s.webBindHost !== '127.0.0.1' && !info.passwordSet;
+  const reachable = s.webBindHost === '127.0.0.1'
+    ? [`http://127.0.0.1:${info.port}`]
+    : (info.addresses || []).map((a) => `http://${a}:${info.port}`);
+
+  return panel('Web interface', [
+    field('Reachable from',
+      select(nics, s.webBindHost, (v) => save({ webBindHost: v })),
+      'Takes effect the next time posi3 starts.'),
+
+    field('Port',
+      input({
+        class: 'num-input', type: 'number', value: s.webPort, style: 'width:110px',
+        onchange: (e) => save({ webPort: Number(e.target.value) })
+      }),
+      'Takes effect the next time posi3 starts.'),
+
+    field('Password',
+      el('div', { class: 'row-inline' },
+        pw,
+        el('button', {
+          class: 'btn shrink', text: 'Set',
+          onclick: async () => {
+            try {
+              await window.d3d.security.setPassword(pw.value);
+              pw.value = '';
+              store.info = await window.d3d.appInfo();
+              toast('info', 'Password set — other browsers must sign in again');
+              renderSettings(document.getElementById('content'));
+            } catch (err) { toast('error', err.message); }
+          }
+        }),
+        info.passwordSet ? el('button', {
+          class: 'btn shrink ghost', text: 'Remove',
+          onclick: async () => {
+            try {
+              await window.d3d.security.setPassword('');
+              pw.value = '';
+              store.info = await window.d3d.appInfo();
+              toast('warn', 'Password removed');
+              renderSettings(document.getElementById('content'));
+            } catch (err) { toast('error', err.message); }
+          }
+        }) : null),
+      'Asked for once per browser, then remembered for the session. ' +
+      'Leave it empty for no password. Requests from this machine never need it.'),
+
+    el('div', { class: 'statline' },
+      el('span', {}, 'Open at ', el('b', { text: reachable.join('   ') }))),
+
+    open ? el('div', { class: 'banner warn', style: 'position:static;margin:8px 0 0' },
+      'No password is set and posi3 is reachable on the network. ' +
+      'Anyone who knows this address can start and stop connections, write encoder ' +
+      'flash and change an encoder\'s IP.') : null
+  ], null,
+  'posi3 answers on this machine without a password whatever is set here — the password ' +
+  'guards the network, and anyone at this keyboard can already change the profile.');
+}
 
 export function renderSettings(root) {
   clear(root);
@@ -37,6 +113,8 @@ export function renderSettings(root) {
   ], null,
   'Auto start plus launch at login means a show server can reboot and come back streaming ' +
   'without anyone touching a keyboard.'));
+
+  view.appendChild(webAccessPanel(s, info, save));
 
   view.appendChild(panel('Profile', [
     el('div', { class: 'row-inline' },
