@@ -5499,3 +5499,12 @@ present inside both the macOS and the Windows asar.
 Both platforms remain unsigned — no Developer ID here, and `signtool` on the
 Windows side signs with nothing — so Gatekeeper and SmartScreen each want one
 click-through, as recorded in the packaging notes.
+
+**Verified end to end** on the x64 macOS artifact, which is the one this
+Intel build machine can run: launched from `release/mac/posi3.app`, it
+reports `v3.0.0 · rev 4c6d38c · electron 43.2.0` through its own API and the
+window server names the process `posi3`. The arm64 artifact cannot be run
+here at all — "bad CPU type", and LaunchServices' `-10661` saying the same —
+which is the build machine's architecture, not a fault in the artifact. It
+needs an Apple Silicon Mac to smoke-test, and that check is now on the
+hardware-pass list beside the Windows one.
