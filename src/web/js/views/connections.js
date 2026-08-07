@@ -235,15 +235,13 @@ function encoderAddressField(c, nicOf) {
         // the list it walked and anything too large to walk.
         const names = res.interface ? [res.interface.name] : (res.interfaces || []).map((n) => n.name);
         const where = names.length ? names.join(', ') : 'this machine';
-        const skipped = (res.skipped || []).length
-          ? ` (${res.skipped.map((n) => `${n.name} skipped — ${n.hosts.toLocaleString('en-US')} hosts`).join(', ')})`
-          : '';
+        // The count and where it looked, nothing more: the addresses found are
+        // in the dropdown, which is where an address gets picked.
         if (!res.interface && !names.length) {
           status.className = 'hint warn-text';
-          setText(status, 'No scannable interface on this machine' + skipped + '.');
+          setText(status, 'No scannable interface on this machine.');
         } else if (res.found.length) {
-          setText(status, `${res.found.length} found of ${res.scanned} addresses on ` +
-            `${where} — ${res.found.map((h) => h.host).join(', ')}${skipped}`);
+          setText(status, `${res.found.length} found of ${res.scanned} addresses on ${where}`);
         } else if (kin.length) {
           // Seen on the wire but not answering: almost always an encoder
           // holding an address on another subnet.
@@ -254,7 +252,7 @@ function encoderAddressField(c, nicOf) {
             `switch 2 in the connection cap forces ${info.constants.DEFAULT_ENCODER_IP} after a power cycle.`);
         } else {
           status.className = 'hint';
-          setText(status, `Nothing answering on ${res.scanned} addresses on ${where}${skipped}. ` +
+          setText(status, `Nothing answering on ${res.scanned} addresses on ${where}. ` +
             'If the encoder is on another subnet, switch 2 in the connection cap forces ' +
             `${info.constants.DEFAULT_ENCODER_IP} after a power cycle.`);
         }
