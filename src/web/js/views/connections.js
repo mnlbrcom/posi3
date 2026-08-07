@@ -365,7 +365,7 @@ function destinationRow(c, d, index, nics, info, redraw) {
         oninput: (e) => { d.name = e.target.value; }
       }))),
     el('div', { class: 'row-inline' },
-      field('Disguise server IP', input({
+      field('Disguise IP', input({
         class: 'mono-input', value: d.host,
         oninput: (e) => { d.host = e.target.value.trim(); }
       })),
