@@ -330,7 +330,7 @@ function destinationsEditor(c, nics, info) {
             host: '',
             // A second disguise machine almost always mirrors the first, so
             // carry the port and axis over rather than making them retype it.
-            port: prev.port || info.constants.DEFAULT_D3_PORT,
+            port: prev.port || info.constants.D3_FACTORY_PORT,
             devid: prev.devid != null ? prev.devid : 1,
             enabled: true,
             localAddress: prev.localAddress || null,
@@ -403,7 +403,7 @@ export async function openEditor(existing) {
       name: `Encoder ${store.connections.length + 1}`,
       encoder: { host: '', port: info.constants.DEFAULT_ENCODER_PORT, localAddress: null },
       destinations: [{
-        id: `dest-${Date.now()}`, name: '', host: '', port: info.constants.DEFAULT_D3_PORT,
+        id: `dest-${Date.now()}`, name: '', host: '', port: info.constants.D3_FACTORY_PORT,
         devid: nextDevid(), enabled: true, localAddress: null, localIfName: null, localPort: null
       }],
       velocityPolicy: 'zero',

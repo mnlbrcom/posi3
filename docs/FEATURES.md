@@ -5352,3 +5352,27 @@ line — they are in the dropdown, which is where an address gets picked — and
 the skipped-interface note ("utun4 skipped — 0 hosts") left with them: a VPN
 stub with zero hosts is not something an operator needs to be told about on
 every search.
+
+### One hint style everywhere, one section-title style, and 8000 in the port field
+
+**Asked:** "fonts are now all over the place, clean them up make them
+consistent" and "disguise default port 8000 should also be in the port
+field".
+
+**The fonts had a single cause, not drift.** `.hint` was only ever styled as
+`.field .hint` — so the nine hints in the UI that are *not* inside a field
+(the editor's factory-default note, the mapping explanations, the settings
+notes) matched no rule at all: they inherited `--fs-body` and body colour,
+rendering a size larger and a shade darker than the hint in the field beside
+them. `.hint` is now a rule in its own right; `.field .hint` keeps only its
+margin. Second: `.dest-title` and the table headers were two near-miss
+small-caps treatments (`.06em`/weight 400 versus `.5px`/weight 600) — the
+section titles now use the table-header treatment, so a small-caps title is
+one thing across the app.
+
+**The port field** started at `DEFAULT_D3_PORT` (6000, what the reference
+project uses) while the note under Device ID quotes `D3_FACTORY_PORT` (8000,
+disguise's own default) — the form contradicted its own note. New
+destinations now start at 8000. Both constants stay: 6000 is still what the
+existing show projects are configured for, and a second destination still
+copies the first's port rather than resetting to any default.
