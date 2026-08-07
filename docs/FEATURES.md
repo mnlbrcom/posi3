@@ -5344,3 +5344,11 @@ port number from the constant.
 Clarified placement: not under the tile title but under the Device ID field —
 it is that field's explanation. Rendered as the field's own hint on the first
 destination row only, so a fan-out does not repeat it per row.
+
+### The search status says the count and where it looked, nothing more
+
+"2 found of 508 addresses on en0, en3." The found addresses left the status
+line — they are in the dropdown, which is where an address gets picked — and
+the skipped-interface note ("utun4 skipped — 0 hosts") left with them: a VPN
+stub with zero hosts is not something an operator needs to be told about on
+every search.
