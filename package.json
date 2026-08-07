@@ -16,14 +16,15 @@
     "bench": "node tools/latency-bench.js",
     "harness": "node tools/link-harness.js",
     "icon": "node tools/make-app-icon.js",
-    "dist:mac": "npm run icon && electron-builder --mac --arm64 --x64",
-    "dist:win": "npm run icon && electron-builder --win --x64",
+    "dist:mac": "npm run stamp && npm run icon && electron-builder --mac --arm64 --x64",
+    "dist:win": "npm run stamp && npm run icon && electron-builder --win --x64",
     "uicheck": "node tools/uicheck.js",
     "tray-icon": "node tools/make-tray-icon.js",
     "shaft": "node tools/shaft-check.js",
     "desktopcheck": "node tools/desktopcheck.js",
     "lint": "eslint .",
-    "zoomcheck": "node tools/zoomcheck.js"
+    "zoomcheck": "node tools/zoomcheck.js",
+    "stamp": "node tools/stamp-revision.js"
   },
   "devDependencies": {
     "electron": "43.2.0",

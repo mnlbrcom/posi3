@@ -22,6 +22,17 @@ const { TRAY_ICON_PNG } = require('./tray-icon');
 
 const isDev = process.argv.includes('--dev');
 
+/**
+ * The name macOS puts in the menu bar, and Windows on a dialog.
+ *
+ * Set before `whenReady`, because the application menu is built from it. A
+ * packaged build gets this from the bundle (`productName` in package.json and
+ * electron-builder.yml, both already "posi3"); a development run launches
+ * Electron's own bundle, so without this the menu bar says "Electron" and
+ * every dialog is titled after the framework rather than the app.
+ */
+app.setName('posi3');
+
 // A minimised or hidden window must never stall the telemetry tick.
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -48,6 +59,15 @@ async function start() {
     if (err.code === 'EALREADYRUNNING') return deferToRunningInstance(err.holder);
     throw err;
   }
+
+  // "About posi3", with posi3's version — not Electron's, which is what the
+  // default panel shows and which nobody reporting a fault wants to read out.
+  app.setAboutPanelOptions({
+    applicationName: 'posi3',
+    applicationVersion: require('../../package.json').version,
+    version: `Electron ${process.versions.electron}`,
+    credits: 'POSITAL IXARC × disguise'
+  });
 
   // Launch at login is the host's job, not the API's: the service layer has no
   // business knowing about Electron.

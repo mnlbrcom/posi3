@@ -127,6 +127,11 @@ button, input, select, textarea { font-family: inherit; }
    controls above: correct-looking markup, wrong font, invisible until measured. */
 code { font-family: var(--mono); }
 
+/* The About panel's mark: the titlebar's wordmark, stacked with its subtitle
+   and given room to breathe. */
+.about-mark { margin-bottom: 12px; }
+.about-mark .titlebar-sub { display: block; margin-top: 2px; }
+
 /* ------------------------------------------------------------------- login */
 /* The one page served without authentication. Centred card, the app's own
    wordmark, nothing else to look at or click. */
