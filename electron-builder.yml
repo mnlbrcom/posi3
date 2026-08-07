@@ -13,6 +13,10 @@ files:
   - src/**
   - bin/**
   - package.json
+  # Written by `npm run stamp`, read by buildRevision() from the asar root.
+  # Left out of this list, the one build whose revision matters — the packaged
+  # one, which has no .git to ask — could not name itself.
+  - revision.json
   - "!**/*.map"
 
 asar: true
