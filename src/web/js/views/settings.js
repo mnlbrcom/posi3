@@ -171,15 +171,26 @@ export function renderSettings(root) {
   ]));
 
   view.appendChild(panel('About', [
+    // The same wordmark the titlebar wears, built from the same two spans —
+    // the name is a mashup and the mark shows the seam.
+    el('div', { class: 'about-mark' },
+      el('span', { class: 'wordmark' },
+        el('span', { class: 'wordmark-name', text: 'posi' }),
+        el('span', { class: 'wordmark-die', text: '3' })),
+      el('span', { class: 'titlebar-sub' }, 'POSITAL\u00a0IXARC', el('span', { class: 'titlebar-x' }, '\u00d7'), 'DISGUISE')),
+
     el('div', { class: 'statline' },
       el('span', {}, 'Version ', el('b', { text: info.version })),
+      // The commit this build came from. Absent only when neither a packaged
+      // stamp nor a .git directory is there to ask.
+      info.revision ? el('span', {}, 'Revision ', el('b', { class: 'mono', text: info.revision })) : null,
+      el('span', {}, 'Author ', el('b', { text: 'mnlbr' }))),
+
+    el('div', { class: 'statline' },
       // Absent when the bridge runs headless, which is a supported mode.
       info.electron ? el('span', {}, 'Electron ', el('b', { text: info.electron })) : null,
       el('span', {}, 'Node ', el('b', { text: info.node })),
-      el('span', {}, 'Platform ', el('b', { text: info.platform }))),
-    el('div', { class: 'statline' },
-      el('span', {}, 'Web UI ', el('b', { text: info.webUrl || '—' })),
-      el('span', {}, 'Access ', el('b', { text: info.tokenRequired ? 'token required' : 'this machine only' })))
+      el('span', {}, 'Platform ', el('b', { text: info.platform })))
   ], null,
   'Replaces d3driver.exe (2016). The packet format sent to disguise is unchanged, so existing ' +
   'projects keep working exactly as before.'));

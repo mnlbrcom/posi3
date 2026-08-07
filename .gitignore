@@ -10,3 +10,7 @@ release/
 # could not package. Regenerate with `npm run icon`.
 *.log
 .DS_Store
+
+# Written by `npm run stamp` at package time: it names the commit it was
+# generated from, so a committed copy would always be one behind.
+revision.json

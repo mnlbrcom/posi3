@@ -21,6 +21,30 @@ const { createServer } = require('./http');
 const { isLoopback } = require('./security');
 const { listInterfaces } = require('./validate');
 
+/**
+ * The commit this build came from, best effort.
+ *
+ * A packaged build carries `revision.json`, written by `npm run stamp`. A
+ * development run has no such file but does have `.git`, and reading HEAD by
+ * hand avoids spawning git on every start. Neither is fatal: a build that
+ * cannot name its revision simply does not show one.
+ */
+function buildRevision() {
+  const fs = require('node:fs');
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'revision.json'), 'utf8')).revision;
+  } catch { /* not a packaged build */ }
+  try {
+    const gitDir = path.join(__dirname, '..', '..', '.git');
+    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+    const ref = head.startsWith('ref: ') ? head.slice(5) : null;
+    const sha = ref ? fs.readFileSync(path.join(gitDir, ref), 'utf8').trim() : head;
+    return sha.slice(0, 7);
+  } catch {
+    return null;
+  }
+}
+
 /** Where the profile lives when Electron is not around to tell us. */
 function defaultDataDir() {
   if (process.platform === 'darwin') {
@@ -130,6 +154,7 @@ async function startService(opts = {}) {
     onSessionsInvalidated: () => { if (http && http.sessions) http.sessions.clear(); },
     env: () => Object.assign({
       version: require('../../package.json').version,
+      revision: buildRevision(),
       platform: process.platform,
       node: process.versions.node,
       dataDir,

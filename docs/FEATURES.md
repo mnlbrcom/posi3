@@ -5431,3 +5431,30 @@ silently opened by a newer build.
 Behavioural tests throughout (`test/web-access.test.js`, 9 tests over real
 HTTP against a real server): a guard is exactly the kind of thing that passes
 a source-level test and fails on the wire.
+
+### The app is called posi3, and About says which build you are holding
+
+**Asked:** the macOS menu bar says "Electron" — rename it; and give the About
+page the logo/text, the version and revision number, and the author mnlbr.
+
+**The name** was already right where it ships: `productName: posi3` in both
+`package.json` and `electron-builder.yml`, so a *packaged* build has always
+carried it. What says "Electron" is a development run, which launches
+Electron's own bundle. `app.setName('posi3')` before `whenReady` fixes the
+application menu there, and `setAboutPanelOptions` gives the native About
+dialog posi3's name and version with Electron's demoted to a detail — the
+default panel reported the framework's version, which is not what anybody
+reading out a fault report wants.
+
+**The revision** is new. `npm run stamp` (`tools/stamp-revision.js`, wired
+into both dist scripts) writes `revision.json` at package time, marking a
+build made from uncommitted work with a trailing `+` — a build that is not
+the commit it names should say so before somebody goes reading that commit.
+A development run has no stamp but does have `.git`, and HEAD is read
+directly rather than spawning git on every start. Neither present means no
+revision line rather than a wrong one. The file is gitignored: it names the
+commit it was generated from, so a committed copy would always be one behind.
+
+**About** now leads with the wordmark and its subtitle — the same two spans
+the titlebar uses, so there is one mark, not a copy — then Version, Revision
+and Author mnlbr on one line, with Electron/Node/Platform beneath.
