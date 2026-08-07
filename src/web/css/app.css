@@ -488,7 +488,13 @@ table.rows tr.selected { background: var(--accent-wash); }
 
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: var(--fs-label); color: var(--text-dim); margin-bottom: 4px; }
-.field .hint { font-size: var(--fs-label); color: var(--text-faint); margin-top: 4px; line-height: 1.45; }
+/* A hint is a hint wherever it sits. This lived under `.field .hint`, so the
+   nine hints that are *not* inside a field — the editor's factory-default
+   note, the disguise mapping's explanations, the settings notes — inherited
+   body size and body colour and rendered a size larger and a shade darker
+   than the hint in the field beside them. */
+.hint { font-size: var(--fs-label); color: var(--text-faint); line-height: 1.45; }
+.field .hint { margin-top: 4px; }
 .field.err input, .field.err select { border-color: var(--err); }
 .field .err-text { color: var(--err); font-size: var(--fs-label); margin-top: 4px; }
 
@@ -1088,9 +1094,11 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* ------------------------------------------------------ destination editor */
 
 .dest-block { margin-bottom: 14px; }
+/* The same small-caps treatment the table headers use, so a section title is
+   one thing across the app rather than two near-misses. */
 .dest-title {
-  font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .06em;
-  color: var(--text-faint); margin-bottom: 6px;
+  font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .5px;
+  color: var(--text-faint); font-weight: 600; margin-bottom: 6px;
 }
 .dest-row {
   border: 1px solid var(--border); border-radius: var(--radius);
