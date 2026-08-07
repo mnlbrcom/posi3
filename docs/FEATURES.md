@@ -5458,3 +5458,25 @@ commit it was generated from, so a committed copy would always be one behind.
 **About** now leads with the wordmark and its subtitle — the same two spans
 the titlebar uses, so there is one mark, not a copy — then Version, Revision
 and Author mnlbr on one line, with Electron/Node/Platform beneath.
+
+### The menu-bar name and About icon are the bundle's, and the bundle is right
+
+**Reported:** still "Electron" in the macOS menu bar, still Electron's icon in
+About.
+
+**Measured, not assumed.** On macOS both come from the running bundle's
+`Info.plist`, and a development run launches Electron's own bundle:
+`app.setName()` cannot reach the menu-bar title, and
+`setAboutPanelOptions.iconPath` is Linux/Windows only — checked against
+Electron 43's own type definitions rather than remembered. So there is no
+runtime override for either in dev.
+
+The packaged app was already correct, and this was proven rather than
+asserted: a built bundle reports `CFBundleName = posi3` and
+`CFBundleIconFile = icon.icns`, and launching it and asking the window server
+returns process name `posi3` with a menu bar reading
+`Apple, posi3, File, Edit, View, Window`.
+
+What *can* be set at runtime is the Dock icon, so a development run now shows
+posi3's icon there instead of Electron's. The rest is a packaging fact:
+`npm run dist:mac`, or the already-built `release/mac-arm64/posi3.app`.

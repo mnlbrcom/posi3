@@ -14,6 +14,7 @@
  * refusing to run twice.
  */
 
+const path = require('node:path');
 const { app, BrowserWindow, Tray, Menu, nativeImage, powerSaveBlocker, shell, dialog, clipboard } = require('electron');
 
 const { startService } = require('../server/service');
@@ -58,6 +59,21 @@ async function start() {
   } catch (err) {
     if (err.code === 'EALREADYRUNNING') return deferToRunningInstance(err.holder);
     throw err;
+  }
+
+  // The Dock icon, for a development run only.
+  //
+  // Everything else macOS shows about an app's identity — the menu bar title,
+  // the About panel's icon — is read from the bundle's Info.plist, and in
+  // development that bundle is Electron's own. `setAboutPanelOptions.iconPath`
+  // is Linux and Windows only (checked against Electron 43's own typings), so
+  // there is no runtime override for it. The packaged app is correct:
+  // CFBundleName is posi3 and the icon is icon.icns, verified on a built
+  // bundle. This is the one piece that *can* be set at runtime.
+  if (process.platform === 'darwin' && app.dock) {
+    try {
+      app.dock.setIcon(path.join(__dirname, '..', '..', 'build', 'icon.png'));
+    } catch { /* a build without generated icons still runs */ }
   }
 
   // "About posi3", with posi3's version — not Electron's, which is what the
