@@ -5480,3 +5480,22 @@ returns process name `posi3` with a menu bar reading
 What *can* be set at runtime is the Dock icon, so a development run now shows
 posi3's icon there instead of Electron's. The rest is a packaging fact:
 `npm run dist:mac`, or the already-built `release/mac-arm64/posi3.app`.
+
+### Release build: all six artifacts, and the stamp that was missing from them
+
+**Asked:** build everything into the release folder.
+
+Built on this machine: mac arm64 and x64 (dmg + zip, ~114–116 MB each) and
+Windows x64 (portable exe and NSIS installer, ~85 MB each), the portable exe
+verified as a real PE32 GUI binary.
+
+**The build caught a defect in the revision feature shipped an hour earlier.**
+`electron-builder.yml`'s `files` whitelist is deliberately narrow — `src/`,
+`bin/`, `package.json` — so `revision.json` was never packaged, and the one
+build whose revision actually matters, the packaged one with no `.git` to
+ask, could not name itself. The stamp is now in the whitelist and verified
+present inside both the macOS and the Windows asar.
+
+Both platforms remain unsigned — no Developer ID here, and `signtool` on the
+Windows side signs with nothing — so Gatekeeper and SmartScreen each want one
+click-through, as recorded in the packaging notes.
