@@ -86,8 +86,15 @@ const ROWS = [
   ['errors long quiet — the silence rule recovers it',
     sink({ lastTxAt: FRESH, txErrors: 5, lastErrorAt: STALE }), true, 'connected'],
   ['errors recent but a ping proved the host back',
-    sink({ lastTxAt: FRESH, txErrors: 5, lastErrorAt: FRESH, aliveAt: NOW, destAlive: true, destAliveAt: NOW }),
-    true, 'connected'],
+    sink({
+      lastTxAt: FRESH, txErrors: 5, lastErrorAt: FRESH, lastErrorCode: 'EHOSTUNREACH',
+      aliveAt: NOW, destAlive: true, destAliveAt: NOW
+    }), true, 'connected'],
+  ['refused recently, pings answering — the refusal names the port, and no ping can vouch for a port',
+    sink({
+      lastTxAt: FRESH, txErrors: 5, lastErrorAt: FRESH, lastErrorCode: 'ECONNREFUSED',
+      aliveAt: NOW, destAlive: true, destAliveAt: NOW
+    }), true, 'refused'],
 ];
 
 test('every evidence combination says the specified word', () => {

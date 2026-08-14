@@ -1901,7 +1901,14 @@ function sameValue(a, b) {
  */
 function hostProvenBack(sink) {
   if (!sink.txErrors) return true;
-  if (sink.aliveAt > sink.lastErrorAt) return true;
+  // A ping vouches for the machine, not the port — and a refusal already
+  // proves the machine is up; the fault it names is the port, which no ICMP
+  // echo can address. Letting the ping clear a refusal made a closed port
+  // flap once a second forever: the OS rate-limits ICMP errors to ~1/s, so
+  // each refusal was followed by an answered ping, a declared recovery and a
+  // "reachable again after 1 lost packets" line, three log lines a second. A
+  // refused destination recovers only by its sends going quiet.
+  if (sink.lastErrorCode !== 'ECONNREFUSED' && sink.aliveAt > sink.lastErrorAt) return true;
   return Date.now() - sink.lastErrorAt >= RECOVERY_QUIET_MS;
 }
 

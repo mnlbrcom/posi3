@@ -5536,3 +5536,28 @@ The nav items inherited body size (12.5px); as the app's primary wayfinding
 they now sit at `--fs-head` (14px) — an existing step on the scale, so the
 scale stays at four sizes. The narrow-width dropdown uses the same rule and
 follows along.
+
+### A closed port stops flapping — a ping cannot vouch for a port
+
+**Asked:** switching a destination's interface to Any produced "lots of
+logs" — check what is happening.
+
+The log was a metronome: `refused → connected → refused` once a second plus
+"reachable again after 1 lost packets" per cycle. On the wire: nothing is
+listening on that destination port, every datagram is refused, and the OS
+rate-limits ICMP errors to about one per second — so each visible refusal
+was followed by an answered liveness ping, which `hostProvenBack` took as
+recovery. Announce, flip to connected, next refusal, flip back: three log
+lines a second, indefinitely. (The interface change itself was incidental —
+it restarted the evidence; the port was simply closed.)
+
+The rule now stated in the recovery gate: a ping vouches for the *machine*,
+and `ECONNREFUSED` already proves the machine is up — the fault it names is
+the *port*, which no ICMP echo can address. A refused destination therefore
+recovers only by its sends going quiet, which puts it on the ordinary
+offline machinery: give-up after two seconds, one announcement naming the
+refusal, sends suppressed, probe datagrams once a second — and when the port
+opens, the probe draws no refusal, the trial runs, and it comes back in
+about five seconds. Steady `refused` pill, two log lines total. Pinned by
+two new matrix rows: host-level errors are still cleared by a ping; a
+refusal never is.
