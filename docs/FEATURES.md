@@ -5508,3 +5508,24 @@ here at all — "bad CPU type", and LaunchServices' `-10661` saying the same —
 which is the build machine's architecture, not a fault in the artifact. It
 needs an Apple Silicon Mac to smoke-test, and that check is now on the
 hardware-pass list beside the Windows one.
+
+## 2026-08-14 — Banners stop moving the interface
+
+**Asked:** the interface bounces because of the notifications.
+
+It did, structurally: `.banners` sat in the body's column between the
+titlebar and the shell, so every banner arriving or expiring resized the
+shell and shoved the whole interface down and back — with a banner per
+destination transition and a thirty-second life each, the UI bounced exactly
+while an operator was trying to read it. The rule now recorded in the CSS:
+nothing that appears on its own schedule may move what somebody is pointing
+at.
+
+Banners float: absolutely positioned under the titlebar, right-aligned,
+capped at 520px, stacked with a gap, above the content (z 50 — under the
+narrow-width menu at 60 and the modal backdrop at 100). The stack itself
+ignores pointer events so it can never block clicks beneath it; each banner
+takes them back for its close button. Bordered, rounded and shadowed, since
+they now sit over content rather than in a slot; the wash backgrounds are
+opaque hex, so nothing bleeds through. The layout no longer changes by a
+single pixel when they come and go.
