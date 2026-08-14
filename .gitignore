@@ -14,3 +14,7 @@ release/
 # Written by `npm run stamp` at package time: it names the commit it was
 # generated from, so a committed copy would always be one behind.
 revision.json
+
+# pr-agent local review output
+review.md
+description.md
