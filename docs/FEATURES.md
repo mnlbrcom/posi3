@@ -5529,3 +5529,10 @@ takes them back for its close button. Bordered, rounded and shadowed, since
 they now sit over content rather than in a slot; the wash backgrounds are
 opaque hex, so nothing bleeds through. The layout no longer changes by a
 single pixel when they come and go.
+
+### Menu items step up to --fs-head
+
+The nav items inherited body size (12.5px); as the app's primary wayfinding
+they now sit at `--fs-head` (14px) — an existing step on the scale, so the
+scale stays at four sizes. The narrow-width dropdown uses the same rule and
+follows along.
