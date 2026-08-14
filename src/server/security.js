@@ -68,6 +68,56 @@ function passwordMatches(password, stored) {
 }
 
 /**
+ * The same check, off the event loop.
+ *
+ * `scryptSync` blocks for tens of milliseconds by design, and this process
+ * also runs the parse-and-forward path for every encoder sample. A flood of
+ * login attempts on the synchronous version would stall that path — so the
+ * login route uses this, and scrypt runs on libuv's threadpool instead.
+ */
+function passwordMatchesAsync(password, stored) {
+  return new Promise((resolve) => {
+    if (!stored || !stored.salt || !stored.hash || !password) return resolve(false);
+    crypto.scrypt(String(password), stored.salt, 32, (err, candidate) => {
+      if (err) return resolve(false);
+      const expected = Buffer.from(String(stored.hash), 'base64');
+      if (candidate.length !== expected.length) return resolve(false);
+      resolve(crypto.timingSafeEqual(candidate, expected));
+    });
+  });
+}
+
+/**
+ * A memory of recent failed logins, by client address.
+ *
+ * Not a lockout — an operator who fat-fingers the password four times must
+ * not be shut out mid-show — but a brake: after a handful of failures from
+ * one address the attempts are refused without even reaching scrypt, so a
+ * brute-force loop cannot pin the threadpool or grind the hash. Successful
+ * login clears the address; the window is short, so a walk-away resets it.
+ */
+function createLoginThrottle(now = () => Date.now(), opts = {}) {
+  const max = opts.max || 6;
+  const windowMs = opts.windowMs || 30000;
+  const fails = new Map();
+  const prune = (addr) => {
+    const rec = fails.get(addr);
+    if (rec && now() - rec.first > windowMs) fails.delete(addr);
+  };
+  return {
+    blocked(addr) { prune(addr); const rec = fails.get(addr); return !!rec && rec.count >= max; },
+    fail(addr) {
+      prune(addr);
+      const rec = fails.get(addr) || { count: 0, first: now() };
+      rec.count++;
+      fails.set(addr, rec);
+    },
+    clear(addr) { fails.delete(addr); },
+    get size() { return fails.size; }
+  };
+}
+
+/**
  * Browser sessions, in memory only.
  *
  * A restart logs everyone out, which for a tool that is restarted between
@@ -103,7 +153,13 @@ function cookieValue(req, name) {
   for (const part of raw.split(';')) {
     const eq = part.indexOf('=');
     if (eq < 0) continue;
-    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+    if (part.slice(0, eq).trim() !== name) continue;
+      const value = part.slice(eq + 1).trim();
+      // A malformed cookie is an attacker's to send, not ours to trust:
+      // `decodeURIComponent('%ff')` throws URIError, and unhandled in the
+      // request path that throw took the whole streaming bridge down. A
+      // cookie we cannot decode is a cookie we do not honour.
+      try { return decodeURIComponent(value); } catch { return value; }
   }
   return null;
 }
@@ -244,5 +300,6 @@ const SECURITY_HEADERS = {
 
 module.exports = {
   createGuard, newToken, isLoopback, SECURITY_HEADERS,
-  hashPassword, passwordMatches, createSessions, cookieValue, SESSION_COOKIE, SESSION_MS
+  hashPassword, passwordMatches, passwordMatchesAsync, createSessions, createLoginThrottle,
+  cookieValue, SESSION_COOKIE, SESSION_MS
 };

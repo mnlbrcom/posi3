@@ -13,7 +13,10 @@ const path = require('node:path');
 const { URL } = require('node:url');
 
 const { SseHub, bridgeEvents } = require('./sse');
-const { createGuard, SECURITY_HEADERS, SESSION_COOKIE, SESSION_MS } = require('./security');
+const {
+  createGuard, SECURITY_HEADERS, SESSION_COOKIE, SESSION_MS,
+  passwordMatchesAsync, createLoginThrottle
+} = require('./security');
 
 const WEB_ROOT = path.join(__dirname, '..', 'web');
 
@@ -88,6 +91,7 @@ function createServer(opts) {
   bridgeEvents(manager, hub);
 
   const guard = createGuard({ bindHost, port, token, password: opts.password });
+  const loginThrottle = createLoginThrottle();
 
   const send = (res, code, body, headers = {}) => {
     const payload = Buffer.from(body);
@@ -119,7 +123,19 @@ function createServer(opts) {
     });
   }
 
-  const server = http.createServer(async (req, res) => {
+  // Every request in one try/catch. A synchronous throw anywhere below —
+  // a malformed header, a bug in a route — becomes a 500, never an unhandled
+  // rejection that ends the process. The bridge feeds a live show; one bad
+  // request must not stop every encoder stream.
+  const server = http.createServer((req, res) => handleRequest(req, res).catch((err) => {
+    try {
+      if (!res.headersSent) sendJson(res, 500, { ok: false, error: { code: 'EINTERNAL', message: 'Internal error' } });
+      else res.end();
+    } catch { /* the socket is already gone */ }
+    manager.logger.push({ level: 'error', dir: 'app', text: `request failed: ${err && err.message}` });
+  }));
+
+  async function handleRequest(req, res) {
     let url;
     try {
       url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -139,6 +155,12 @@ function createServer(opts) {
       if (!guard.checkHostHeader(req)) {
         return sendJson(res, 421, { ok: false, error: { code: 'EDENIED', message: 'Unrecognised Host header' } });
       }
+      const addr = (req.socket && req.socket.remoteAddress) || 'unknown';
+      // Too many recent failures from this address: refuse before scrypt, so a
+      // brute-force loop cannot pin the threadpool the forward path shares.
+      if (loginThrottle.blocked(addr)) {
+        return sendJson(res, 429, { ok: false, error: { code: 'EDENIED', message: 'Too many attempts — wait a moment and try again.' } });
+      }
       let body = {};
       try { body = await readBody(req); } catch { /* an empty body fails below */ }
       const stored = opts.password ? opts.password() : null;
@@ -147,13 +169,14 @@ function createServer(opts) {
         // asking for one and a session would mean nothing.
         return sendJson(res, 200, { ok: true, data: { open: true } });
       }
-      const { passwordMatches } = require('./security');
-      if (!passwordMatches(body && body.password, stored)) {
+      if (!(await passwordMatchesAsync(body && body.password, stored))) {
+        loginThrottle.fail(addr);
         // Deliberately vague and deliberately slow-ish by construction:
         // scrypt is the delay, and naming which half was wrong helps nobody
         // who is entitled to be here.
         return sendJson(res, 401, { ok: false, error: { code: 'EDENIED', message: 'That password was not accepted.' } });
       }
+      loginThrottle.clear(addr);
       const id = guard.sessions.issue();
       return sendJson(res, 200, { ok: true, data: { ok: true } }, {
         // HttpOnly so no script can read it, SameSite=Strict so no other
@@ -229,7 +252,7 @@ function createServer(opts) {
       return send(res, 405, 'Method not allowed', { 'Content-Type': 'text/plain' });
     }
     return serveStatic(req, res, pathname);
-  });
+  }
 
   // A show laptop's browser tab left open overnight should not pin a socket.
   server.keepAliveTimeout = 65000;

@@ -369,8 +369,17 @@ function migrateConnection(c, fromVersion) {
   pickKnown(out, base);
   pickKnown(out.encoder, Object.assign({ pendingHost: null }, base.encoder));
   pickKnown(out.parser, base.parser);
+  // "At every depth" means the nested objects too: encoderMeta, reconnect and
+  // each destination's mapping all have a reference shape, and an Object.assign
+  // merge alone let junk keys accrete in exactly them.
+  pickKnown(out.encoderMeta, base.encoderMeta);
+  pickKnown(out.reconnect, base.reconnect);
   const destShape = defaultDestination();
-  for (const d of out.destinations) pickKnown(d, destShape);
+  const mapShape = defaultMapping();
+  for (const d of out.destinations) {
+    pickKnown(d, destShape);
+    if (d.mapping) pickKnown(d.mapping, mapShape);
+  }
 
   // The mirror is derived, not stored knowledge — built after the whitelist,
   // which rightly has no entry for it.

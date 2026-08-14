@@ -901,7 +901,17 @@ function createApi(ctx) {
      * native save dialog here, which would have put the file picker on the
      * server rather than on the operator's machine.
      */
-    configExport: () => store.profile,
+    configExport: () => {
+      // The password hash does not travel with the profile. The file is meant
+      // to move between machines and into support threads, and a scrypt hash
+      // in it is an offline brute-force target for whoever obtains the file —
+      // and the password is machine-specific access control, not show
+      // configuration, so it has no business in the shared artifact. An
+      // imported profile keeps whatever password that machine already had.
+      const exported = JSON.parse(JSON.stringify(store.profile));
+      if (exported.settings) delete exported.settings.webPassword;
+      return exported;
+    },
 
     configImport: (data) => {
       if (!data || !Array.isArray(data.connections)) fail('EINVAL', 'That file is not a posi3 profile');
@@ -917,6 +927,10 @@ function createApi(ctx) {
       // prototype chain: values readable from the live config yet invisible to
       // `JSON.stringify`, present in memory and absent from the saved file.
       stripUnsafeKeys(data);
+
+      // The password is the machine's, not the file's: an import keeps whatever
+      // this machine already had, whether or not the incoming file names one.
+      const keepPassword = store.settings.webPassword || null;
 
       // Refuse before replacing. Each connection is run through the same
       // migration the store will apply and then through sanitiseConnection, so
@@ -940,6 +954,10 @@ function createApi(ctx) {
         flashBudget.forget(c.id);
       }
       const profile = store.replaceProfile(data);
+      // Whatever the file said, this machine's own password stands.
+      if ((profile.settings.webPassword || null) !== keepPassword) {
+        store.setSettings({ webPassword: keepPassword });
+      }
       for (const conn of profile.connections) ctx.syncLink(conn);
       userLog(null, `imported a profile — replaced ${had} connection(s) with ` +
         `${profile.connections.length}: ${profile.connections.map((c) => c.name).join(', ')}`, 'warn');

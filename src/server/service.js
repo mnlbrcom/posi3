@@ -65,6 +65,29 @@ function defaultDataDir() {
  * @param {object}  [opts.env]       extra facts for appInfo (version, paths…)
  * @param {(s:object)=>void} [opts.onSettings]
  */
+let guardInstalled = false;
+/**
+ * Keep the bridge alive through an unexpected throw.
+ *
+ * The HTTP handler is wrapped, so a request cannot become an unhandled
+ * rejection any more — this is the floor beneath that: a bug anywhere else
+ * that would otherwise kill a process feeding a live show is logged and
+ * survived instead. Exiting on `uncaughtException` is the Node default and
+ * the wrong trade here; a frozen encoder stream is recoverable, a dead
+ * process is not.
+ */
+function installProcessGuard(logger) {
+  if (guardInstalled) return;
+  guardInstalled = true;
+  const note = (what, err) => {
+    try {
+      logger.push({ level: 'error', dir: 'app', text: `${what}: ${(err && err.stack) || err}` });
+    } catch { /* logging must never be the thing that throws here */ }
+  };
+  process.on('unhandledRejection', (err) => note('unhandled rejection', err));
+  process.on('uncaughtException', (err) => note('uncaught exception', err));
+}
+
 async function startService(opts = {}) {
   const dataDir = opts.dataDir || defaultDataDir();
   const bindHost = opts.bindHost || '127.0.0.1';
@@ -83,6 +106,7 @@ async function startService(opts = {}) {
   store.load();
 
   const logger = new Logger();
+  installProcessGuard(logger);
   const manager = new LinkManager({ logger, telemetryHz: store.settings.telemetryHz });
 
   // Always on for warnings and errors: a packaged app has no console, so
