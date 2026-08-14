@@ -277,3 +277,27 @@ test('an old schema is rewritten to disk at load, not at the next save', () => {
   assert.equal('logRaw' in onDisk.connections[0], false);
   assert.equal('defaultVelocityPolicy' in onDisk.settings, false);
 });
+
+test('schema 5 strips unknown keys from nested objects too', () => {
+  // "At every depth" must include encoderMeta, reconnect and mapping — each has
+  // a reference shape, and an Object.assign merge alone let junk accrete there.
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({
+    version: 4, settings: {},
+    connections: [{
+      id: 'c', name: 'A',
+      encoder: { host: '192.0.2.20', port: 6000 },
+      encoderMeta: { countsPerRev: 8192, junk: 'x' },
+      reconnect: { enabled: true, ghost: 1 },
+      destinations: [{
+        id: 'd', host: '192.0.2.4', port: 8000, devid: 1,
+        mapping: { mode: 'full', leftover: true }
+      }]
+    }]
+  }));
+  const c = loaded(dir).profile.connections[0];
+  assert.equal('junk' in c.encoderMeta, false);
+  assert.equal('ghost' in c.reconnect, false);
+  assert.equal('leftover' in c.destinations[0].mapping, false);
+  assert.equal(c.encoderMeta.countsPerRev, 8192, 'and the real values stay');
+});

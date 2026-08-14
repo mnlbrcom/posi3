@@ -216,3 +216,65 @@ test('a new profile is reachable; an existing one keeps what it says', () => {
   assert.equal(migrated.settings.webBindHost, '127.0.0.1',
     'and a profile with no opinion is not given a permissive one');
 });
+
+test('a malformed session cookie is refused, not fatal', async (t) => {
+  // The reported crash: decodeURIComponent('%ff') throws URIError, and in the
+  // request path that throw ended the whole streaming bridge — unauthenticated,
+  // from anyone who could reach the port, in the default bind-wide-with-password
+  // deployment. A cookie we cannot decode is a cookie we do not honour.
+  const { cookieValue } = require('../src/server/security');
+  assert.doesNotThrow(() => cookieValue({ headers: { cookie: 'posi3_session=%ff' } }, 'posi3_session'));
+
+  const svc = await wideService(t);
+  await svc.api.securitySetPassword({ password: 'get-in-2026' });
+  const lan = lanAddress(svc);
+  if (!lan) return;
+
+  const res = await fetch(`http://${lan}:${port(svc)}/api/appInfo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: 'posi3_session=%ff' },
+    body: '{}'
+  });
+  assert.equal(res.status, 401, 'a bad cookie is just an absent session, not a crash');
+
+  // And the process is still here to answer the next one.
+  const again = await fetch(`http://127.0.0.1:${port(svc)}/api/appInfo`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+  });
+  assert.equal(again.status, 200, 'the bridge survived the malformed request');
+});
+
+test('login attempts are throttled before they can grind scrypt', async (t) => {
+  const svc = await wideService(t);
+  await svc.api.securitySetPassword({ password: 'get-in-2026' });
+  const lan = lanAddress(svc);
+  if (!lan) return;
+
+  const attempt = () => fetch(`http://${lan}:${port(svc)}/api/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'wrong' })
+  });
+
+  let sawThrottle = false;
+  for (let i = 0; i < 10; i++) {
+    const r = await attempt();
+    if (r.status === 429) { sawThrottle = true; break; }
+    assert.equal(r.status, 401);
+  }
+  assert.ok(sawThrottle, 'a brute-force loop is refused before it can pin the threadpool');
+});
+
+test('an exported profile does not carry the password hash', async (t) => {
+  const dir = tmp();
+  const svc = await startService({ dataDir: dir, port: 0 });
+  t.after(() => svc.stop());
+  svc.api.securitySetPassword({ password: 'machine-local-secret' });
+
+  const exported = svc.api.configExport();
+  assert.equal('webPassword' in (exported.settings || {}), false,
+    'the hash is an offline brute-force target in a file that gets copied around');
+
+  // And importing a file with no password keeps this machine's own.
+  svc.api.configImport({ version: 5, settings: { telemetryHz: 30 }, connections: [] });
+  assert.ok(svc.store.settings.webPassword, 'the local password survives an import that omits one');
+});

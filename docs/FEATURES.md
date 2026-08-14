@@ -5561,3 +5561,43 @@ opens, the probe draws no refusal, the trial runs, and it comes back in
 about five seconds. Steady `refused` pill, two log lines total. Pinned by
 two new matrix rows: host-level errors are still cleared by a ping; a
 refusal never is.
+
+## 2026-08-14 — Review findings on the web-access work, fixed
+
+A CodeRabbit-style review of the password/access commits found four issues,
+each verified against the code before fixing.
+
+**Critical — a malformed cookie crashed the whole bridge, unauthenticated.**
+`cookieValue` ran `decodeURIComponent` on the raw cookie with no guard, and
+`decodeURIComponent('%ff')` throws `URIError`. That throw was synchronous in
+the async request handler, became an unhandled rejection, and with no process
+guard it ended the process — so anyone who could reach the port could stop
+every encoder stream with one header (`Cookie: posi3_session=%ff`), and the
+default deployment, bind-wide-with-password, was exactly the reachable one.
+Two layers now: `cookieValue` treats an undecodable cookie as an unhonoured
+one, and the request handler is wrapped so any synchronous throw becomes a
+500 rather than a rejection. Beneath both, `installProcessGuard` logs an
+unhandled rejection or uncaught exception and keeps running — a frozen stream
+is recoverable, a dead process is not. Proven live: the malformed request now
+gets 401 and the server answers the next one.
+
+**Warning — synchronous scrypt on the login path, unthrottled.** `scryptSync`
+blocks the event loop ~50 ms, and that loop also forwards every encoder
+sample, so a flood of wrong-password POSTs could stall the data path. Login
+now uses async `scrypt` (off on the threadpool) and a per-address throttle
+that refuses after a handful of recent failures — before scrypt runs — so a
+brute-force loop can neither pin the threadpool nor grind the hash. It is a
+brake, not a lockout: the window is short and a successful login clears the
+address, so an operator who mistypes is not shut out mid-show.
+
+**Info — the schema-5 whitelist missed three nested objects.** `encoderMeta`,
+`reconnect` and each destination's `mapping` were merged wholesale, so junk
+keys could accrete in exactly the sub-objects "known keys only, at every
+depth" was meant to clean. `pickKnown` now reaches all three.
+
+**Info — profile export carried the password hash.** The exported/downloaded
+profile included `settings.webPassword`. It is a hash, not plaintext, but the
+file is made to travel between machines and into support threads, and a hash
+in it is an offline brute-force target — and the password is machine-specific
+access control, not show configuration. Export now strips it, and import
+keeps whatever password the importing machine already had.
