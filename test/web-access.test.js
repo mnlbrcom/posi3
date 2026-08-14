@@ -278,3 +278,43 @@ test('an exported profile does not carry the password hash', async (t) => {
   svc.api.configImport({ version: 5, settings: { telemetryHz: 30 }, connections: [] });
   assert.ok(svc.store.settings.webPassword, 'the local password survives an import that omits one');
 });
+
+test('the password is never hashed on the per-request path — only at login', async (t) => {
+  // pr-agent (claude-sonnet-5) caught this: checkAuth fronts every endpoint,
+  // and a synchronous scryptSync there let a flood of wrong-Bearer requests to
+  // any route block the event loop the encoder forward path shares — the DoS
+  // the login throttle closed, through a door left open. The password now
+  // authenticates only at /api/login; everything else needs a session.
+  const svc = await wideService(t);
+  await svc.api.securitySetPassword({ password: 'get-in-2026' });
+  const lan = lanAddress(svc);
+  if (!lan) return;
+
+  // The correct password as a Bearer token on a normal endpoint must NOT let
+  // you in — that path is what forced a per-request hash.
+  const bearer = await fetch(`http://${lan}:${port(svc)}/api/appInfo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer get-in-2026' },
+    body: '{}'
+  });
+  assert.equal(bearer.status, 401, 'a Bearer password no longer authenticates a general request');
+
+  // The supported path — log in once, carry the session — still works.
+  const login = await fetch(`http://${lan}:${port(svc)}/api/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'get-in-2026' })
+  });
+  const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
+  const withSession = await fetch(`http://${lan}:${port(svc)}/api/appInfo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: '{}'
+  });
+  assert.equal(withSession.status, 200);
+
+  // And no source line under the guard calls the synchronous hash any more.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'security.js'), 'utf8');
+  const fn = src.slice(src.indexOf('function checkAuth'));
+  const body = fn.slice(0, fn.indexOf('\n  }'));
+  assert.doesNotMatch(body, /passwordMatches\(/, 'checkAuth performs no password hashing');
+});
