@@ -103,8 +103,8 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  /* Column flow so banners sit between the titlebar and the shell instead of
-     floating over them — see .banners. */
+  /* Column flow for the titlebar and the shell. Banners float above the shell
+     rather than joining this column — see .banners. */
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -246,12 +246,42 @@ body.inset-titlebar .titlebar {
    Overlaid, two stacked banners covered the top of the nav rail — with a flash
    write in progress, "do not power off" was hiding the navigation. Now they
    displace the shell instead. */
-.banners { flex: 0 0 auto; }
+/*
+ * Banners float; they do not take part in the layout.
+ *
+ * They used to sit in the body's column between the titlebar and the shell,
+ * which meant every banner arriving or expiring resized the shell and shoved
+ * the whole interface down and back — and with a banner per destination going
+ * down and coming back, plus a thirty-second life each, the UI bounced while
+ * an operator was trying to read it. Nothing that appears on its own schedule
+ * may move what somebody is pointing at.
+ *
+ * Below the modal backdrop (100) and the narrow-width menu (60), above the
+ * content. Constrained in width and right-aligned so a banner covers the
+ * corner of a screen rather than a whole row of figures.
+ */
+.banners {
+  position: absolute;
+  top: calc(var(--titlebar) + 8px);
+  right: 12px;
+  left: auto;
+  width: min(520px, calc(100% - 24px));
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
 .banner {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 14px;
   font-size: var(--fs-body);
-  border-bottom: 1px solid rgba(0,0,0,.3);
+  border: 1px solid rgba(0,0,0,.3);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  /* The stack ignores pointer events so it never blocks what is underneath;
+     each banner takes them back, or its close button would be unclickable. */
+  pointer-events: auto;
 }
 .banner-warn  { background: var(--warn-wash); color: var(--warn); }
 .banner-error { background: var(--err-wash); color: var(--err-text); }
