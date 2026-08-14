@@ -9,15 +9,14 @@ OPEN
 - Adding the disguise model to the dashboard and connection
 - Adding the Encoder Model to the dashboard and Encoder Config
 - IP/Nic Picker in add connection optimieren
-- Pop Layouts optimieren
+
 - Dashboard stats rethink
-- Web Interface reachable from other systems. Multi Ip reach.
-- App and Web have different min width
-- App name MacOs and Windows conistent, also in the OS Menus.
-- Encoder Config Indicator Idle should be offline. Idle should be connected but not started? 
+- Web Interface reachable from other systems. Multi Ip reach. Testing...
+
+
 - Settings - About tile, state the encoder string to the navigator driver string short golden bytes "1:12345,0;\n"
 - Check Auto Start after reboot (macOS & win)
-- States for Encoders? Offline(off/unplugged) Connected(stopped) Sending(start)
+
 - A1. DISGUISE MAPPING SCREEN still optimising
 - A2. ZERO / PRESET 0 needs fix same thing.
 - A3. RUN! (SINGLE SAMPLE) show only when Polled mode active. Where??
