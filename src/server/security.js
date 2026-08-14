@@ -249,8 +249,16 @@ function createGuard(opts) {
 
     const pw = storedPassword();
     if (!pw) return true; // open on the network, as chosen and as logged
-    if (sessions.valid(cookieValue(req, SESSION_COOKIE))) return true;
-    return passwordMatches(presented(req, url), pw);
+
+    // A session, and nothing else. The password is verified exactly once, at
+    // /api/login — which runs scrypt asynchronously and is rate-limited — and
+    // never here. This guard fronts every endpoint, so a synchronous
+    // `passwordMatches` on it let a flood of wrong-Bearer requests to any
+    // route block the event loop the encoder forward path shares: the same
+    // DoS the login throttle closed, through a door left open. Scripts
+    // authenticate with the explicit token (a fast constant-time compare),
+    // not the password.
+    return sessions.valid(cookieValue(req, SESSION_COOKIE));
   }
 
   /** @returns {{code:number, message:string}|null} null when the request may proceed */
