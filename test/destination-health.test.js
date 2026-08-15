@@ -47,8 +47,26 @@ async function deadLink(t) {
   return { link: l, port };
 }
 
+/**
+ * Force a sink's sends to fail with a real error code, deterministically.
+ *
+ * A closed loopback port draws ICMP port-unreachable on Linux, but the macOS
+ * and Windows runners deliver it slowly or not at all — so a test that waits
+ * for send errors to pile up ('timed out waiting for failures to accumulate')
+ * is flaky there. This drives the exact same error path the socket would,
+ * without depending on the platform's ICMP behaviour.
+ */
+function forceSendFailure(link, code = 'ECONNREFUSED') {
+  for (const sink of link._sinks) {
+    sink.udp.send = (buf, off, len, cb) => {
+      if (typeof cb === 'function') cb(Object.assign(new Error(`send ${code}`), { code }));
+    };
+  }
+}
+
 test('a persistent failure is announced once, not on every packet', async (t) => {
   const { link } = await deadLink(t);
+  forceSendFailure(link); // platform-independent: see forceSendFailure
   const warnings = [];
   link.on('log', (e) => { if (e.level === 'warn') warnings.push(e.text); });
 
