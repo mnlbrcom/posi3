@@ -295,6 +295,16 @@ function createApi(ctx) {
             `refused: ${bad.map((r) => r.variable).join(', ')}`
           : `flash write confirmed — ${what}`,
         bad.length ? 'warn' : 'info');
+        // The running path emits this from EncoderLink; the offline path has no
+        // link, so emit it here — otherwise a stopped-connection write confirms
+        // in the log but shows nothing on screen.
+        const landed = results.filter((r) => r.ok);
+        if (landed.length) {
+          manager.emit('encoderEvent', {
+            id: conn.id, kind: 'flashConfirmed',
+            text: `written and confirmed — ${landed.map((r) => `${r.variable}=${r.value}`).join(', ')}`
+          });
+        }
         return results;
       } catch (err) { last = err; }
     }

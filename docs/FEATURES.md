@@ -5724,3 +5724,34 @@ and reported. The trade, accepted deliberately: a "lying echo" — the encoder
 echoing a value it does not actually store — is no longer caught by a read-back;
 the running path never caught it either, and every write path now takes the echo
 as the confirmation, for every `set <Variable>=<Value>`.
+
+## 2026-08-16 — Controls: Preset 0 and Offset 0 as explained, critical actions
+
+**Asked:** in the Controls dialog, keep Preset 0, add an Offset 0 button; move
+both onto their own lines like Delete, behind a separator, each with a line of
+explanation; head the pair "CRITICAL FLASH MEMORY ACTIONS" with a flash-safety
+note.
+
+The two flash-write actions move out of the quick-controls row into a section of
+their own, set apart by a rule and headed **CRITICAL FLASH MEMORY ACTIONS**
+(amber), with a note on flash lifespan, the consecutive-Preset rule, and the
+do-not-power-off caution. Each button sits on its own row beside what it does:
+
+- **Preset 0** — "The target output number defined by the user for the current
+  physical position." (writes `Preset=0`, unchanged path).
+- **Offset 0** — "Resets to Initial State (Raw Uncalibrated Physical Reading)."
+  New: writes `Offset=0` through the standard write path, behind the same
+  flash-write confirm modal, with a refusal surfaced from the results.
+
+The quick-controls row keeps `[status · Start/Stop · Run!]`; Delete stays its own
+set-apart danger row.
+
+The safety note first said "wait for the response 'Parameters successfully
+written!'" — the exact broadcast this firmware does not reliably send and that
+posi3 stopped depending on. Reworded to "wait for posi3 to report 'flash write
+confirmed'", which is what actually appears. And the confirmation is now shown on
+both paths: a stopped-connection write goes through `writeOffline`, which had no
+link to raise the `flashConfirmed` event, so the write confirmed in the log but
+nothing appeared on screen — `api.js` now emits `flashConfirmed` on the manager
+for the offline path, so the "written and confirmed" toast fires whether the
+connection is running or stopped.

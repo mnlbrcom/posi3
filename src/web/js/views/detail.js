@@ -16,10 +16,14 @@ import { el, pill, groupDigits, confirmModal, openModal, toast } from '../ui.js'
 import { store } from '../store.js';
 
 export function openControls(conn) {
-  const zeroBtn = el('button', {
-    class: 'btn primary big', text: 'Zero / Preset 0',
-    title: 'Make the encoder read 0 at its current physical position',
+  const presetBtn = el('button', {
+    class: 'btn', text: 'Preset 0',
     onclick: () => doPreset(conn)
+  });
+
+  const offsetBtn = el('button', {
+    class: 'btn', text: 'Offset 0',
+    onclick: () => doOffset(conn)
   });
 
   const runBtn = el('button', {
@@ -52,7 +56,25 @@ export function openControls(conn) {
         el('span', { class: 'arrow', text: '·' }),
         `device ID ${conn.d3.devid}`),
 
-      el('div', { class: 'modal-actions' }, pill(store.encoderIndicator(conn.id)), runStop, zeroBtn, runBtn),
+      el('div', { class: 'modal-actions' }, pill(store.encoderIndicator(conn.id)), runStop, runBtn),
+
+      // Each of these spends one of the encoder's finite flash-write cycles, so
+      // they are set apart from the quick controls, headed as critical, and each
+      // says what it does.
+      el('div', { class: 'modal-writes' },
+        el('p', { class: 'modal-writes-head', text: 'CRITICAL FLASH MEMORY ACTIONS' }),
+        el('p', {
+          class: 'modal-writes-note',
+          text: 'Flash Lifespan (~100,000 Writes), Firmware prevents writing identical consecutive ' +
+            'Presets. Wait for posi3 to report "flash write confirmed" before turning off power ' +
+            'to avoid Flash corruption.'
+        }),
+        el('div', { class: 'modal-action-row' },
+          presetBtn,
+          el('span', { class: 'hint', text: 'The target output number defined by the user for the current physical position.' })),
+        el('div', { class: 'modal-action-row' },
+          offsetBtn,
+          el('span', { class: 'hint', text: 'Resets to Initial State (Raw Uncalibrated Physical Reading).' }))),
 
       // Deleting used to live in the connections row menu, which is gone. It
       // belongs on the one surface that is about managing a single connection,
@@ -91,6 +113,35 @@ async function toggleLink(conn) {
     if (running) await window.d3d.link.stop(conn.id);
     else await window.d3d.link.start(conn.id);
   } catch (err) { toast('error', err.message); }
+}
+
+async function doOffset(conn) {
+  const ok = await confirmModal({
+    title: 'Reset Offset?',
+    body: [
+      el('div', { class: 'flash-warn' },
+        el('strong', { text: 'This writes to the encoder’s flash memory. ' }),
+        'Do not power off the encoder or unplug its network cable until the confirmation appears. ' +
+        'It may take a few seconds.'),
+      el('div', { class: 'cmd-preview' }, el('div', { text: 'set Offset=0' })),
+      el('p', {
+        class: 'dim',
+        text: 'Clears any stored offset, so the encoder reports its raw, uncalibrated physical reading again.'
+      })
+    ],
+    confirmLabel: 'Write Offset=0'
+  });
+  if (!ok) return;
+
+  try {
+    const results = await window.d3d.encoder.writeMany(conn.id, [{ variable: 'Offset', value: '0' }]);
+    // Confirmation of a landed write arrives on the echo, as a flashConfirmed
+    // toast. A refusal comes back in the results.
+    const bad = (results || []).filter((r) => !r.ok);
+    if (bad.length) toast('error', `Offset not written: ${bad.map((b) => b.error).join(', ')}`);
+  } catch (err) {
+    toast('error', err.message);
+  }
 }
 
 async function doPreset(conn) {
