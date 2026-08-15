@@ -22,6 +22,7 @@ const { writeVariablesOnce } = require('../src/core/discover');
  */
 async function fakeEncoder(t, behaviour) {
   const state = { IP: '192.0.2.20', CycleTime: '18' };
+  const reads = []; // any `read X` the writer sends — must stay empty
   const server = net.createServer((sock) => {
     let buf = '';
     sock.on('data', (d) => {
@@ -30,6 +31,7 @@ async function fakeEncoder(t, behaviour) {
       while ((i = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, i).replace(/\r$/, '').trim();
         buf = buf.slice(i + 1);
+        if (/^read\s+/i.test(line)) { reads.push(line); continue; }
         const m = /^(?:set\s+)?(\w+)\s*=\s*(.*)$/.exec(line);
         if (!m) continue;
         const [, name, value] = m;
@@ -39,7 +41,7 @@ async function fakeEncoder(t, behaviour) {
   });
   const port = await new Promise((r) => server.listen(0, '127.0.0.1', () => r(server.address().port)));
   t.after(() => server.close());
-  return { port, state };
+  return { port, state, reads };
 }
 
 const accepts = (sock, name, value, state) => {
@@ -55,6 +57,7 @@ test('a write to a stopped connection is confirmed on its echo', async (t) => {
 
   assert.equal(results[0].ok, true);
   assert.equal(enc.state.IP, '192.0.2.30');
+  assert.deepEqual(enc.reads, [], 'the echo confirms — no read-back is sent');
 });
 
 test('a write that is never announced is still confirmed — the echo is enough', async (t) => {

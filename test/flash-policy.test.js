@@ -171,7 +171,7 @@ test('replies are cached even when no command was waiting for them', () => {
 // had plainly worked, and left the "do not power off" banner hanging.
 
 test('a write is confirmed on its echo, and the risk window is logged either side', async () => {
-  const { link } = fakeLink({}, 'both', { broadcast: false });
+  const { link, sent } = fakeLink({}, 'both', { broadcast: false });
   const seen = [];
   const logs = [];
   link.on('encoderEvent', (e) => seen.push(e.kind));
@@ -179,6 +179,7 @@ test('a write is confirmed on its echo, and the risk window is logged either sid
 
   await link.writeMany([{ variable: 'CycleTime', value: '1' }]);
 
+  assert.ok(!sent.some((s) => /^read /.test(s)), 'the echo confirms — no read-back is sent');
   assert.ok(seen.includes('flashConfirmed'), 'confirmation is emitted so the banner clears');
   // banner = log entry, both ends: the do-not-power-off warning and the confirm.
   assert.ok(logs.some((l) => l.level === 'warn' && /flash write started — do not power off/.test(l.text)),
