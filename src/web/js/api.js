@@ -189,7 +189,6 @@ if (!window.d3d) {
       get: () => call('configGet'),
       saveConnection: (conn) => call('configSaveConnection', conn),
       deleteConnection: (id) => call('configDeleteConnection', { id }),
-      reorder: (ids) => call('configReorder', { ids }),
       setSettings: (partial) => call('configSetSettings', partial),
       exportFile: async () => download('/api/download/profile'),
       importFile: async () => {

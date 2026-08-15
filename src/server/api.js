@@ -854,12 +854,6 @@ function createApi(ctx) {
       return announce(ok);
     },
 
-    configReorder: ({ ids }) => {
-      if (!Array.isArray(ids)) fail('EINVAL', 'Expected an array of ids');
-      store.reorder(ids.map(checkId));
-      return announce(store.profile.connections.map((c) => c.id));
-    },
-
     /**
      * Set or clear the web-interface password.
      *

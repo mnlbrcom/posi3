@@ -5667,3 +5667,20 @@ refactor, formatting, a config tweak). Merge commits are exempt — their entrie
 live in the branch commits, not the merge. `npm install` points git at the
 hooks directory via a `prepare` script, so a fresh clone is covered without a
 manual step.
+
+## 2026-08-15 — Remove the dead connection-reordering path (todo A6)
+
+**Asked:** A6 — connection reordering, delete it.
+
+An inherited feature that no interface ever used: there is no drag-to-reorder
+in the connections view, nothing called the shim, and the store method it led to
+was reachable only through that unused chain. It was never documented here — it
+came in with the original driver, not a request.
+
+Removed all four layers of it, top to bottom: the web shim entry
+`config.reorder` (`src/web/js/api.js`), the `configReorder` API operation
+(`src/server/api.js`), the unused `CONFIG_REORDER` channel constant
+(`src/shared/constants.js`), and the `reorder(ids)` method on the config store
+(`src/core/config-store.js`). `checkId`, the only shared helper the operation
+touched, stays — nine other operations use it. No test referenced any of the
+removed code; the suite is unchanged and green at 333.

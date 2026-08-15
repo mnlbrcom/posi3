@@ -243,18 +243,6 @@ class ConfigStore {
     return this.profile.connections.length !== before;
   }
 
-  reorder(ids) {
-    const byId = new Map(this.profile.connections.map((c) => [c.id, c]));
-    const next = [];
-    for (const id of ids) {
-      const c = byId.get(id);
-      if (c) { next.push(c); byId.delete(id); }
-    }
-    for (const c of byId.values()) next.push(c); // anything not listed keeps its place at the end
-    this.profile.connections = next;
-    this.save();
-  }
-
   setSettings(partial) {
     Object.assign(this.profile.settings, partial || {});
     this.save();
