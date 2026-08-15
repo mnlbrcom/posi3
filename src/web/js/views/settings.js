@@ -69,8 +69,25 @@ function webAccessPanel(s, info, save) {
       'Asked for once per browser, then remembered for the session. ' +
       'Leave it empty for no password. Requests from this machine never need it.'),
 
-    el('div', { class: 'statline' },
-      el('span', {}, 'Open at ', el('b', { text: reachable.join('   ') }))),
+    el('div', { class: 'field' },
+      el('label', { text: reachable.length > 1 ? 'Open at (any of these)' : 'Open at' }),
+      el('div', { class: 'open-at' },
+        // Full address and port, shown whole — the old statline value column
+        // capped this at 116px and ellipsised the port off the end.
+        ...reachable.map((u) => el('code', { class: 'open-url', text: u })),
+        // Only in the desktop window, never in a browser tab — you would not
+        // ask the page you are already looking at to open itself. The check is
+        // on the client's user-agent, so it hides on a remote browser even
+        // when the desktop app is the server.
+        /Electron/i.test(navigator.userAgent)
+          ? el('button', {
+            class: 'btn shrink', text: 'Open in browser',
+            onclick: async () => {
+              try { await window.d3d.system.openInBrowser(); }
+              catch (err) { toast('error', err.message); }
+            }
+          })
+          : null)),
 
     open ? el('div', { class: 'banner warn', style: 'position:static;margin:8px 0 0' },
       'No password is set and posi3 is reachable on the network. ' +

@@ -872,6 +872,19 @@ function createApi(ctx) {
      * on a closed show LAN is making a choice the app supports and records.
      * Either way every existing browser session ends: the rules changed.
      */
+    /**
+     * Open the web UI in the machine's default browser.
+     *
+     * Only the desktop app can do this — it holds Electron's shell. Headless
+     * has no browser to open, and the button that calls this is shown only in
+     * the desktop window, never in a browser tab.
+     */
+    systemOpenInBrowser: () => {
+      if (!ctx.openInBrowser) fail('EUNSUPPORTED', 'Only the desktop app can open a browser here');
+      ctx.openInBrowser();
+      return { opened: true };
+    },
+
     securitySetPassword: ({ password }) => {
       const pw = password == null ? '' : String(password);
       if (pw && pw.length < 4) fail('EINVAL', 'Use at least 4 characters, or leave it empty for no password');

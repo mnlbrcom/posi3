@@ -137,7 +137,11 @@ async function listen() {
       port: readSetting('webPort', 8710),
       mode: 'desktop',
       env: { electron: process.versions.electron },
-      onSettings: (s) => applyLoginItem(s.launchAtLogin)
+      onSettings: (s) => applyLoginItem(s.launchAtLogin),
+      // The Settings "Open in browser" button routes here. windowUrl() is the
+      // loopback URL (with token if one is set), so it opens on this machine
+      // without tripping the network password.
+      openInBrowser: () => shell.openExternal(windowUrl())
     });
   } catch (err) {
     if (err.code !== 'EADDRINUSE') throw err;
@@ -147,7 +151,11 @@ async function listen() {
       port: 0,
       mode: 'desktop',
       env: { electron: process.versions.electron },
-      onSettings: (s) => applyLoginItem(s.launchAtLogin)
+      onSettings: (s) => applyLoginItem(s.launchAtLogin),
+      // The Settings "Open in browser" button routes here. windowUrl() is the
+      // loopback URL (with token if one is set), so it opens on this machine
+      // without tripping the network password.
+      openInBrowser: () => shell.openExternal(windowUrl())
     });
     fallback.logger.push({
       level: 'warn', dir: 'rx', ts: Date.now(),

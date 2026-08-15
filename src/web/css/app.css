@@ -627,6 +627,13 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   display: grid; grid-template-columns: minmax(0, 1fr) 116px;
   gap: 8px; min-width: 0;
 }
+.open-at { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.open-url {
+  font-family: var(--mono); font-size: var(--fs-label); color: var(--text);
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: all; user-select: all;
+  word-break: break-all;
+}
 .statline b {
   color: var(--text); font-weight: 600;
   text-align: right; white-space: nowrap;

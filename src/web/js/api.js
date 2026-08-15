@@ -177,6 +177,9 @@ if (!window.d3d) {
   window.d3d = {
     appInfo: () => call('appInfo'),
 
+    system: {
+      openInBrowser: () => call('systemOpenInBrowser', {})
+    },
     security: {
       setPassword: (password) => call('securitySetPassword', { password })
     },
