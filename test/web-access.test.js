@@ -279,6 +279,21 @@ test('an exported profile does not carry the password hash', async (t) => {
   assert.ok(svc.store.settings.webPassword, 'the local password survives an import that omits one');
 });
 
+test('the profile downloads as a .posi3 file, JSON inside', async (t) => {
+  const dir = tmp();
+  const svc = await startService({ dataDir: dir, port: 0 });
+  t.after(() => svc.stop());
+
+  const res = await fetch(`http://127.0.0.1:${port(svc)}/api/download/profile`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition') || '',
+    /filename="posi3-profile\.posi3"/,
+    'the export carries its own extension, distinct from any stray .json');
+  // The extension is new; the content is not — import still parses it as JSON.
+  const body = JSON.parse(await res.text());
+  assert.equal(typeof body.version, 'number');
+});
+
 test('the password is never hashed on the per-request path — only at login', async (t) => {
   // pr-agent (claude-sonnet-5) caught this: checkAuth fronts every endpoint,
   // and a synchronous scryptSync there let a flood of wrong-Bearer requests to
