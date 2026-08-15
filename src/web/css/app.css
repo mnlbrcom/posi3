@@ -627,17 +627,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   display: grid; grid-template-columns: minmax(0, 1fr) 116px;
   gap: 8px; min-width: 0;
 }
-/* Info marker in a panel header: hosts a merged tooltip, amber when it marks a
-   risky state. Small circled "i", drawn in CSS so it needs no SVG. */
-.panel-info {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 1px solid currentColor; color: var(--text-faint);
-  font-size: var(--fs-label); font-weight: 700; font-style: italic;
-  cursor: help; user-select: none; flex: 0 0 auto;
-}
-.panel-info.warn { color: var(--warn); }
-
 .open-at { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .open-url {
   font-family: var(--mono); font-size: var(--fs-label); color: var(--text);

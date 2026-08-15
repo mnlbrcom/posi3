@@ -22,7 +22,6 @@ function webAccessPanel(s, info, save) {
 
   const pw = input({ type: 'password', placeholder: info.passwordSet ? '••••••••' : 'no password set' });
 
-  const open = s.webBindHost !== '127.0.0.1' && !info.passwordSet;
   const reachable = s.webBindHost === '127.0.0.1'
     ? [`http://127.0.0.1:${info.port}`]
     : (info.addresses || []).map((a) => `http://${a}:${info.port}`);
@@ -87,20 +86,8 @@ function webAccessPanel(s, info, save) {
               catch (err) { toast('error', err.message); }
             }
           })
-          : null)),
-
-  ], el('span', {
-    // Both the access explainer and the open-network warning, merged into one
-    // hover. The marker turns amber when the panel is wide-open with no
-    // password, so that risky state still catches the eye without a banner.
-    class: 'panel-info' + (open ? ' warn' : ''),
-    text: 'i',
-    title:
-      'posi3 always answers on this machine without a password — the password only guards ' +
-      'the network, and anyone at this keyboard can already change the profile. ' +
-      'With no password set and posi3 reachable on the network, anyone who knows the address ' +
-      'can start and stop connections, write encoder flash and change an encoder\'s IP.'
-  }));
+          : null))
+  ]);
 }
 
 export function renderSettings(root) {
