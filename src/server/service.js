@@ -80,8 +80,15 @@ function installProcessGuard(logger) {
   if (guardInstalled) return;
   guardInstalled = true;
   const note = (what, err) => {
+    const line = `${what}: ${(err && err.stack) || err}`;
+    // Always to stderr, then to the log ring. The guard binds once per process
+    // (a second set of handlers would leak listeners across instances), so in
+    // a multi-instance process only the first instance's logger is reachable
+    // here — but a crash must be visible regardless of which instance owns the
+    // ring, and stderr belongs to the process, not to any one instance.
+    try { process.stderr.write(`posi3 ${line}\n`); } catch { /* nowhere left to write */ }
     try {
-      logger.push({ level: 'error', dir: 'app', text: `${what}: ${(err && err.stack) || err}` });
+      logger.push({ level: 'error', dir: 'app', text: line });
     } catch { /* logging must never be the thing that throws here */ }
   };
   process.on('unhandledRejection', (err) => note('unhandled rejection', err));
