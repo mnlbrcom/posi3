@@ -69,6 +69,7 @@ jobs:
       - name: Layout audit
         run: |
           npm run uicheck -- \
+            --url http://127.0.0.1:8710 \
             --chrome "$(which google-chrome || which chromium-browser || which chromium)" \
             --shots "$RUNNER_TEMP/shots"
       - uses: actions/upload-artifact@v4
