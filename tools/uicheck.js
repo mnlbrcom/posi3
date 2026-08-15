@@ -208,6 +208,22 @@ async function main() {
         width, height: Number(opts.height), deviceScaleFactor: 1, mobile: width <= 480
       }, sessionId);
 
+      // Reachability first: navigate once and confirm the app actually loaded.
+      // Auditing a browser error page reports its fonts as failures — the trap
+      // this check exists to turn into a clear message.
+      await cdp.send('Page.navigate', { url: opts.url }, sessionId);
+      await sleep(Number(opts.settleMs));
+      const reachable = await cdp.send('Runtime.evaluate', {
+        expression: '!!document.getElementById(\'sidebar\') && !!window.__d3dNav',
+        returnByValue: true
+      }, sessionId);
+      if (!reachable.result || reachable.result.value !== true) {
+        process.stderr.write(
+          `uicheck: ${opts.url} is not posi3 — the app did not load (server not running there?). ` +
+          'Start it, or pass --url with the right port.\n');
+        process.exit(2);
+      }
+
       for (const view of views) {
         consoleErrors.length = 0;
         await cdp.send('Page.navigate', { url: opts.url }, sessionId);
