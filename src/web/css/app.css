@@ -324,11 +324,16 @@ body.inset-titlebar .titlebar {
   border-left-color: var(--accent);
   font-weight: 500;
 }
-.nav-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--text-faint); flex: 0 0 6px;
+/* One box for every menu icon — line glyphs and the two brand marks alike.
+   The SVGs draw in currentColor, so they follow the item's own colour:
+   dimmed at rest, brighter on hover, brightest when active. preserveAspectRatio
+   (the SVG default) fits both the square POSITAL mark and the tall disguise
+   mark inside the same box, centred. */
+.nav-ico {
+  width: 18px; height: 18px; flex: 0 0 18px;
+  color: var(--text-dim);
 }
-.nav-item.active .nav-dot { background: var(--accent); }
+.nav-item.active .nav-ico { color: var(--accent); }
 
 .sidebar-foot { margin-top: auto; padding: 12px 14px 4px; border-top: 1px solid var(--border-soft); }
 .agg { font-size: var(--fs-label); color: var(--text-dim); font-variant-numeric: tabular-nums; }
