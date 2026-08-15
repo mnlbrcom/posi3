@@ -43,7 +43,9 @@ const ANSWERED_BY = {
   "encoder-config.js:'error'": 'api.js readOffline logs "read failed — no answer at …"; ' +
     'writeOffline logs "flash write status unknown …"',
 
-  "encoder-config.js:'warn'": 'api.js writeOffline logs "flash write started — do not power off"'
+  "encoder-config.js:'warn'": 'flash write started — do not power off: logged by ' +
+    'api.js writeOffline (stopped connection) and by encoder-link.js writeMany/setPreset ' +
+    '(running connection), each at the point the write goes out'
 };
 
 /** Source files that may raise a banner. */

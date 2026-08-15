@@ -1071,7 +1071,7 @@ function createApi(ctx) {
     encoderCached: ({ id }) => {
       const link = manager.get(checkId(id));
       if (!link) fail('ENOENT', 'No such connection');
-      return { vars: link.cachedVars(), flashPending: link.flashPending };
+      return { vars: link.cachedVars() };
     },
 
     encoderWrite: ({ id, variable, value }) => {

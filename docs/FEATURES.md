@@ -5668,33 +5668,35 @@ live in the branch commits, not the merge. `npm install` points git at the
 hooks directory via a `prepare` script, so a fresh clone is covered without a
 manual step.
 
-## 2026-08-15 — A confirmed flash write no longer warns "not confirmed"
+## 2026-08-15 — A flash write confirms on its echo, and every banner has a log line
 
-**Reported:** `set CycleTime=1` was accepted (`rx CycleTime=1`, "cycle time
-changed 10 ms → 1 ms"), and then 30 s later the log warned "flash commit not
-confirmed within 30s" — a false alarm over a write that had plainly worked.
+**Reported:** `set CycleTime=1` was accepted (`rx CycleTime=1` in 4 ms, "cycle
+time changed 10 ms → 1 ms"), then 30 s later the log warned "flash commit not
+confirmed within 30s" — a false alarm over a write that had plainly worked — and
+the "FLASH WRITE IN PROGRESS — do not power off" banner never cleared.
 
-**Cause.** The live-write path opened a flash-commit window that only closed on
-the encoder broadcasting `Parameters successfully written!`, and warned if that
-never arrived. But the broadcast is unreliable on this firmware — an IP or
-CycleTime write is accepted, stored, and never announced. The offline writer
-already knew this (`discover.js`) and verifies by reading the value back; the
-live path never got that fix, so it kept waiting for a broadcast that, for many
-variables, never comes.
+**Cause.** The live-write path opened a 30-second flash-commit window that only
+closed on the encoder broadcasting `Parameters successfully written!`, and warned
+if it never arrived. But the broadcast is unreliable on this firmware — an IP or
+CycleTime write is accepted, stored, and never announced. So the window ran its
+full 30 s and warned, and nothing dismissed the banner.
 
-**Fix — read the value back, for every variable, not just IP and CycleTime.**
-When the window elapses with no broadcast, `EncoderLink` now reads each written
-variable back and compares by value:
+**Fix — confirm on the echo.** The encoder echoes a `set` by name *and* value,
+and `write()` only resolves when that echoed value matches what was asked (a
+refusal carries the old value back and throws). So the echo — in under a second
+— is the confirmation; there is no separate broadcast worth waiting for. On a
+successful write `EncoderLink` now emits `flashConfirmed` at once, which clears
+the "do not power off" banner in every browser (Encoder Config *and* the Controls
+popup), and logs `flash write confirmed — …`. A refused write logs
+`flash write refused — …`. The 30-second window, the read-back, and the
+`flashTimeout` warning are all gone. (A first pass confirmed by an explicit
+read-back at the 30 s mark; that was replaced when it proved the echo already
+had the answer and 30 s was too long to leave the banner up.)
 
-- all hold → `flashConfirmed`, logged "flash write confirmed by read-back — …";
-- a value differs, or cannot be re-read → `flashUnconfirmed`, a real warning
-  naming what to verify before power-cycling;
-- a write-only variable (Preset) cannot be read back, so its echo — already
-  matched by value in `write()` — stands as the proof, and it is never re-read.
-
-The broadcast, when it does come, still closes the window early exactly as
-before. In the browser these two events clear the "do not power off" window
-through the same path the broadcast used, so Encoder Config *and* the Controls
-popup are covered; Encoder Config's own fallback timer becomes a pure backstop
-for an unresponsive bridge (past the server's read-back window, so it no longer
-races it into a false "status unknown"). The old `flashTimeout` warning is gone.
+**Banner = log line, on both ends.** A long-standing rule (`banner-log-parity.
+test.js`): anything worth a banner is worth a log entry, written on the server so
+Export carries it. The live path violated it — it showed the "do not power off"
+banner with no server log (only the offline writer logged it). Now
+`writeMany`/`setPreset` log `flash write started — do not power off — …` when the
+write goes out and `flash write confirmed — …` when the echo lands, so the two
+highest-consequence banners this app raises are both on the record.

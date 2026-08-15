@@ -224,24 +224,18 @@ function wireEvents() {
         store.setEncoderAlive(e.id, e.alive);
         break;
 
-      case 'paramsWritten':
-        onFlashConfirmed(e.id);
-        toast('info', `${who}: parameters successfully written to flash.`);
-        break;
-
-      // The encoder never broadcast a commit, so the write was confirmed by
-      // reading the value back instead. Same effect on the UI: clear the
-      // "do not power off" window.
+      // The write is confirmed on the encoder's echo (under a second). Clear the
+      // "do not power off" window and say it landed.
       case 'flashConfirmed':
         onFlashConfirmed(e.id);
         toast('info', `${who}: ${e.text}`);
         break;
 
-      // Read-back could not prove the value stuck. Clear the do-not-power-off
-      // window, then say so where the operator will see it before power-cycling.
-      case 'flashUnconfirmed':
+      // Some firmware also broadcasts a commit afterwards. A bonus: clear the
+      // window if it is somehow still up.
+      case 'paramsWritten':
         onFlashConfirmed(e.id);
-        banner('warn', `${who}: ${e.text}`, { key: `flash-unknown-${e.id}` });
+        toast('info', `${who}: parameters successfully written to flash.`);
         break;
 
       case 'binaryMode':

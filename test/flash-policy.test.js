@@ -160,90 +160,67 @@ test('replies are cached even when no command was waiting for them', () => {
   assert.equal(link.cachedVar('Nonexistent'), null);
 });
 
-test('the flash-commit window opens on write and closes on the broadcast', async () => {
-  const { link } = fakeLink();
-  const seen = [];
-  link.on('encoderEvent', (e) => seen.push(e.kind));
-
-  await link.writeMany([{ variable: 'CycleTime', value: '20' }]);
-  assert.equal(link.flashPending, true, 'the "do not power off" window should be open');
-
-  await new Promise((r) => setTimeout(r, 30));
-  assert.equal(link.flashPending, false, 'the broadcast should have closed it');
-  assert.ok(seen.includes('flashPending'));
-  assert.ok(seen.includes('paramsWritten'));
-});
-
-test('losing the link closes the flash window rather than leaving it hanging', async () => {
-  const { link } = fakeLink();
-  await link.writeMany([{ variable: 'CycleTime', value: '20' }]);
-  assert.equal(link.flashPending, true);
-  link._clearTimers();
-  assert.equal(link.flashPending, false);
-});
-
-// -- confirmation without the broadcast --------------------------------------
+// -- confirmation on the echo ------------------------------------------------
 //
-// The encoder acknowledges a `set` by echoing the value but does not reliably
-// broadcast "Parameters successfully written!" — an IP or CycleTime write is
-// accepted and never announced. Waiting for that broadcast and then warning
-// "flash commit not confirmed within 30s" cried wolf over a write that had
-// plainly worked. The window now reads the value back to confirm instead.
+// The encoder echoes a `set` by name AND value, and write() only resolves when
+// the echoed value matches — a refusal carries the old value back and throws.
+// So the echo, in under a second, is the confirmation. There is no separate
+// broadcast to wait for: this firmware does not reliably send one (an IP or
+// CycleTime write is accepted and never announced). Waiting for it and then
+// warning "flash commit not confirmed within 30s" cried wolf over a write that
+// had plainly worked, and left the "do not power off" banner hanging.
 
-test('with no broadcast, a write is confirmed by reading the value back', async () => {
-  const { link, sent } = fakeLink({}, 'both', { broadcast: false });
+test('a write is confirmed on its echo, and the risk window is logged either side', async () => {
+  const { link } = fakeLink({}, 'both', { broadcast: false });
   const seen = [];
   const logs = [];
   link.on('encoderEvent', (e) => seen.push(e.kind));
   link.on('log', (l) => logs.push(l));
 
   await link.writeMany([{ variable: 'CycleTime', value: '1' }]);
-  assert.equal(link.flashPending, true, 'the window opens even without a broadcast');
-  sent.length = 0;
 
-  // Production waits FLASH_COMMIT_MS; the test drives the same path directly,
-  // the way the disconnect test calls _clearTimers().
-  await link._verifyFlashByReadback();
-
-  assert.equal(link.flashPending, false, 'the read-back closes the window');
-  assert.ok(sent.includes('read CycleTime'), 'the value is actually read back');
-  assert.ok(seen.includes('flashConfirmed'), 'a read-back confirmation is emitted');
-  assert.ok(!seen.includes('flashTimeout'), 'no false timeout event');
-  assert.ok(logs.some((l) => l.level === 'info' && /confirmed by read-back/.test(l.text)),
-    'and it is recorded as confirmed, not as a warning');
+  assert.ok(seen.includes('flashConfirmed'), 'confirmation is emitted so the banner clears');
+  // banner = log entry, both ends: the do-not-power-off warning and the confirm.
+  assert.ok(logs.some((l) => l.level === 'warn' && /flash write started — do not power off/.test(l.text)),
+    'the risk window is on the record');
+  assert.ok(logs.some((l) => l.level === 'info' && /flash write confirmed — CycleTime=1/.test(l.text)),
+    'and so is the confirmation');
 });
 
-test('with no broadcast, a value that did not stick is reported, not confirmed', async () => {
-  const { link, state } = fakeLink({}, 'both', { broadcast: false });
+test('a refused write is recorded as refused, and not confirmed', async () => {
+  const { link } = fakeLink();
+  const logs = [];
+  const seen = [];
+  link.on('log', (l) => logs.push(l));
+  link.on('encoderEvent', (e) => seen.push(e.kind));
+
+  // The encoder answers a refusal by echoing the *old* value; write() rejects
+  // that, so writeMany records it failed. Make the fake echo a wrong value.
+  link._socket.write = (line) => {
+    const cmd = line.trim();
+    const m = /^set (\w+)=(.*)$/.exec(cmd) || /^(\w+)=(.*)$/.exec(cmd);
+    if (m) setImmediate(() => link._onLine(`${m[1]}=999`)); // never the requested value
+    return true;
+  };
+
+  const results = await link.writeMany([{ variable: 'CycleTime', value: '1' }]);
+  assert.ok(results.every((r) => !r.ok), 'the write is marked failed');
+  assert.ok(!seen.includes('flashConfirmed'), 'nothing is confirmed');
+  assert.ok(logs.some((l) => l.level === 'warn' && /flash write refused/.test(l.text)));
+});
+
+test('a Preset write confirms on its echo, no window left hanging', async () => {
+  const { link } = fakeLink({ Preset: '0' }, 'both', { broadcast: false });
   const seen = [];
   const logs = [];
   link.on('encoderEvent', (e) => seen.push(e.kind));
   link.on('log', (l) => logs.push(l));
-
-  await link.writeMany([{ variable: 'CycleTime', value: '1' }]);
-  state.CycleTime = '10'; // the encoder did not keep it
-  await link._verifyFlashByReadback();
-
-  assert.equal(link.flashPending, false);
-  assert.ok(seen.includes('flashUnconfirmed'), 'the mismatch is surfaced');
-  assert.ok(!seen.includes('flashConfirmed'));
-  assert.ok(logs.some((l) => l.level === 'warn' && /did not stick/.test(l.text)));
-});
-
-test('a write-only Preset is confirmed by its echo, never read back', async () => {
-  const { link, sent } = fakeLink({ Preset: '0' }, 'both', { broadcast: false });
-  const seen = [];
-  link.on('encoderEvent', (e) => seen.push(e.kind));
 
   await link.setPreset(12345);
-  assert.equal(link.flashPending, true);
-  sent.length = 0;
 
-  await link._verifyFlashByReadback();
-
-  assert.equal(link.flashPending, false);
-  assert.ok(seen.includes('flashConfirmed'));
-  assert.ok(!sent.some((s) => /^read /.test(s)), 'Preset cannot be read back, so it is not tried');
+  assert.ok(seen.includes('flashConfirmed'), 'the popup banner clears on confirmation');
+  assert.ok(logs.some((l) => /flash write started — do not power off/.test(l.text)));
+  assert.ok(logs.some((l) => /flash write confirmed — Preset=12345/.test(l.text)));
 });
 
 // -- command dialect ---------------------------------------------------------
