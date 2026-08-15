@@ -1,0 +1,39 @@
+name: pr-agent
+
+# Automatic AI review on every pull request, using the open-source pr-agent
+# as a GitHub Action — no Qodo account, no self-hosted server. It runs on
+# GitHub's own runner, authenticates to the repo with the workflow's built-in
+# GITHUB_TOKEN (so no personal token is needed), and calls Anthropic with the
+# ANTHROPIC_API_KEY repo secret. Comment /review, /improve, /ask <q>, /describe
+# on a PR to invoke it on demand as well.
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  pr_agent:
+    # Never react to its own comments, or it would review itself in a loop.
+    if: ${{ github.event.sender.type != 'Bot' }}
+    runs-on: ubuntu-latest
+    name: Review, describe and suggest on each PR
+    steps:
+      - name: pr-agent
+        uses: qodo-ai/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # pr-agent reads its Anthropic key from this settings path, not from
+          # the bare ANTHROPIC_API_KEY env var — verified against the source.
+          ANTHROPIC.KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          config.model: "anthropic/claude-sonnet-5"
+          config.fallback_models: '["anthropic/claude-opus-4-8"]'
+          # Full auto: all three on every PR, the level chosen for this repo.
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "true"
+          github_action_config.auto_improve: "true"
