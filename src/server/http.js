@@ -215,8 +215,10 @@ function createServer(opts) {
     // state and change nothing, which is why they sit outside the POST rule.
     if (pathname === '/api/download/profile' && req.method === 'GET') {
       return send(res, 200, JSON.stringify(api.configExport(), null, 2), {
+        // A posi3 profile is JSON inside, but carries its own extension so it is
+        // recognisable on disk and distinct from any other .json lying around.
         'Content-Type': 'application/json; charset=utf-8',
-        'Content-Disposition': 'attachment; filename="posi3-profile.json"'
+        'Content-Disposition': 'attachment; filename="posi3-profile.posi3"'
       });
     }
     if (pathname === '/api/download/log' && req.method === 'GET') {

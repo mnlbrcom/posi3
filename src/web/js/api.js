@@ -151,7 +151,9 @@ function pickFile() {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'application/json,.json';
+    // .posi3 is the current export; .json keeps profiles exported before the
+    // rename selectable. Both are JSON, so either parses the same.
+    input.accept = '.posi3,application/json,.json';
     input.style.display = 'none';
     document.body.appendChild(input);
 

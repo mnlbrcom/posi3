@@ -69,7 +69,7 @@ still reached through the Electron IPC bridge until the desktop window switches 
 | Encoder config | `views/encoder-config.js` | Read/write every encoder variable over TCP 6000, batched writes, flash-write confirmation and banner. **Replaces the JRE 7 + Internet Explorer Java applet.** |
 | disguise mapping | `views/mapping.js` | Computes `min_input`/`max_input`; *Capture current* records live endpoints; warns when a span crosses the count rollover and offers a one-click Preset. |
 | Log | `views/log.js` | Filterable console with a raw-command entry. |
-| Settings | `views/settings.js` | Refresh rate, auto-start, launch at login, NIC, profile import/export, venue troubleshooting notes. |
+| Settings | `views/settings.js` | Refresh rate, auto-start, launch at login, NIC, web access & password, profile import/export (`.posi3`). |
 
 ### Test and diagnostic tools — `tools/`
 
@@ -5601,3 +5601,51 @@ file is made to travel between machines and into support threads, and a hash
 in it is an offline brute-force target — and the password is machine-specific
 access control, not show configuration. Export now strips it, and import
 keeps whatever password the importing machine already had.
+
+## 2026-08-15 — UI polish pass (branch `ui-work`)
+
+**Asked:** a run of small interface requests — menu icons, the Web-interface
+card, and the profile file extension.
+
+**Menu icons.** Each nav item carries an inline SVG that inherits the item's
+colour through `currentColor`: Dashboard (four tiles), Connections (two nodes
+joined), Log (ragged lines), Settings (an eight-tooth cog with a hub), and the
+supplied POSITAL and disguise marks for Encoder Config and Disguise Mapping.
+Icons are `--text-dim` at rest and `--accent` on the active page. The
+standalone source SVGs live in `input/5 - logos/` for review.
+
+**Open at.** The Web-interface card showed a truncated `…` address; it now
+prints the full `http://<ip>:<port>` (all reachable addresses when bound wide),
+selectable, and — in the desktop app only — an "Open in browser" button that
+opens the loopback URL in the system default browser. Wired renderer → shim
+(`system.openInBrowser`) → api (`systemOpenInBrowser`) → service → desktop
+`shell.openExternal`; over the web the op reports it is desktop-only.
+
+**Less on the card.** The two overlapping access notes (a footer note and a
+conditional warning banner) were first merged into one header tooltip, then the
+tooltip was removed entirely — it was the only hover-tooltip of its kind and
+the password field's own hint already covers it. The "If something is not
+working" troubleshooting card is gone. The About note now states the job in one
+line: converts the Posital data string to the disguise Navigator string
+`"1:12345,0;\n"`.
+
+### Password fields match every other input
+
+The dark input style listed text, number, select and textarea but not
+`input[type="password"]`, so the Settings password box and the login field fell
+back to the browser's white default. Password joins the styled set. The login
+field is autofilled by the browser, which repaints it white regardless of
+`background`; an inset box-shadow the size of the field plus
+`-webkit-text-fill-color` — both prefix-only, now on the vendor-prefix
+allowlist — hold the dark background through autofill.
+
+### Profiles export as `.posi3`
+
+**Asked:** can export/import use `*.posi3` instead of `*.json`?
+
+The exported profile downloads as `posi3-profile.posi3` (was
+`posi3-profile.json`); the file is still JSON inside, so the content type is
+unchanged. The import picker now offers `.posi3` first and keeps `.json` so
+profiles exported before the rename still open. The app's own on-disk store
+(`userData/profile.json`) is untouched — that is internal data, not a
+user-facing export.
