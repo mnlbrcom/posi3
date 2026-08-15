@@ -5701,6 +5701,18 @@ banner with no server log (only the offline writer logged it). Now
 write goes out and `flash write confirmed — …` when the echo lands, so the two
 highest-consequence banners this app raises are both on the record.
 
+**The banner clears on both paths, and a logless banner is gone.** The
+"FLASH WRITE IN PROGRESS — do not power off" banner was cleared by the
+`flashConfirmed` event — which only the *running* path sends. On a stopped
+connection the write confirmed (and logged it) but no event came, so the banner
+sat until a 15 s browser-side timer replaced it with "write status unknown — the
+encoder did not confirm" — a banner with no log line behind it, raised over a
+write that had succeeded. Encoder Config now clears the do-not-power-off banner
+when the write settles (in a `finally`, so it covers the stopped-connection path
+too), and the timer and its logless "status unknown" banner are removed. Every
+banner this screen raises now has a server log line: `flash write started — do
+not power off` (both paths), and the unreachable-on-read error.
+
 **The offline path, too.** Writing to a *stopped* connection went through a
 separate writer (`discover.js writeVariablesOnce`) that read every value back
 and then waited up to 30 s for the commit broadcast before saying "confirmed" —

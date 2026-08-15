@@ -108,7 +108,7 @@ test('a stream reconnect closes its own gap', () => {
 test('what is keyed by a connection or destination dies with it', () => {
   // Module-scope maps survive rebuilds on purpose; they must not survive the
   // thing they describe. A deleted connection kept its last telemetry frame
-  // forever, and a pending flash timer for a deleted encoder would still fire.
+  // forever, and its cached read values would linger under a dead id.
   const storeSrc = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'store.js'), 'utf8');
   const adopt = storeSrc.slice(storeSrc.indexOf('setProfile('));
@@ -117,8 +117,8 @@ test('what is keyed by a connection or destination dies with it', () => {
 
   const cfg = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'encoder-config.js'), 'utf8');
-  assert.match(cfg, /clearTimeout\(pendingFlash\.get\(id\)\)/,
-    'a deleted encoder\'s flash timer is stopped, not just dropped');
+  assert.match(cfg, /lastRead\.delete\(id\)/,
+    'a deleted encoder\'s cached read values are dropped, not kept under a dead id');
 
   const map = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'web', 'js', 'views', 'mapping.js'), 'utf8');

@@ -29,19 +29,9 @@ export function renderEncoderConfig(root) {
   const view = el('div', { class: 'view' });
   const conns = store.connections;
 
-  // The module maps outlive the cards on purpose — that is what lets a rebuilt
-  // card keep its read values — but they must not outlive the *connection*. A
-  // pending flash timer for a deleted encoder would still fire, and its banner
-  // key names a connection nobody can find.
+  // The read-value cache outlives the cards on purpose — that is what lets a
+  // rebuilt card keep its values — but it must not outlive the *connection*.
   const live = new Set(conns.map((c) => c.id));
-  for (const id of pendingFlash.keys()) {
-    if (!live.has(id)) {
-      clearTimeout(pendingFlash.get(id));
-      pendingFlash.delete(id);
-      dismissBanner(`flash-${id}`);
-      dismissBanner(`flash-unknown-${id}`);
-    }
-  }
   for (const id of lastRead.keys()) if (!live.has(id)) lastRead.delete(id);
 
   // One button for the whole screen and one on every card. Reading every
@@ -263,9 +253,6 @@ function encoderCard(conn) {
       refreshDirty();
       applyDependentRanges();
       lastRead.set(conn.id, new Map(current));
-      // The unknown-status banner asks for exactly this, so answering it has to
-      // clear it — otherwise the instruction is a dead end.
-      onFlashConfirmed(conn.id);
     } catch (err) {
       // Gone from the network is a different problem from a value being
       // refused, and it is the one worth naming across the top of the window.
@@ -316,18 +303,6 @@ function encoderCard(conn) {
     applyBtn.disabled = true;
     banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: `flash-${conn.id}` });
 
-    // The write confirms on its echo (under a second) and the server sends
-    // flashConfirmed, which clears this banner. This is only the backstop for
-    // the server never answering at all — a dead bridge — so the write neither
-    // confirms nor errors.
-    const timeout = setTimeout(() => {
-      dismissBanner(`flash-${conn.id}`);
-      banner('error',
-        `${conn.name}: write status unknown — the encoder did not confirm. ` +
-        'Use “Read” on its card to check before power-cycling it.', { key: `flash-unknown-${conn.id}` });
-    }, 15000);
-    pendingFlash.set(conn.id, timeout);
-
     try {
       let results;
       try {
@@ -335,12 +310,9 @@ function encoderCard(conn) {
       } catch (err) {
         // The encoder will not store the same Preset twice in a row, so
         // re-applying the value it already holds needs the documented detour:
-        // write value+1, wait for the commit, write value. Two cycles out of
-        // about 100,000, so it is asked for rather than assumed — the same
-        // choice the Controls popup offers.
+        // write value+1, then value. Two cycles out of about 100,000, so it is
+        // asked for rather than assumed — the same choice the Controls popup offers.
         if (err.code !== 'EPRESET_DUPLICATE') throw err;
-        clearTimeout(timeout);
-        pendingFlash.delete(conn.id);
         dismissBanner(`flash-${conn.id}`);
         const again = await confirmModal({
           title: 'Preset Already At That Value',
@@ -360,15 +332,6 @@ function encoderCard(conn) {
         toast('error', `${failed.length} setting(s) rejected: ` +
           failed.map((f) => `${f.variable} (${f.error})`).join(', '));
       }
-      // An explicit rejection means the encoder never accepted the value, so
-      // there is no commit to wait for. Standing there for 30s and then saying
-      // "status unknown" is worse than saying nothing: it puts a do-not-power-
-      // off warning in front of an operator when nothing is being written.
-      if (failed.length === results.length) {
-        clearTimeout(timeout);
-        pendingFlash.delete(conn.id);
-        dismissBanner(`flash-${conn.id}`);
-      }
       for (const r of results.filter((x) => x.ok)) {
         current.set(r.variable, r.value);
         const cell = currentCells.get(r.variable);
@@ -378,11 +341,12 @@ function encoderCard(conn) {
       lastRead.set(conn.id, new Map(current));
       refreshDirty();
     } catch (err) {
-      clearTimeout(timeout);
-      pendingFlash.delete(conn.id);
-      dismissBanner(`flash-${conn.id}`);
       toast('error', err.message);
     } finally {
+      // The write has settled — confirmed, refused, or errored, each logged on
+      // the server. Clear the risk window here, so it clears for the stopped-
+      // connection path too (that path sends no flashConfirmed event).
+      dismissBanner(`flash-${conn.id}`);
       applyBtn.disabled = edited.size === 0;
     }
   };
@@ -435,9 +399,6 @@ function encoderCard(conn) {
   };
 }
 
-/** Timers keyed by connection, cleared when the encoder confirms the commit. */
-const pendingFlash = new Map();
-
 /**
  * The last values read from each encoder, kept at module scope so a rebuild of
  * this screen does not re-read them.
@@ -455,19 +416,14 @@ const pendingFlash = new Map();
  */
 const lastRead = new Map();
 
-/** Called from app.js when the encoder broadcasts its flash confirmation. */
+/**
+ * Called from app.js on a flash-confirmation event. The write handler already
+ * clears its own banner when the write settles; this covers the case of a
+ * confirmation arriving for a write started elsewhere. Keyed per encoder so one
+ * device's confirmation cannot take down another's do-not-power-off warning.
+ */
 export function onFlashConfirmed(id) {
-  const timer = pendingFlash.get(id);
-  if (timer) {
-    clearTimeout(timer);
-    pendingFlash.delete(id);
-  }
-  // This encoder's banners, nobody else's. The keys were global, so with two
-  // writes in flight, A's confirmation dismissed B's do-not-power-off warning
-  // while B was still committing — the one warning this screen calls
-  // safety-critical, taken down by the wrong device.
   dismissBanner(`flash-${id}`);
-  dismissBanner(`flash-unknown-${id}`);
 }
 
 // ---------------------------------------------------------------------------
