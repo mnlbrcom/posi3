@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+  <!-- Settings: an eight-tooth cog with a hub. -->
+  <path d="M 22.0 12.0 L 21.24 15.83 L 18.84 14.83 L 17.23 17.23 L 19.07 19.07 L 15.83 21.24 L 14.83 18.84 L 12.0 19.4 L 12.0 22.0 L 8.17 21.24 L 9.17 18.84 L 6.77 17.23 L 4.93 19.07 L 2.76 15.83 L 5.16 14.83 L 4.6 12.0 L 2.0 12.0 L 2.76 8.17 L 5.16 9.17 L 6.77 6.77 L 4.93 4.93 L 8.17 2.76 L 9.17 5.16 L 12.0 4.6 L 12.0 2.0 L 15.83 2.76 L 14.83 5.16 L 17.23 6.77 L 19.07 4.93 L 21.24 8.17 L 18.84 9.17 L 19.4 12.0 Z"/>
+  <circle cx="12" cy="12" r="3.1"/>
+</svg>
