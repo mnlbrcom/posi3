@@ -5648,4 +5648,22 @@ The exported profile downloads as `posi3-profile.posi3` (was
 unchanged. The import picker now offers `.posi3` first and keeps `.json` so
 profiles exported before the rename still open. The app's own on-disk store
 (`userData/profile.json`) is untouched — that is internal data, not a
-user-facing export.
+user-facing export. A test now fetches `/api/download/profile` and asserts the
+`.posi3` filename, so the extension cannot silently revert.
+
+### A commit hook keeps this record honest
+
+**Asked:** why did FEATURES stop being updated, and can it be enforced?
+
+Because nothing checked it. Walking the last 25 commits on `main`, five changed
+`src/` without touching this file — the menu icons among them — and the whole
+`ui-work` branch had recorded nothing until it was caught. The rule was only as
+reliable as memory, and memory lost it in the fast commit-per-edit rhythm.
+
+`.githooks/commit-msg` now rejects a commit that changes `src/` without
+touching `docs/FEATURES.md`. The escape hatch is `[skip-features]` in the commit
+message, for a change that genuinely is not an implementation request (a pure
+refactor, formatting, a config tweak). Merge commits are exempt — their entries
+live in the branch commits, not the merge. `npm install` points git at the
+hooks directory via a `prepare` script, so a fresh clone is covered without a
+manual step.
