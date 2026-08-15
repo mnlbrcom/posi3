@@ -44,29 +44,26 @@ async function deadLink(t) {
   t.after(() => l.stop());
   l._openUdp();
   await until(() => l._sinks.every((s) => s.ready), 3000, 'the socket to connect');
-  return { link: l, port };
-}
 
-/**
- * Force a sink's sends to fail with a real error code, deterministically.
- *
- * A closed loopback port draws ICMP port-unreachable on Linux, but the macOS
- * and Windows runners deliver it slowly or not at all — so a test that waits
- * for send errors to pile up ('timed out waiting for failures to accumulate')
- * is flaky there. This drives the exact same error path the socket would,
- * without depending on the platform's ICMP behaviour.
- */
-function forceSendFailure(link, code = 'ECONNREFUSED') {
-  for (const sink of link._sinks) {
+  // Deterministic failure, not real ICMP. A closed loopback port draws
+  // port-unreachable on Linux, but the macOS and Windows runners deliver it
+  // slowly or not at all — so every test here that waits for send errors was
+  // flaky there ('timed out waiting for a failure/warning'). Each sink's send
+  // now fails with the same code the socket would, until revive() flips it to
+  // success — which is how the recovery test brings a destination back.
+  let alive = false;
+  for (const sink of l._sinks) {
     sink.udp.send = (buf, off, len, cb) => {
-      if (typeof cb === 'function') cb(Object.assign(new Error(`send ${code}`), { code }));
+      if (typeof cb !== 'function') return;
+      if (alive) cb();
+      else cb(Object.assign(new Error('send ECONNREFUSED 127.0.0.1'), { code: 'ECONNREFUSED' }));
     };
   }
+  return { link: l, port, revive: () => { alive = true; } };
 }
 
 test('a persistent failure is announced once, not on every packet', async (t) => {
   const { link } = await deadLink(t);
-  forceSendFailure(link); // platform-independent: see forceSendFailure
   const warnings = [];
   link.on('log', (e) => { if (e.level === 'warn') warnings.push(e.text); });
 
@@ -106,17 +103,15 @@ test('the warning names the destination and what is wrong', async (t) => {
 });
 
 test('coming back is news too', async (t) => {
-  const { link, port } = await deadLink(t);
+  const { link, revive } = await deadLink(t);
   const events = [];
   link.on('encoderEvent', (e) => events.push(e.kind));
 
   for (let i = 0; i < 50; i++) link._forward(i, 0);
   await until(() => link._sinks[0].txErrors > 0, 4000, 'a failure');
 
-  // Something starts listening again.
-  const back = dgram.createSocket('udp4');
-  await new Promise((r) => back.bind(port, '127.0.0.1', r));
-  t.after(() => { try { back.close(); } catch { /* already closed */ } });
+  // Something starts listening again: sends land from here on.
+  revive();
 
   // Sends have to keep landing for a while before this counts as recovery. A
   // host that is off still passes the odd datagram between ARP retries, and

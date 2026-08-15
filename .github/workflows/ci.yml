@@ -84,7 +84,11 @@ jobs:
   # is unclickable in the desktop app and works fine in a browser, so this is
   # the only job that can see it.
   desktop:
-    runs-on: ubuntu-latest
+    # macOS, not ubuntu+xvfb. The check drives a real Electron window and
+    # clicks it by coordinate through CDP; under xvfb those synthesized clicks
+    # never land (the check passes 18/18 on a real macOS display, locally and
+    # here). A macOS runner has a window session, so the check runs for real.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -93,4 +97,4 @@ jobs:
       # Not --ignore-scripts here: electron's postinstall fetches the binary.
       - run: npm ci
       - name: Desktop interaction check
-        run: xvfb-run -a npm run desktopcheck
+        run: npm run desktopcheck
