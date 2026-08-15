@@ -210,7 +210,10 @@ test('no hand-written vendor prefixes for things that do not need them', () => {
     '-moz-osx-font-smoothing',
     // Unprefixed user-select reached Safari only in 18.4; older WebKit needs
     // the prefix or the titlebar wordmark becomes drag-selectable.
-    '-webkit-user-select'
+    '-webkit-user-select',
+    // Overriding the browser's autofill repaint: both the pseudo-class and the
+    // text-colour property are WebKit/Blink-only, with no unprefixed equivalent.
+    '-webkit-autofill', '-webkit-text-fill-color'
   ]);
   const found = new Set([...CSS.matchAll(/(-webkit-[a-z-]+|-moz-[a-z-]+|-ms-[a-z-]+)\s*:/g)].map((m) => m[1]));
   const unexpected = [...found].filter((p) => !allowed.has(p));

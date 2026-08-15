@@ -561,7 +561,7 @@ table.rows tr.selected { background: var(--accent-wash); }
 .field.err input, .field.err select { border-color: var(--err); }
 .field .err-text { color: var(--err); font-size: var(--fs-label); margin-top: 4px; }
 
-input[type="text"], input[type="number"], select, textarea {
+input[type="text"], input[type="number"], input[type="password"], select, textarea {
   width: 100%;
   font: inherit;
   padding: 6px 9px;
@@ -571,6 +571,15 @@ input[type="text"], input[type="number"], select, textarea {
   border-radius: var(--radius);
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+/* The login password field is autofilled by the browser, which repaints it with
+   its own light background. Only -webkit-text-fill-color and an inset box-shadow
+   the size of the field override that in Blink/WebKit — a plain `background` does
+   not win against autofill. */
+input:-webkit-autofill, input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  box-shadow: inset 0 0 0 1000px var(--bg);
+  caret-color: var(--text);
+}
 input.num-input { font-variant-numeric: tabular-nums; }
 /* Raw commands and addresses are typed as machine language. */
 .mono-input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -626,6 +635,13 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .statline > span {
   display: grid; grid-template-columns: minmax(0, 1fr) 116px;
   gap: 8px; min-width: 0;
+}
+.open-at { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.open-url {
+  font-family: var(--mono); font-size: var(--fs-label); color: var(--text);
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: all; user-select: all;
+  word-break: break-all;
 }
 .statline b {
   color: var(--text); font-weight: 600;

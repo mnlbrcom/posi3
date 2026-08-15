@@ -183,6 +183,8 @@ async function startService(opts = {}) {
     },
     // A changed password must not leave yesterday's browsers logged in.
     onSessionsInvalidated: () => { if (http && http.sessions) http.sessions.clear(); },
+    // Only the desktop host can open a browser; headless leaves this undefined.
+    openInBrowser: opts.openInBrowser || null,
     env: () => Object.assign({
       version: require('../../package.json').version,
       revision: buildRevision(),
