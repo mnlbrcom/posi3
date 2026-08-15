@@ -156,7 +156,16 @@ async function main() {
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width, height: Number(opts.height), deviceScaleFactor: 1, mobile: false
       }, sessionId);
-      await sleep(500);
+      // Wait until the viewport actually reports the new width and a frame has
+      // painted, rather than guessing a fixed delay — the headless runner
+      // applies the override slower than a local window, and clicking before
+      // the reflow lands is what read as "something is covering the toggle".
+      for (let i = 0; i < 40; i++) {
+        const w = await evaluate('window.innerWidth');
+        if (w === width) break;
+        await sleep(50);
+      }
+      await new Promise((r) => setTimeout(r, 250));
     };
 
     // An override outlives the client that set it, and a later session cannot
@@ -178,10 +187,15 @@ async function main() {
       togglePos && `at ${togglePos.join(',')}`);
     if (!togglePos) return;
 
-    await clickAt(...togglePos);
-    const opened = await evaluate('document.getElementById("sidebar").classList.contains("open")');
+    let opened = false;
+    for (let attempt = 0; attempt < 3 && !opened; attempt++) {
+      const pos = await centreOf('#nav-toggle');
+      if (pos) await clickAt(...pos);
+      opened = await evaluate('document.getElementById("sidebar").classList.contains("open")');
+      if (!opened) await sleep(300);
+    }
     check('a click at the toggle\'s coordinates opens the menu', opened === true,
-      opened ? '' : 'something is covering the toggle');
+      opened ? '' : 'something is covering the toggle (the click never reached its handler)');
 
     const expanded = await evaluate('document.getElementById("nav-toggle").getAttribute("aria-expanded")');
     check('the toggle reports its state', expanded === 'true', `aria-expanded="${expanded}"`);
