@@ -24,7 +24,7 @@ const { TIMEOUTS } = require('../src/shared/constants');
  * `replies` maps a command line to the line the encoder would send back. The
  * responder answers asynchronously, as the real device does.
  */
-function fakeLink(vars = {}, dialect = 'both') {
+function fakeLink(vars = {}, dialect = 'both', { broadcast = true } = {}) {
   // The flash budget is shared per connection id and outlives any one link
   // object — which is what makes it correct in production, where a link is
   // rebuilt on every reconfigure and must not get a fresh allowance for it.
@@ -67,8 +67,10 @@ function fakeLink(vars = {}, dialect = 'both') {
         state[w[1]] = w[2];
         link._onLine(`${w[1]}=${w[2]}`);
         // The real encoder broadcasts this a few seconds later; fire it soon so
-        // the two-cycle Preset path can complete without a long test.
-        setTimeout(() => link._onLine('Parameters successfully written!'), 5);
+        // the two-cycle Preset path can complete without a long test. Some
+        // firmware/variables never announce it (IP, CycleTime) — `broadcast:
+        // false` models that, so the read-back confirmation path can be tested.
+        if (broadcast) setTimeout(() => link._onLine('Parameters successfully written!'), 5);
       }
     });
     return true;
@@ -178,6 +180,70 @@ test('losing the link closes the flash window rather than leaving it hanging', a
   assert.equal(link.flashPending, true);
   link._clearTimers();
   assert.equal(link.flashPending, false);
+});
+
+// -- confirmation without the broadcast --------------------------------------
+//
+// The encoder acknowledges a `set` by echoing the value but does not reliably
+// broadcast "Parameters successfully written!" — an IP or CycleTime write is
+// accepted and never announced. Waiting for that broadcast and then warning
+// "flash commit not confirmed within 30s" cried wolf over a write that had
+// plainly worked. The window now reads the value back to confirm instead.
+
+test('with no broadcast, a write is confirmed by reading the value back', async () => {
+  const { link, sent } = fakeLink({}, 'both', { broadcast: false });
+  const seen = [];
+  const logs = [];
+  link.on('encoderEvent', (e) => seen.push(e.kind));
+  link.on('log', (l) => logs.push(l));
+
+  await link.writeMany([{ variable: 'CycleTime', value: '1' }]);
+  assert.equal(link.flashPending, true, 'the window opens even without a broadcast');
+  sent.length = 0;
+
+  // Production waits FLASH_COMMIT_MS; the test drives the same path directly,
+  // the way the disconnect test calls _clearTimers().
+  await link._verifyFlashByReadback();
+
+  assert.equal(link.flashPending, false, 'the read-back closes the window');
+  assert.ok(sent.includes('read CycleTime'), 'the value is actually read back');
+  assert.ok(seen.includes('flashConfirmed'), 'a read-back confirmation is emitted');
+  assert.ok(!seen.includes('flashTimeout'), 'no false timeout event');
+  assert.ok(logs.some((l) => l.level === 'info' && /confirmed by read-back/.test(l.text)),
+    'and it is recorded as confirmed, not as a warning');
+});
+
+test('with no broadcast, a value that did not stick is reported, not confirmed', async () => {
+  const { link, state } = fakeLink({}, 'both', { broadcast: false });
+  const seen = [];
+  const logs = [];
+  link.on('encoderEvent', (e) => seen.push(e.kind));
+  link.on('log', (l) => logs.push(l));
+
+  await link.writeMany([{ variable: 'CycleTime', value: '1' }]);
+  state.CycleTime = '10'; // the encoder did not keep it
+  await link._verifyFlashByReadback();
+
+  assert.equal(link.flashPending, false);
+  assert.ok(seen.includes('flashUnconfirmed'), 'the mismatch is surfaced');
+  assert.ok(!seen.includes('flashConfirmed'));
+  assert.ok(logs.some((l) => l.level === 'warn' && /did not stick/.test(l.text)));
+});
+
+test('a write-only Preset is confirmed by its echo, never read back', async () => {
+  const { link, sent } = fakeLink({ Preset: '0' }, 'both', { broadcast: false });
+  const seen = [];
+  link.on('encoderEvent', (e) => seen.push(e.kind));
+
+  await link.setPreset(12345);
+  assert.equal(link.flashPending, true);
+  sent.length = 0;
+
+  await link._verifyFlashByReadback();
+
+  assert.equal(link.flashPending, false);
+  assert.ok(seen.includes('flashConfirmed'));
+  assert.ok(!sent.some((s) => /^read /.test(s)), 'Preset cannot be read back, so it is not tried');
 });
 
 // -- command dialect ---------------------------------------------------------

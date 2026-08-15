@@ -5667,3 +5667,34 @@ refactor, formatting, a config tweak). Merge commits are exempt — their entrie
 live in the branch commits, not the merge. `npm install` points git at the
 hooks directory via a `prepare` script, so a fresh clone is covered without a
 manual step.
+
+## 2026-08-15 — A confirmed flash write no longer warns "not confirmed"
+
+**Reported:** `set CycleTime=1` was accepted (`rx CycleTime=1`, "cycle time
+changed 10 ms → 1 ms"), and then 30 s later the log warned "flash commit not
+confirmed within 30s" — a false alarm over a write that had plainly worked.
+
+**Cause.** The live-write path opened a flash-commit window that only closed on
+the encoder broadcasting `Parameters successfully written!`, and warned if that
+never arrived. But the broadcast is unreliable on this firmware — an IP or
+CycleTime write is accepted, stored, and never announced. The offline writer
+already knew this (`discover.js`) and verifies by reading the value back; the
+live path never got that fix, so it kept waiting for a broadcast that, for many
+variables, never comes.
+
+**Fix — read the value back, for every variable, not just IP and CycleTime.**
+When the window elapses with no broadcast, `EncoderLink` now reads each written
+variable back and compares by value:
+
+- all hold → `flashConfirmed`, logged "flash write confirmed by read-back — …";
+- a value differs, or cannot be re-read → `flashUnconfirmed`, a real warning
+  naming what to verify before power-cycling;
+- a write-only variable (Preset) cannot be read back, so its echo — already
+  matched by value in `write()` — stands as the proof, and it is never re-read.
+
+The broadcast, when it does come, still closes the window early exactly as
+before. In the browser these two events clear the "do not power off" window
+through the same path the broadcast used, so Encoder Config *and* the Controls
+popup are covered; Encoder Config's own fallback timer becomes a pure backstop
+for an unresponsive bridge (past the server's read-back window, so it no longer
+races it into a false "status unknown"). The old `flashTimeout` warning is gone.

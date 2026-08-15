@@ -36,7 +36,7 @@ const {
   wrapDelta, angleDeg, revolution, stepsPerSecToRpm
 } = require('./protocol');
 const {
-  STATE, TIMEOUTS, RECONNECT, COUNTS_PER_REV, D3_FACTORY_PORT
+  STATE, TIMEOUTS, RECONNECT, COUNTS_PER_REV, D3_FACTORY_PORT, ENCODER_VAR_BY_NAME
 } = require('../shared/constants');
 
 /** Ring of send buffers: dgram may hold one until the write completes. */
@@ -1561,7 +1561,8 @@ class EncoderLink extends EventEmitter {
         results.push({ variable: e.variable, value: e.value, ok: false, error: err.message });
       }
     }
-    if (results.some((r) => r.ok)) this._armFlash();
+    const landed = results.filter((r) => r.ok).map((r) => ({ variable: r.variable, value: r.value }));
+    if (landed.length) this._armFlash(landed);
     return results;
   }
 
@@ -1633,7 +1634,7 @@ class EncoderLink extends EventEmitter {
     if (!readable && !force) {
       this.beginWriteBatch();
       const r = await this.write('Preset', String(target));
-      this._armFlash();
+      this._armFlash([{ variable: 'Preset', value: String(target) }]);
       return { written: target, cycles: 1, previous: null, verified: false, reply: r && r.value };
     }
 
@@ -1641,16 +1642,16 @@ class EncoderLink extends EventEmitter {
       // Only reachable with force: the assert above throws otherwise.
       this.beginWriteBatch();
       await this.write('Preset', String(target + 1));
-      this._armFlash();
+      this._armFlash([{ variable: 'Preset', value: String(target + 1) }]);
       await this._awaitFlash();
       await this.write('Preset', String(target));
-      this._armFlash();
+      this._armFlash([{ variable: 'Preset', value: String(target) }]);
       return { written: target, cycles: 2, previous: current };
     }
 
     this.beginWriteBatch();
     await this.write('Preset', String(target));
-    this._armFlash();
+    this._armFlash([{ variable: 'Preset', value: String(target) }]);
     return { written: target, cycles: 1, previous: current };
   }
 
@@ -1660,17 +1661,21 @@ class EncoderLink extends EventEmitter {
   }
 
   /**
-   * Start the "do not power off" window. It closes when the encoder broadcasts
-   * `Parameters successfully written!`, or times out — previously
-   * `FLASH_COMMIT_MS` was declared but never used, so the UI's "waiting for
-   * confirmation" state had nothing behind it and could wait forever.
+   * Start the "do not power off" window. It closes early when the encoder
+   * broadcasts `Parameters successfully written!`; if that never comes — and on
+   * this firmware it often does not, an IP or CycleTime write is accepted and
+   * never announced — the window's timer reads the values back to confirm them
+   * instead (see `_verifyFlashByReadback`).
+   *
+   * `written` is the list of `{ variable, value }` that landed, so the read-back
+   * knows what to check.
    */
-  _armFlash() {
+  _armFlash(written = []) {
     this._resolveFlash('superseded');
     const sinceMs = Date.now();
-    const timer = setTimeout(() => this._resolveFlash('timeout'), TIMEOUTS.FLASH_COMMIT_MS);
+    const timer = setTimeout(() => this._verifyFlashByReadback(), TIMEOUTS.FLASH_COMMIT_MS);
     if (timer.unref) timer.unref();
-    this._flashPending = { sinceMs, timer, waiters: [] };
+    this._flashPending = { sinceMs, timer, waiters: [], written };
     this.emit('encoderEvent', {
       id: this.id,
       kind: 'flashPending',
@@ -1678,19 +1683,69 @@ class EncoderLink extends EventEmitter {
     });
   }
 
+  /** Close the window and release any waiters. The outcome is for the waiters. */
   _resolveFlash(outcome) {
     const pending = this._flashPending;
     if (!pending) return;
     clearTimeout(pending.timer);
     this._flashPending = null;
     for (const done of pending.waiters) done(outcome);
-    if (outcome === 'timeout') {
+  }
+
+  /**
+   * The window elapsed with no `Parameters successfully written!` broadcast.
+   *
+   * That is not a failure here: the broadcast is unreliable on this firmware —
+   * an IP or CycleTime write is accepted, stored, and never announced (measured;
+   * the offline writer in discover.js documents the same). So confirm the way it
+   * does: read the values back. A write-only variable (Preset) cannot be read,
+   * so its echo — already matched by value in `write()` — stands as the proof.
+   */
+  async _verifyFlashByReadback() {
+    const pending = this._flashPending;
+    if (!pending) return; // a broadcast, a stop, or a new write already closed it
+    const written = pending.written || [];
+    const readable = written.filter((w) => !isWriteOnly(w.variable));
+
+    const mismatched = [];
+    let unread = false;
+    for (const w of readable) {
+      try {
+        const r = await this.read(w.variable);
+        if (!sameValue(r && r.value, w.value)) mismatched.push({ variable: w.variable, got: r && r.value });
+      } catch {
+        unread = true;
+        break;
+      }
+      // A broadcast, a stop, or a superseding write may have closed this window
+      // while we were reading; if so, that resolver owns the outcome, not us.
+      if (this._flashPending !== pending) return;
+    }
+    if (this._flashPending !== pending) return;
+
+    this._resolveFlash('readback');
+    const what = written.map((w) => `${w.variable}=${w.value}`).join(', ');
+
+    if (unread) {
       this.emit('encoderEvent', {
         id: this.id,
-        kind: 'flashTimeout',
-        text: 'No flash-write confirmation after 30s. Verify the value before power-cycling the encoder.'
+        kind: 'flashUnconfirmed',
+        text: 'Write acknowledged but could not be re-read to confirm. Verify the value before power-cycling the encoder.'
       });
-      this._log('warn', 'app', 'flash commit not confirmed within 30s');
+      this._log('warn', 'app', `flash write acknowledged but not confirmed by read-back — no answer for ${what}`);
+    } else if (mismatched.length) {
+      const detail = mismatched.map((m) => `${m.variable} reads ${m.got}`).join(', ');
+      this.emit('encoderEvent', {
+        id: this.id,
+        kind: 'flashUnconfirmed',
+        text: `A value did not stick: ${detail}. Verify it before power-cycling the encoder.`
+      });
+      this._log('warn', 'app', `flash write did not stick — ${detail}`);
+    } else {
+      this.emit('encoderEvent', { id: this.id, kind: 'flashConfirmed', text: 'Value confirmed by read-back.' });
+      this._log('info', 'app', readable.length
+        ? `flash write confirmed by read-back — ${what}`
+        : `flash write acknowledged — ${what} (write-only, confirmed by the encoder's echo)`);
     }
   }
 
@@ -1868,6 +1923,12 @@ function rxLevel(r) {
 function sameValue(a, b) {
   const fold = (v) => String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
   return fold(a) === fold(b);
+}
+
+/** True for variables the encoder accepts but will not read back (e.g. Preset). */
+function isWriteOnly(name) {
+  const spec = ENCODER_VAR_BY_NAME.get(String(name).toLowerCase());
+  return !!(spec && spec.writeOnly);
 }
 
 /**

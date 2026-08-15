@@ -316,14 +316,17 @@ function encoderCard(conn) {
     applyBtn.disabled = true;
     banner('warn', `FLASH WRITE IN PROGRESS — do not power off ${conn.name}`, { key: `flash-${conn.id}` });
 
-    // If the encoder never confirms, say so rather than quietly clearing the
-    // banner: "write status unknown" is actionable, a vanished banner is not.
+    // The server now settles every write itself — a broadcast, or a read-back
+    // when none comes — and sends flashConfirmed/flashUnconfirmed, which clear
+    // this banner. This is only the backstop for the server never answering at
+    // all (a dead bridge), so it waits past the server's own read-back window
+    // (FLASH_COMMIT_MS + a read) rather than racing it into a false alarm.
     const timeout = setTimeout(() => {
       dismissBanner(`flash-${conn.id}`);
       banner('error',
         `${conn.name}: write status unknown — the encoder did not confirm. ` +
         'Use “Read” on its card to check before power-cycling it.', { key: `flash-unknown-${conn.id}` });
-    }, 30000);
+    }, 45000);
     pendingFlash.set(conn.id, timeout);
 
     try {

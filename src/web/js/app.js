@@ -229,6 +229,21 @@ function wireEvents() {
         toast('info', `${who}: parameters successfully written to flash.`);
         break;
 
+      // The encoder never broadcast a commit, so the write was confirmed by
+      // reading the value back instead. Same effect on the UI: clear the
+      // "do not power off" window.
+      case 'flashConfirmed':
+        onFlashConfirmed(e.id);
+        toast('info', `${who}: ${e.text}`);
+        break;
+
+      // Read-back could not prove the value stuck. Clear the do-not-power-off
+      // window, then say so where the operator will see it before power-cycling.
+      case 'flashUnconfirmed':
+        onFlashConfirmed(e.id);
+        banner('warn', `${who}: ${e.text}`, { key: `flash-unknown-${e.id}` });
+        break;
+
       case 'binaryMode':
         banner('warn',
           `${who} is set to OutputType=BINARY, which this app cannot stream. ` +
