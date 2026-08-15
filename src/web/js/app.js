@@ -224,6 +224,15 @@ function wireEvents() {
         store.setEncoderAlive(e.id, e.alive);
         break;
 
+      // The write is confirmed on the encoder's echo (under a second). Clear the
+      // "do not power off" window and say it landed.
+      case 'flashConfirmed':
+        onFlashConfirmed(e.id);
+        toast('info', `${who}: ${e.text}`);
+        break;
+
+      // Some firmware also broadcasts a commit afterwards. A bonus: clear the
+      // window if it is somehow still up.
       case 'paramsWritten':
         onFlashConfirmed(e.id);
         toast('info', `${who}: parameters successfully written to flash.`);
