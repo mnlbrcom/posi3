@@ -115,7 +115,7 @@ async function doPreset(conn) {
 
   try {
     await window.d3d.encoder.preset(conn.id, 0);
-    toast('info', 'Preset accepted — waiting for the encoder to confirm the flash write…');
+    // Confirmation arrives on the echo, as a flashConfirmed toast — no wait here.
   } catch (err) {
     if (err.code !== 'EPRESET_DUPLICATE') {
       toast('error', err.message);

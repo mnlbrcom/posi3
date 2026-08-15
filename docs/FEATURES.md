@@ -5700,3 +5700,15 @@ banner with no server log (only the offline writer logged it). Now
 `writeMany`/`setPreset` log `flash write started — do not power off — …` when the
 write goes out and `flash write confirmed — …` when the echo lands, so the two
 highest-consequence banners this app raises are both on the record.
+
+**The offline path, too.** Writing to a *stopped* connection went through a
+separate writer (`discover.js writeVariablesOnce`) that read every value back
+and then waited up to 30 s for the commit broadcast before saying "confirmed" —
+tested against a stopped connection, the confirmation landed a full 30 s after
+the `rx` echo, and the "do not power off" banner sat there the whole time. It
+now confirms on the echo like the running path: no read-back, no wait. The echo
+is matched by value, so a refusal (the old value echoed back) is still caught
+and reported. The trade, accepted deliberately: a "lying echo" — the encoder
+echoing a value it does not actually store — is no longer caught by a read-back;
+the running path never caught it either, and every write path now takes the echo
+as the confirmation, for every `set <Variable>=<Value>`.
