@@ -596,6 +596,14 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
    like a segmented control. */
 .modal-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 
+/* Read-only readout of the last Run! sample, sat beside the button. */
+.run-out {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--text); text-align: right; min-width: 7ch;
+  padding: 6px 9px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--bg);
+}
+
 .check { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: var(--fs-body); }
 .check label { margin: 0; color: var(--text); font-size: var(--fs-body); }
 

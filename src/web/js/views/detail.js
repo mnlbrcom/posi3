@@ -26,12 +26,17 @@ export function openControls(conn) {
     onclick: () => doOffset(conn)
   });
 
+  // The last Run! sample, shown next to the button. Persistent rather than a
+  // toast, so the value stays readable after the sample lands.
+  const runOut = el('output', {
+    class: 'run-out', text: '—', title: 'The position from the last Run! sample'
+  });
   const runBtn = el('button', {
     class: 'btn', text: 'Run! (single sample)',
     onclick: async () => {
       try {
         const r = await window.d3d.encoder.run(conn.id);
-        toast('info', `Run! → position ${groupDigits(r.pos)}`);
+        runOut.textContent = groupDigits(r.pos);
       } catch (err) { toast('error', err.message); }
     }
   });
@@ -56,7 +61,7 @@ export function openControls(conn) {
         el('span', { class: 'arrow', text: '·' }),
         `device ID ${conn.d3.devid}`),
 
-      el('div', { class: 'modal-actions' }, pill(store.encoderIndicator(conn.id)), runStop, runBtn),
+      el('div', { class: 'modal-actions' }, pill(store.encoderIndicator(conn.id)), runStop, runBtn, runOut),
 
       // Each of these spends one of the encoder's finite flash-write cycles, so
       // they are set apart from the quick controls, headed as critical, and each

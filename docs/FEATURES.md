@@ -5792,3 +5792,15 @@ traceable by construction — the Run! refusal included. `web-access.test.js`
 proves it end to end (a refused op appears in the log); `banner-log-parity.
 test.js` asserts the choke-point logging exists so it cannot quietly regress. A
 toast is a banner with a timer, and the banner=log rule now holds for both.
+
+## 2026-08-16 — Run! stays available, with a readout (todo A3 closed)
+
+**Decided:** keep Run! (single sample) always available — not hidden unless
+TimeMode is polled — and show its result in a field beside the button instead of
+a toast that fades.
+
+A3 had proposed hiding Run! outside Polled mode; that's dropped. The button now
+writes the last sample's position into a read-only readout next to it (`output`,
+monospace, right-aligned, `—` until the first sample), so the value stays
+readable rather than vanishing with a toast. A refused Run! still toasts the
+error — and is now logged by the API-failure choke point either way.
