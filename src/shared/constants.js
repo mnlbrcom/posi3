@@ -100,7 +100,6 @@ const CH = {
   CONFIG_GET: 'd3d:config:get',
   CONFIG_SAVE_CONNECTION: 'd3d:config:saveConnection',
   CONFIG_DELETE_CONNECTION: 'd3d:config:deleteConnection',
-  CONFIG_REORDER: 'd3d:config:reorder',
   CONFIG_SET_SETTINGS: 'd3d:config:setSettings',
   CONFIG_EXPORT: 'd3d:config:exportFile',
   CONFIG_IMPORT: 'd3d:config:importFile',
