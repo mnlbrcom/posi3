@@ -30,12 +30,17 @@ so it is the same interface either way.
 node bin/posi3.js --port 8710
 ```
 
-Either way the UI is at `http://127.0.0.1:8710`. It is **loopback-only by default**. Binding
-wider turns on token authentication, because these screens can write the encoder's flash memory
-and change a device's IP address:
+Either way the UI is at `http://127.0.0.1:8710`, **loopback-only by default** — requests from the
+machine itself are always allowed, with no password. These screens can write the encoder's flash
+memory and change a device's IP address, so reaching them from another computer is opt-in: widen
+the bind, then set a password in **Settings → Web interface**. A browser signs in once and keeps a
+session; scripts can send the password as a Bearer token. Leaving the password empty is allowed
+and deliberate — a closed show LAN shared by the crew during a get-in — but it is never the
+default; it takes both widening the bind *and* choosing no password.
 
 ```bash
-node bin/posi3.js --bind 0.0.0.0 --port 8710   # prints an access token
+node bin/posi3.js --bind 0.0.0.0 --port 8710       # reachable on the network
+node bin/posi3.js --bind 0.0.0.0 --token <secret>  # or gate it with a URL token
 ```
 
 ---
@@ -46,11 +51,11 @@ node bin/posi3.js --bind 0.0.0.0 --port 8710   # prints an access token
 |---|---|
 | **Dashboard** | Every encoder at a glance: packets/s to disguise, position, angle, revolutions, rate in/out, latency p50/p99, faults, and a 12-second position trace. The one to leave open during a show. |
 | **Connections** | One row per encoder. Start/stop, per-socket network interface, duplicate device-ID warnings. |
-| **Detail** | Dial, live readouts, app latency, **Zero / Preset**, velocity and coalescing policy. |
+| **Detail** | Dial, live readouts, app latency, **Zero / Preset / Offset** (flash-guarded, in their own *Critical flash memory actions* section), velocity and coalescing policy. |
 | **Encoder config** | Every encoder variable over TCP, with flash-write guards. Replaces the Java applet. |
 | **disguise mapping** | Computes `min_input` / `max_input`; *Capture current* records live endpoints. |
 | **Log** | Filterable console with a raw-command entry. |
-| **Settings** | Refresh rate, auto-start, launch at login, profile import/export, venue notes. |
+| **Settings** | Refresh rate, auto-start, launch at login, **web access (bind address, port, optional password)**, profile import/export (`*.posi3`), venue notes. |
 
 ---
 
@@ -105,11 +110,13 @@ application protocol on 6000 and is documented for 2006-era firmware — worth t
 resorting to hardware switch 2, but not guaranteed to be present.
 
 **Every parameter write goes to flash**, rated ~100,000 cycles, and the encoder must not lose
-power mid-write. posi3 rate-limits writes, confirms them, and holds a banner until the device
-reports `Parameters successfully written!`. It also knows that the firmware **refuses to store
-the same `Preset` value twice in a row** — re-zeroing to a value already set is silently ignored
-unless you take the two-cycle path, and posi3 offers that explicitly rather than appearing to
-work.
+power mid-write. posi3 rate-limits writes and confirms each one against **the encoder's own echo
+of the value** — the device echoes back what it stored, usually within a second, and that echo is
+the confirmation. (The separate `Parameters successfully written!` broadcast proved unreliable:
+some accepted writes, including IP and cycle-time changes, never announce it.) A write the device
+refuses echoes the *old* value, and posi3 reports that rather than claiming success. It also knows
+the firmware **refuses to store the same `Preset` value twice in a row** — re-zeroing to a value
+already set is silently ignored unless you take the two-cycle path, which posi3 offers explicitly.
 
 ---
 
@@ -207,6 +214,10 @@ clears them once.
 
 ## Reference material
 
-`input/` holds the manuals, the datasheet, the original `d3driver.c`, the old `d3driver.exe`, and
-screenshots of the Java applet it replaces. `docs/FEATURES.md` is the traceability record: what
-was asked for, what was built, and why each decision went the way it did.
+The **[Wiki](https://github.com/mnlbrcom/posi3/wiki)** has the encoder setup guides, the
+preset/offset reference, an FAQ and troubleshooting. `docs/FEATURES.md` is the traceability
+record: what was asked for, what was built, and why each decision went the way it did.
+
+The POSITAL manuals, datasheet, the original `d3driver.c` / `d3driver.exe`, and the Java-applet
+screenshots are the manufacturer's material and are **not redistributed in this repo**; they are
+kept locally under `input/`, which is git-ignored.

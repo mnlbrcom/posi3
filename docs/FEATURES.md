@@ -5903,3 +5903,31 @@ Three lower-value findings were dismissed on inspection: `_clearTimers()` has a
 single call site (in `stop()`, not the reconnect path, so pingers are not torn
 down per reconnect); the stdout `slice(-4096)` guard is fine for ping's short
 newline-terminated lines; the buffer trim needs no change.
+
+## 2026-08-16 — Settings → About: the author line links to mnlbr.com
+
+**Asked:** make the About panel's author a clickable web link.
+
+The Author value in Settings → About was plain text ("mnlbr"); it now reads
+**mnlbr.com** and is a real link to `https://www.mnlbr.com`. Opened with
+`target="_blank"`, so the desktop shell's existing window-open handler
+(`main.js`) hands it to the system browser, and a web browser opens a new tab;
+`rel="noopener noreferrer"` on both. Styled with `--accent-text` (the accent
+tint that clears 4.5:1 as text, where `--accent` is for fills) and underlined so
+it reads as a link, sitting in the same right-aligned value cell as the other
+About figures. UI audit clean at all six widths; the link fits the cell with no
+overflow down to 390 px.
+
+## 2026-08-16 — SSE telemetry flushes each frame (setNoDelay) for a smooth remote browser
+
+**Asked:** land the `setNoDelay` half of the remote-smoothness work on main
+(the client-side dial easing stays parked for a remote-browser test).
+
+Each SSE (server-sent events) client socket now has `setNoDelay(true)` set the
+moment the stream is attached (`sse.js`). Without it, TCP's Nagle algorithm
+coalesces the small 30 Hz telemetry frames on a real network — a remote browser
+receives them in clumps and the dashboard animation stutters. Loopback was never
+affected (Nagle has no effect there), which is why the local app looked fine and
+only a second computer saw the lag. No behaviour change on the wire otherwise;
+full suite green. The frame-to-frame interpolation on the client (`dial.js`) is a
+separate change, held until the remote test.
