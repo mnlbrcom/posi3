@@ -5835,3 +5835,17 @@ separate macOS `desktop` job on every PR and every re-push.
 - pr-agent gets the same concurrency-cancel.
 
 Per-PR billed minutes fall from ~30 to ~6; macOS runs once per merge, not per push.
+
+## 2026-08-16 — Settings → About: the author line links to mnlbr.com
+
+**Asked:** make the About panel's author a clickable web link.
+
+The Author value in Settings → About was plain text ("mnlbr"); it now reads
+**mnlbr.com** and is a real link to `https://www.mnlbr.com`. Opened with
+`target="_blank"`, so the desktop shell's existing window-open handler
+(`main.js`) hands it to the system browser, and a web browser opens a new tab;
+`rel="noopener noreferrer"` on both. Styled with `--accent-text` (the accent
+tint that clears 4.5:1 as text, where `--accent` is for fills) and underlined so
+it reads as a link, sitting in the same right-aligned value cell as the other
+About figures. UI audit clean at all six widths; the link fits the cell with no
+overflow down to 390 px.
