@@ -14,8 +14,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const net = require('node:net');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { writeVariablesOnce } = require('../src/core/discover');
+const { createApi } = require('../src/server/api');
+const { ConfigStore } = require('../src/core/config-store');
+const { LinkManager } = require('../src/core/link-manager');
+const { Logger } = require('../src/core/logger');
+const flashBudget = require('../src/core/flash-budget');
 
 /**
  * A scripted encoder. `behaviour` decides what a `set` gets back.
@@ -107,4 +115,29 @@ test('an encoder that is gone reports unreachable', async () => {
       { port: 1, connectTimeoutMs: 1500 }),
     (err) => err.code === 'EUNREACHABLE' || err.code === 'ECONNREFUSED'
   );
+});
+
+test('a stopped-connection write surfaces a confirmation on screen, not only in the log', async (t) => {
+  // Regression: the offline path has no link to raise flashConfirmed, so a
+  // stopped-connection write once confirmed in the log while nothing appeared
+  // on screen. The api must emit the event itself — three times this gap bit.
+  const enc = await fakeEncoder(t, accepts);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'posi3-offline-api-'));
+  const store = new ConfigStore(dir);
+  store.load();
+  const manager = new LinkManager({ logger: new Logger() });
+  const api = createApi({ manager, store, syncLink: () => {}, env: () => ({}) });
+
+  const conn = store.upsertConnection({ name: 'Test', encoder: { host: '127.0.0.1', port: enc.port } });
+  manager.upsert(conn);       // an idle link — not running, so the write goes offline
+  flashBudget.forget(conn.id);
+
+  const events = [];
+  manager.on('encoderEvent', (e) => events.push(e));
+
+  await api.encoderWriteMany({ id: conn.id, entries: [{ variable: 'Offset', value: '0' }] });
+
+  const confirmed = events.find((e) => e.kind === 'flashConfirmed' && e.id === conn.id);
+  assert.ok(confirmed, 'the offline path emits flashConfirmed, so the toast fires on a stopped connection');
+  assert.match(confirmed.text, /Offset=0/);
 });

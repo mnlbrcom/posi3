@@ -1091,6 +1091,20 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* The flash-write actions: each spends one of the encoder's finite write
+   cycles, so they are set apart, headed as critical, and each explained. */
+.modal-writes {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.modal-writes-head {
+  margin: 0; font-size: var(--fs-label); font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn);
+}
+.modal-writes-note { margin: 0; font-size: var(--fs-label); color: var(--text-dim); line-height: 1.5; }
+.modal-action-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.modal-action-row .hint { margin: 0; }
+
 /* Set apart from the controls above it, so it is not beside anything you would
    press in a hurry. */
 .modal-danger {
