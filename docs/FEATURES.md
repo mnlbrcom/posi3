@@ -5804,3 +5804,17 @@ writes the last sample's position into a read-only readout next to it (`output`,
 monospace, right-aligned, `—` until the first sample), so the value stays
 readable rather than vanishing with a toast. A refused Run! still toasts the
 error — and is now logged by the API-failure choke point either way.
+
+## 2026-08-16 — Disguise Mapping: the computed summary reads plainer (todo A1)
+
+**Asked:** while reviewing the screen — the span/rotation/resolution line sat
+*inside* the "Type these into disguise" fold, next to the values you copy, even
+though it is the one thing there you do not type; and the resolution figure was
+unreadable, `3.33e-6 units / step`.
+
+The summary moves **up under the receiver's address**, always visible, so the
+fold holds only what you transcribe into the Navigator driver. And the
+resolution figure is reframed from units-per-step (tiny, scientific notation,
+abstract "units") to **"Per turn — N% of range"**: how much of the output one
+encoder turn moves, computed as one turn ÷ the total turns of travel, so it
+agrees with the Rotation line and never falls back to scientific notation.
