@@ -294,6 +294,26 @@ test('the profile downloads as a .posi3 file, JSON inside', async (t) => {
   assert.equal(typeof body.version, 'number');
 });
 
+test('a failed API operation is logged, so the toast the operator sees is traceable', async (t) => {
+  // A toast is a banner with a timer (ui.js), and the banner=log rule has to
+  // hold for it too. Every op that rejects is logged on the server, so "I
+  // clicked Run! and it refused" — an error toast — leaves a trace in Export.
+  const dir = tmp();
+  const svc = await startService({ dataDir: dir, port: 0 });
+  t.after(() => svc.stop());
+
+  const res = await fetch(`http://127.0.0.1:${port(svc)}/api/encoderRun`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: '00000000-0000-0000-0000-000000000000' })
+  });
+  assert.equal((await res.json()).ok, false, 'the op is refused');
+
+  const logged = svc.api.logTail({ limit: 500 })
+    .some((l) => l.dir === 'app' && /encoderRun failed —/.test(l.text));
+  assert.ok(logged, 'the refusal the client shows as a toast is also in the log');
+});
+
 test('the password is never hashed on the per-request path — only at login', async (t) => {
   // pr-agent (claude-sonnet-5) caught this: checkAuth fronts every endpoint,
   // and a synchronous scryptSync there let a flood of wrong-Bearer requests to
