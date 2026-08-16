@@ -140,6 +140,10 @@ function receiverCard(conn, dest) {
 
   const pillHolder = el('span', { class: 'pill-holder' }, pill('idle'));
   const resultHolder = el('div', { class: 'map-result' });
+  // The computed sanity summary — span, rotation, resolution. Always visible,
+  // under the address facts, because it is the one thing here you do NOT type
+  // into disguise; it belongs with what this mapping *is*, not with the fields.
+  const statHolder = el('div', { class: 'map-stats' });
 
   const dirty = () => JSON.stringify(m) !== saved;
   const refreshDirty = () => { saveBtn.disabled = !dirty(); };
@@ -236,6 +240,7 @@ function receiverCard(conn, dest) {
       `${where} · id ${dest.devid}` +
       (dest.enabled === false ? ' · disabled' : '') +
       ` · fed by ${conn.name} at ${conn.encoder.host}:${conn.encoder.port}`),
+    statHolder,
     verdict,
     ...groups);
 
@@ -309,8 +314,10 @@ function receiverCard(conn, dest) {
   async function recompute() {
     try {
       const res = await window.d3d.mapping.compute(conn.id, dest.id, m);
+      clear(statHolder).appendChild(renderStats(res.mapped));
       clear(resultHolder).appendChild(renderResult(conn, res));
     } catch (err) {
+      clear(statHolder);
       clear(resultHolder).appendChild(el('div', { class: 'err-text-inline', text: err.message }));
     }
   }
@@ -368,6 +375,23 @@ function detailsGroup(label, body, key) {
 
 // ---------------------------------------------------------------------------
 
+/** The computed sanity summary shown under the address — not typed into disguise. */
+function renderStats(mapped) {
+  // How much of the output range one encoder turn moves — a human-readable
+  // sensitivity in place of the tiny units/step figure in scientific notation.
+  // It is one turn ÷ the total turns of travel, so it agrees with Rotation.
+  const pctPerTurn = mapped.revsUsed > 0 ? 100 / mapped.revsUsed : null;
+  return el('div', { class: 'statline' },
+    el('span', {}, 'Span ', el('b', { text: `${groupDigits(mapped.rawSpan)} steps` })),
+    el('span', {}, 'Rotation ', el('b', {
+      text: `${fixed(mapped.revsUsed, 3)} rev (${fixed(mapped.revsUsed * 360, 1)}°)`
+    })),
+    el('span', {}, 'Per turn ', el('b', {
+      text: pctPerTurn === null ? '—'
+        : `${pctPerTurn >= 1 ? fixed(pctPerTurn, 1) : fixed(pctPerTurn, 3)}% of range`
+    })));
+}
+
 function renderResult(conn, res) {
   const { mapped, fields, suggestedPreset } = res;
   const wrap = el('div');
@@ -382,15 +406,6 @@ function renderResult(conn, res) {
         })
         : null));
   }
-
-  wrap.appendChild(el('div', { class: 'statline' },
-    el('span', {}, 'Span ', el('b', { text: `${groupDigits(mapped.rawSpan)} steps` })),
-    el('span', {}, 'Rotation ', el('b', {
-      text: `${fixed(mapped.revsUsed, 3)} rev (${fixed(mapped.revsUsed * 360, 1)}°)`
-    })),
-    el('span', {}, 'Resolution ', el('b', {
-      text: mapped.unitsPerCount ? `${mapped.unitsPerCount.toExponential(2)} units / step` : '—'
-    }))));
 
   const card = el('div', { class: 'd3card' });
   for (const section of fields) {
