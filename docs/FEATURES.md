@@ -5772,3 +5772,23 @@ link to raise the `flashConfirmed` event, so the write confirmed in the log but
 nothing appeared on screen — `api.js` now emits `flashConfirmed` on the manager
 for the offline path, so the "written and confirmed" toast fires whether the
 connection is running or stopped.
+
+## 2026-08-16 — Every failed operation is logged, so error toasts are traceable
+
+**Found:** clicking Run! on a stopped connection showed "Connection is not
+running — start it first" with no log line, even though "every banner has a log
+entry" was supposed to hold. It was a `toast`, not a `banner` — and a toast is a
+`banner` with a timer (`ui.js`, `toast()` calls `banner()`), so to the operator
+there is no difference. The banner=log parity test inventoried `banner()` calls
+only, leaving every `toast` (43 of them) outside the rule — a hole the exact size
+of every toast.
+
+**Fix — log at the choke point, not per site.** Rather than inventory 43 toast
+sites, every API operation that rejects is now logged once, in `http.js` where
+the op is dispatched: `<op> failed — <message>`, tagged with the connection name
+when the payload carries an id. Almost every error toast is
+`toast('error', err.message)` echoing a rejected API call, so they are now
+traceable by construction — the Run! refusal included. `web-access.test.js`
+proves it end to end (a refused op appears in the log); `banner-log-parity.
+test.js` asserts the choke-point logging exists so it cannot quietly regress. A
+toast is a banner with a timer, and the banner=log rule now holds for both.

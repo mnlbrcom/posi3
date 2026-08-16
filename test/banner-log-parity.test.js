@@ -107,6 +107,15 @@ test('the server writes the lines the inventory promises', () => {
   assert.match(link, /OutputType was changed to BINARY/);
   assert.match(link, /Field layout will be inferred/);
   assert.match(link, /is not answering — pausing sends/);
+
+  // A toast is a banner with a timer (ui.js), so the rule holds for it too. But
+  // toasts number in the dozens and most are `toast('error', err.message)`
+  // echoing a rejected API call — so rather than inventory each, every failed
+  // operation is logged at one choke point in http.js. Any error toast is then
+  // traceable by construction. Runtime proof: web-access.test.js.
+  const http = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'http.js'), 'utf8');
+  assert.match(http, /\$\{name\} failed — \$\{err\.message\}/,
+    'http.js must log every failed API operation, so error toasts are traceable');
 });
 
 test('no banner outlives half a minute', () => {

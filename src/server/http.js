@@ -238,11 +238,22 @@ function createServer(opts) {
       if (typeof fn !== 'function') {
         return sendJson(res, 404, { ok: false, error: { code: 'ENOENT', message: `No such operation: ${name}` } });
       }
+      let body = null;
       try {
-        const body = await readBody(req);
+        body = await readBody(req);
         // Same envelope the IPC layer used, so the UI's error handling is unchanged.
         return sendJson(res, 200, { ok: true, data: await fn(body) });
       } catch (err) {
+        // Every failed operation is logged here, on the server, where Export can
+        // find it. The client shows `err.message` as a toast — and a toast is a
+        // banner with a timer (ui.js), so the banner=log rule has to hold for it
+        // too. Without this, "I clicked Run! and it refused" left no trace.
+        const link = body && body.id ? manager.get(body.id) : null;
+        manager.logger.push({
+          id: (body && body.id) || null,
+          name: link ? link.config.name : null,
+          level: 'warn', dir: 'app', text: `${name} failed — ${err.message}`
+        });
         return sendJson(res, 200, {
           ok: false,
           error: { code: err.code || 'EFAIL', message: err.message, retryAfterMs: err.retryAfterMs }
