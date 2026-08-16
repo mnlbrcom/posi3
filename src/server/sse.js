@@ -36,6 +36,11 @@ class SseHub {
    * @param {import('node:http').ServerResponse} res
    */
   attach(req, res) {
+    // Flush each telemetry frame the moment it is written. Without this, Nagle's
+    // algorithm coalesces these small 30 Hz frames on a real network (it has no
+    // effect on loopback), so a remote browser receives them in clumps and the
+    // dashboard animation stutters. Loopback is unaffected; the LAN is smoothed.
+    if (res.socket) res.socket.setNoDelay(true);
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
