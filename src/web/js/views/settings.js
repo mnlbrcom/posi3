@@ -168,7 +168,14 @@ export function renderSettings(root) {
       // The commit this build came from. Absent only when neither a packaged
       // stamp nor a .git directory is there to ask.
       info.revision ? el('span', {}, 'Revision ', el('b', { class: 'mono', text: info.revision })) : null,
-      el('span', {}, 'Author ', el('b', { text: 'mnlbr' }))),
+      // A real link: target=_blank so the desktop shell's window-open handler
+      // hands it to the system browser (main.js), and opens a new tab on the web.
+      el('span', {}, 'Author ', el('a', {
+        class: 'about-link',
+        href: 'https://www.mnlbr.com',
+        target: '_blank',
+        rel: 'noopener noreferrer'
+      }, 'mnlbr.com'))),
 
     el('div', { class: 'statline' },
       // Absent when the bridge runs headless, which is a supported mode.

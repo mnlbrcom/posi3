@@ -656,6 +656,17 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   text-align: right; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
+/* Sits in the same right-aligned value cell as .statline b, but reads as a link:
+   --accent-text is the accent tint that clears 4.5:1 as text (--accent is for
+   fills). Underlined so it is obviously clickable, not just coloured. */
+.about-link {
+  color: var(--accent-text); font-weight: 600;
+  text-align: right; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.about-link:hover { text-decoration-thickness: 2px; }
+.about-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* -------------------------------------------------------------------- dial */
 
