@@ -107,11 +107,14 @@ const OFFLINE_RETRY_MS = 1000;
 // cycle every run — while keeping the same true/false/null answers the state
 // machine already handles.
 //   FRESH  a reply this recent means the host is up
-//   WARMUP before the first reply, answer "unknown" rather than "down"
-//   REAP   a pinger nothing has asked about for this long is shut down
+//   WARMUP  before the first reply, answer "unknown" rather than "down"
+//   REAP    a pinger nothing has asked about for this long is shut down
+//   BACKOFF a pinger that could not spawn is retried no more often than this,
+//           so a missing/broken `ping` never becomes a spawn-per-probe loop
 const PING_FRESH_MS = 2500;
 const PING_WARMUP_MS = 2000;
 const PINGER_REAP_MS = 3000;
+const PINGER_RESPAWN_BACKOFF_MS = 15000;
 
 /**
  * While a connection is *not* started, the encoder is pinged so its indicator
@@ -1013,13 +1016,18 @@ class EncoderLink extends EventEmitter {
   _ensurePinger(host) {
     const now = Date.now();
     const existing = this._pingers.get(host);
-    if (existing && !existing.dead) { existing.lastAskedAt = now; return; }
+    // A live pinger needs nothing; a dead one is retried only after a backoff,
+    // so a `ping` that cannot spawn does not turn into a spawn-per-probe loop.
+    if (existing && !shouldRespawn(existing, now)) { existing.lastAskedAt = now; return; }
     if (existing && existing.proc) { try { existing.proc.kill(); } catch { /* already gone */ } }
 
     // Continuous ping at ~1/s: unix defaults to a 1 s interval (`-i` states it),
     // Windows `-t` runs until killed. Only stdout is parsed, for reply lines.
     const args = process.platform === 'win32' ? ['-t', host] : ['-i', '1', host];
-    const p = { proc: null, lastReplyAt: null, startedAt: now, lastAskedAt: now, dead: false };
+    const p = {
+      proc: null, lastReplyAt: null, startedAt: now,
+      lastAskedAt: now, lastSpawnAttemptAt: now, dead: false
+    };
     try {
       p.proc = spawn('ping', args, { stdio: ['ignore', 'pipe', 'ignore'] });
       // Never the reason the process stays up at quit time.
@@ -1116,6 +1124,10 @@ class EncoderLink extends EventEmitter {
         sink.nextLivenessAt = now + OFFLINE_RETRY_MS;
         this._probeHostAlive(sink);
       }
+      // Reap here too, not only as a side effect of a probe: a running link
+      // whose destinations have all gone not-ready fires no probe, so without
+      // this a dropped host's ping process would linger until stop().
+      this._reapPingers();
     };
     this._destWatch = setInterval(tick, OFFLINE_RETRY_MS);
     if (this._destWatch.unref) this._destWatch.unref();
@@ -1942,6 +1954,18 @@ function pingLiveness(p, now) {
 }
 
 /**
+ * Whether _ensurePinger should (re)spawn for a host now: yes when there is no
+ * pinger, no while a live one is running, and for a dead one only once the
+ * respawn backoff has elapsed — so a `ping` that cannot spawn at all is retried
+ * occasionally rather than on every probe.
+ */
+function shouldRespawn(existing, now) {
+  if (!existing) return true;
+  if (!existing.dead) return false;
+  return (now - existing.lastSpawnAttemptAt) >= PINGER_RESPAWN_BACKOFF_MS;
+}
+
+/**
  * What to tell the operator about one destination.
  *
  *   receiving  packets are arriving there and nothing has objected. Named for
@@ -2121,5 +2145,6 @@ EncoderLink.pingRunner = process.env.NODE_TEST_CONTEXT
   : null;
 
 module.exports = {
-  EncoderLink, normaliseConfig, assertSafeValue, hostProvenBack, isPingReply, pingLiveness
+  EncoderLink, normaliseConfig, assertSafeValue, hostProvenBack,
+  isPingReply, pingLiveness, shouldRespawn
 };

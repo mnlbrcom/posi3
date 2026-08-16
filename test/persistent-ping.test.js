@@ -13,7 +13,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { isPingReply, pingLiveness } = require('../src/core/encoder-link');
+const { isPingReply, pingLiveness, shouldRespawn } = require('../src/core/encoder-link');
 
 test('isPingReply recognises a reply on every platform, and only a reply', () => {
   // A reply carries a round-trip time.
@@ -54,4 +54,16 @@ test('pingLiveness: a pinger that could not run is no evidence, not "down"', () 
   assert.equal(pingLiveness({ lastReplyAt: null, startedAt: now - 5000, dead: true }, now), null);
   // But a recent reply seen before it died still counts as life.
   assert.equal(pingLiveness({ lastReplyAt: now - 500, startedAt: now - 5000, dead: true }, now), true);
+});
+
+test('shouldRespawn: spawn once, never while alive, and back off a dead one', () => {
+  const now = 100000;
+  // No pinger yet — spawn it.
+  assert.equal(shouldRespawn(undefined, now), true);
+  // A live pinger needs nothing, however long it has run.
+  assert.equal(shouldRespawn({ dead: false, lastSpawnAttemptAt: now - 60000 }, now), false);
+  // A dead one is not retried until the backoff has elapsed — this is what stops
+  // a `ping` that cannot spawn from being re-forked on every 1 s probe.
+  assert.equal(shouldRespawn({ dead: true, lastSpawnAttemptAt: now - 1000 }, now), false);
+  assert.equal(shouldRespawn({ dead: true, lastSpawnAttemptAt: now - 15000 }, now), true);
 });

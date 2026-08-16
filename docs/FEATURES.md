@@ -5884,3 +5884,22 @@ Windows `ping` output). Only the real implementation behind the seam changed.
 
 Real probes now land within noise of the pure path — the tail flattened and the
 fork stall is gone. Link-internal parse→send stayed p50 ≈ 43 µs / max ≤ 394 µs.
+
+**Review hardening (pr-agent findings on the PR).** Two edge cases closed:
+- **Respawn backoff.** If `ping` cannot spawn at all (missing binary, denied)
+  or dies immediately, the record is marked dead and, before, `_ensurePinger`
+  re-forked on the very next probe — a 1-spawn-per-second loop, the slow-motion
+  form of the bug this engine removes. A dead pinger is now retried no more
+  often than `PINGER_RESPAWN_BACKOFF_MS` (15 s). Decided by the pure
+  `shouldRespawn(existing, now)` helper, unit-tested like `isPingReply` /
+  `pingLiveness`.
+- **Reap without a probe.** Reaping ran only as a side effect of a probe, so a
+  *running* link whose destinations had all gone not-ready fired no probe and a
+  dropped host's ping process lingered until `stop()`. The destination-watch
+  tick now reaps every second regardless, so stale pingers go within
+  `PINGER_REAP_MS` even when nothing is being probed.
+
+Three lower-value findings were dismissed on inspection: `_clearTimers()` has a
+single call site (in `stop()`, not the reconnect path, so pingers are not torn
+down per reconnect); the stdout `slice(-4096)` guard is fine for ping's short
+newline-terminated lines; the buffer trim needs no change.
