@@ -1355,6 +1355,9 @@ select.unknown-value { border-color: var(--warn); }
 /* The mapping screen reuses the config screen's card and group shells, so only
    what is genuinely new lives here. */
 .map-result { padding-bottom: 10px; }
+/* The computed summary, sat under the address facts rather than in the fold. */
+.map-stats { margin: 6px 0 2px; }
+.map-stats:empty { display: none; }
 .map-rows { display: flex; flex-direction: column; gap: 2px; }
 
 /* A warning about the mapping itself — a span that crosses the encoder's
