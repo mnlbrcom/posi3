@@ -1,7 +1,7 @@
-# Oracle's JRE 7 installer, 29 MB of the 38 MB reference archive. Not ours to
-# redistribute, permanent once in git history, and made obsolete by the native
-# encoder config panel. It stays in Dropbox with the rest of the venue material.
-input/**/jre-*.exe
+# Reference material only — manuals, the old d3driver source/exe, datasheets,
+# the logo sources. Nothing here is used at runtime (the nav SVGs are inlined in
+# index.html), so the whole folder stays local rather than in the repo.
+input/
 
 node_modules/
 release/

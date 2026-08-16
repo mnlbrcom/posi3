@@ -1,3 +1,0 @@
-Modifikation des TCP-CLients, um die Zeit auszugeben, die der Encoder zwischen Run! und Rücksenden des Wertes benötigt.
-
-10.03.2004 TiB
