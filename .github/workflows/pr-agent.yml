@@ -12,6 +12,12 @@ on:
   issue_comment:
     types: [created]
 
+# A fresh push supersedes the previous review of the same PR, rather than
+# leaving two review runs going at once.
+concurrency:
+  group: pr-agent-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: write
   issues: write

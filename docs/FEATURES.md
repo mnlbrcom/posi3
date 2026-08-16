@@ -5818,3 +5818,20 @@ resolution figure is reframed from units-per-step (tiny, scientific notation,
 abstract "units") to **"Per turn — N% of range"**: how much of the output one
 encoder turn moves, computed as one turn ÷ the total turns of travel, so it
 agrees with the Rotation line and never falls back to scientific notation.
+
+## 2026-08-16 — CI stops burning macOS minutes on every PR
+
+**Reported:** GitHub emailed at 1,800 / 2,000 Actions minutes. The repo is
+private (2,000 free/month) and the cost was almost all macOS — GitHub bills Linux
+×1, Windows ×2, macOS ×10, and `ci.yml` ran a three-OS test matrix plus a
+separate macOS `desktop` job on every PR and every re-push.
+
+- **Concurrency** — re-pushing a PR now cancels its superseded run (a stacked
+  macOS ×10 duplicate is real money); left running on main so each merge finishes.
+- **macOS only on merge to main** — the test matrix drops to ubuntu + windows on
+  a PR (a `fromJSON` ternary) and the non-blocking `desktop` job (macOS,
+  `continue-on-error`) runs only on push to main. Full three-OS coverage still
+  runs once per merge.
+- pr-agent gets the same concurrency-cancel.
+
+Per-PR billed minutes fall from ~30 to ~6; macOS runs once per merge, not per push.
