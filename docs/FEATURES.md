@@ -5849,3 +5849,17 @@ tint that clears 4.5:1 as text, where `--accent` is for fills) and underlined so
 it reads as a link, sitting in the same right-aligned value cell as the other
 About figures. UI audit clean at all six widths; the link fits the cell with no
 overflow down to 390 px.
+
+## 2026-08-16 — SSE telemetry flushes each frame (setNoDelay) for a smooth remote browser
+
+**Asked:** land the `setNoDelay` half of the remote-smoothness work on main
+(the client-side dial easing stays parked for a remote-browser test).
+
+Each SSE (server-sent events) client socket now has `setNoDelay(true)` set the
+moment the stream is attached (`sse.js`). Without it, TCP's Nagle algorithm
+coalesces the small 30 Hz telemetry frames on a real network — a remote browser
+receives them in clumps and the dashboard animation stutters. Loopback was never
+affected (Nagle has no effect there), which is why the local app looked fine and
+only a second computer saw the lag. No behaviour change on the wire otherwise;
+full suite green. The frame-to-frame interpolation on the client (`dial.js`) is a
+separate change, held until the remote test.
