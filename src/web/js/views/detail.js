@@ -71,7 +71,7 @@ export function openControls(conn) {
         }),
         el('div', { class: 'modal-action-row' },
           presetBtn,
-          el('span', { class: 'hint', text: 'The target output number defined by the user for the current physical position.' })),
+          el('span', { class: 'hint', text: 'Set output value to 0 for the current physical position and calculate Offset.' })),
         el('div', { class: 'modal-action-row' },
           offsetBtn,
           el('span', { class: 'hint', text: 'Resets to Initial State (Raw Uncalibrated Physical Reading).' }))),

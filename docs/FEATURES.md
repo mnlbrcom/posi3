@@ -5737,8 +5737,8 @@ their own, set apart by a rule and headed **CRITICAL FLASH MEMORY ACTIONS**
 (amber), with a note on flash lifespan, the consecutive-Preset rule, and the
 do-not-power-off caution. Each button sits on its own row beside what it does:
 
-- **Preset 0** — "The target output number defined by the user for the current
-  physical position." (writes `Preset=0`, unchanged path).
+- **Preset 0** — "Set output value to 0 for the current physical position and
+  calculate Offset." (writes `Preset=0`, unchanged path).
 - **Offset 0** — "Resets to Initial State (Raw Uncalibrated Physical Reading)."
   New: writes `Offset=0` through the standard write path, behind the same
   flash-write confirm modal, with a refusal surfaced from the results.
