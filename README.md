@@ -221,3 +221,7 @@ record: what was asked for, what was built, and why each decision went the way i
 The POSITAL manuals, datasheet, the original `d3driver.c` / `d3driver.exe`, and the Java-applet
 screenshots are the manufacturer's material and are **not redistributed in this repo**; they are
 kept locally under `input/`, which is git-ignored.
+
+---
+
+© 2026 mnlbr.com. All rights reserved. Proprietary — see [LICENSE](LICENSE).

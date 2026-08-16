@@ -34,5 +34,10 @@
   },
   "allowScripts": {
     "electron@43.2.0": true
+  },
+  "author": "mnlbr.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnlbrcom/posi3.git"
   }
 }
