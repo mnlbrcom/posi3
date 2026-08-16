@@ -5836,6 +5836,74 @@ separate macOS `desktop` job on every PR and every re-push.
 
 Per-PR billed minutes fall from ~30 to ~6; macOS runs once per merge, not per push.
 
+## 2026-08-16 — Persistent-ping engine: liveness stops forking on the hot path
+
+**Closes the follow-up left open by the 2026-08-06 bench entry.** That gate found
+that the liveness check — a system `ping` used to tell whether an encoder or a
+disguise host is reachable — spawned a fresh `ping` process on the forwarding
+thread for every probe. Through p99.9 it cost nothing, but the worst single
+sample reproducibly stalled ~4 ms while the operating system forked that
+process, and with real probes running the bench's `max` sat at **5.8–6.8 ms in
+every run** — past the 2 ms test cycle (still inside the rig's slower 8–18 ms
+cycles, so no field symptom, but a latent cost on the data path).
+
+**What changed.** There is now **one long-running `ping <host>` per host**, held
+open for as long as that host is being watched, with its replies read from the
+process's output as they arrive. A probe no longer starts anything — it reads
+the freshness of the last reply already collected:
+
+- **alive** — a reply arrived within the last 2.5 s;
+- **down** — no reply within 2.5 s, or none since a 2 s warm-up after the pinger
+  started;
+- **unknown** (changes nothing) — still inside the warm-up, or the `ping`
+  process could not be started at all. Unknown never flips an indicator; it just
+  withholds evidence, so a host already shown as reachable stays that way until
+  the timers actually prove otherwise.
+
+Pingers are reaped 3 s after the last probe that asked about their host, and all
+are killed on `stop()`, so the process count stays bounded to the set of hosts
+actually being watched (verified at runtime: two active hosts → two `ping`
+processes, no growth while idle).
+
+**The test seam is unchanged.** The one-shot `_ping(host, onDone)` API and the
+`EncoderLink.pingRunner` injection point are exactly as before, so every
+liveness test — the health matrix, destination-health, encoder-reachability —
+still drives a fake runner and stayed green (334 → 339 tests, the five new ones
+cover the two pure helpers `isPingReply` / `pingLiveness` across Linux, macOS and
+Windows `ping` output). Only the real implementation behind the seam changed.
+
+**Bench, same machine and settings as 2026-08-06 (20 000 samples,
+`--cycle 2 --coalesce 2 --destinations 3`, 60 000 packets, 0 lost):**
+
+| metric | probes off | probes real (was, spawn engine) | probes real (now) |
+|---|---|---|---|
+| p50 | 336 µs | 314 µs | 330 µs |
+| p99 | 1 116 µs | 872 µs | 1 106 µs |
+| p99.9 | 2 054 µs | 2 400 µs | **1 911 µs** |
+| max | 2 917 µs | **6 771 µs** | **2 517 µs** |
+
+Real probes now land within noise of the pure path — the tail flattened and the
+fork stall is gone. Link-internal parse→send stayed p50 ≈ 43 µs / max ≤ 394 µs.
+
+**Review hardening (pr-agent findings on the PR).** Two edge cases closed:
+- **Respawn backoff.** If `ping` cannot spawn at all (missing binary, denied)
+  or dies immediately, the record is marked dead and, before, `_ensurePinger`
+  re-forked on the very next probe — a 1-spawn-per-second loop, the slow-motion
+  form of the bug this engine removes. A dead pinger is now retried no more
+  often than `PINGER_RESPAWN_BACKOFF_MS` (15 s). Decided by the pure
+  `shouldRespawn(existing, now)` helper, unit-tested like `isPingReply` /
+  `pingLiveness`.
+- **Reap without a probe.** Reaping ran only as a side effect of a probe, so a
+  *running* link whose destinations had all gone not-ready fired no probe and a
+  dropped host's ping process lingered until `stop()`. The destination-watch
+  tick now reaps every second regardless, so stale pingers go within
+  `PINGER_REAP_MS` even when nothing is being probed.
+
+Three lower-value findings were dismissed on inspection: `_clearTimers()` has a
+single call site (in `stop()`, not the reconnect path, so pingers are not torn
+down per reconnect); the stdout `slice(-4096)` guard is fine for ping's short
+newline-terminated lines; the buffer trim needs no change.
+
 ## 2026-08-16 — Settings → About: the author line links to mnlbr.com
 
 **Asked:** make the About panel's author a clickable web link.

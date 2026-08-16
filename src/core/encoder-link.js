@@ -100,7 +100,21 @@ const OFFLINE_RETRY_MS = 1000;
  * (macOS stealth mode does) reads offline even though it is up — for real
  * disguise and encoder hardware that does not happen, and simplicity wins.
  */
-const PING_TIMEOUT_MS = 900;
+// Liveness is read from a persistent `ping` per host rather than a fresh
+// process per probe: one long-running `ping <host>` streams a reply a second,
+// and a probe just reads how recently one landed. That takes the per-probe
+// process spawn off the forwarding path — measured to exceed the 2 ms send
+// cycle every run — while keeping the same true/false/null answers the state
+// machine already handles.
+//   FRESH  a reply this recent means the host is up
+//   WARMUP  before the first reply, answer "unknown" rather than "down"
+//   REAP    a pinger nothing has asked about for this long is shut down
+//   BACKOFF a pinger that could not spawn is retried no more often than this,
+//           so a missing/broken `ping` never becomes a spawn-per-probe loop
+const PING_FRESH_MS = 2500;
+const PING_WARMUP_MS = 2000;
+const PINGER_REAP_MS = 3000;
+const PINGER_RESPAWN_BACKOFF_MS = 15000;
 
 /**
  * While a connection is *not* started, the encoder is pinged so its indicator
@@ -317,6 +331,11 @@ class EncoderLink extends EventEmitter {
     /** Which `set` syntax this encoder answered to. See write(). */
     this._setDialect = null;
     this._version = null;
+
+    // Persistent liveness pings: one long-running `ping` process per host,
+    // keyed by host. See _ping / _ensurePinger — this replaced a process spawn
+    // per probe, which the bench measured landing on the forwarding cycle.
+    this._pingers = new Map();
   }
 
   // -------------------------------------------------------------------------
@@ -966,9 +985,15 @@ class EncoderLink extends EventEmitter {
   }
 
   /**
-   * One ICMP echo via the system's ping. Answers true (replied), false (no
-   * reply within the deadline), or null when ping itself could not run — and
-   * null changes nothing, because no evidence is not evidence of absence.
+   * Host liveness — true (replied recently), false (silent for a while), or
+   * null (no evidence yet) — without spawning a process per probe.
+   *
+   * A persistent `ping <host>` (see _ensurePinger) streams a reply a second;
+   * this reads how recently one landed and answers on the next tick, so the
+   * answer is off the forwarding path entirely. The one-shot signature and the
+   * `pingRunner` seam are unchanged, so every liveness test drives the same
+   * state machine — null still changes nothing, because absent evidence is not
+   * evidence of absence.
    */
   _ping(host, onDone) {
     // Test seam. Liveness tests assert the state machine, not the OS: real
@@ -976,23 +1001,69 @@ class EncoderLink extends EventEmitter {
     // firewall drops even a loopback self-ping, and CI containers often
     // cannot ping at all.
     if (EncoderLink.pingRunner) return EncoderLink.pingRunner(host, onDone);
-    // Flags measured, not assumed. macOS `-W` (reply wait, ms) miscounts even
-    // a loopback reply as lost and exits 2, so darwin uses `-t` — the overall
-    // deadline in seconds — which exits 0 the moment the reply lands. Linux
-    // `-W` is per-reply and in seconds; Windows `-w` is in milliseconds.
-    const args = process.platform === 'win32'
-      ? ['-n', '1', '-w', String(PING_TIMEOUT_MS), host]
-      : process.platform === 'darwin'
-        ? ['-c', '1', '-t', '1', host]
-        : ['-c', '1', '-W', '1', host];
-    const child = spawn('ping', args, { stdio: 'ignore', timeout: PING_TIMEOUT_MS + 500 });
-    // Never the reason the process stays up: a probe in flight at quit time
-    // would otherwise hold the event loop for up to its own deadline.
-    child.unref();
-    let settled = false;
-    child.on('exit', (code) => { if (!settled) { settled = true; onDone(code === 0); } });
-    child.on('error', () => { if (!settled) { settled = true; onDone(null); } });
-    return child;
+    this._ensurePinger(host);
+    this._reapPingers();
+    // Deferred, not synchronous: the caller assigns the returned token to
+    // sink.aliveProbe / this._idleProbe *after* this returns, and the guard
+    // inside onDone compares the answer against it.
+    setImmediate(() => onDone(pingLiveness(this._pingers.get(host), Date.now())));
+    // A token, not a child: there is no per-probe process to kill. The callers
+    // store it and may call .kill(); that is now a no-op.
+    return { kill() {} };
+  }
+
+  /** Ensure a long-running ping to `host` is streaming replies into its record. */
+  _ensurePinger(host) {
+    const now = Date.now();
+    const existing = this._pingers.get(host);
+    // A live pinger needs nothing; a dead one is retried only after a backoff,
+    // so a `ping` that cannot spawn does not turn into a spawn-per-probe loop.
+    if (existing && !shouldRespawn(existing, now)) { existing.lastAskedAt = now; return; }
+    if (existing && existing.proc) { try { existing.proc.kill(); } catch { /* already gone */ } }
+
+    // Continuous ping at ~1/s: unix defaults to a 1 s interval (`-i` states it),
+    // Windows `-t` runs until killed. Only stdout is parsed, for reply lines.
+    const args = process.platform === 'win32' ? ['-t', host] : ['-i', '1', host];
+    const p = {
+      proc: null, lastReplyAt: null, startedAt: now,
+      lastAskedAt: now, lastSpawnAttemptAt: now, dead: false
+    };
+    try {
+      p.proc = spawn('ping', args, { stdio: ['ignore', 'pipe', 'ignore'] });
+      // Never the reason the process stays up at quit time.
+      if (p.proc.unref) p.proc.unref();
+      let buf = '';
+      p.proc.stdout.on('data', (chunk) => {
+        buf += chunk.toString('latin1');
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i); buf = buf.slice(i + 1);
+          if (isPingReply(line)) p.lastReplyAt = Date.now();
+        }
+        if (buf.length > 4096) buf = buf.slice(-4096);
+      });
+      p.proc.on('exit', () => { p.dead = true; });
+      p.proc.on('error', () => { p.dead = true; });
+    } catch { p.dead = true; }
+    this._pingers.set(host, p);
+  }
+
+  /** Shut down any pinger nothing has consulted recently (a dropped host). */
+  _reapPingers() {
+    const now = Date.now();
+    for (const [host, p] of this._pingers) {
+      if (now - p.lastAskedAt > PINGER_REAP_MS) {
+        try { if (p.proc) p.proc.kill(); } catch { /* already gone */ }
+        this._pingers.delete(host);
+      }
+    }
+  }
+
+  _killAllPingers() {
+    for (const p of this._pingers.values()) {
+      try { if (p.proc) p.proc.kill(); } catch { /* already gone */ }
+    }
+    this._pingers.clear();
   }
 
   /** Ask whether the destination's machine is there. One in flight, ever. */
@@ -1053,6 +1124,10 @@ class EncoderLink extends EventEmitter {
         sink.nextLivenessAt = now + OFFLINE_RETRY_MS;
         this._probeHostAlive(sink);
       }
+      // Reap here too, not only as a side effect of a probe: a running link
+      // whose destinations have all gone not-ready fires no probe, so without
+      // this a dropped host's ping process would linger until stop().
+      this._reapPingers();
     };
     this._destWatch = setInterval(tick, OFFLINE_RETRY_MS);
     if (this._destWatch.unref) this._destWatch.unref();
@@ -1798,6 +1873,7 @@ class EncoderLink extends EventEmitter {
       this._reconnectTimer = null;
     }
     this._stopWatchdog();
+    this._killAllPingers();
   }
 
   /**
@@ -1852,6 +1928,41 @@ function rxLevel(r) {
 function sameValue(a, b) {
   const fold = (v) => String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
   return fold(a) === fold(b);
+}
+
+/**
+ * Is this a line of `ping` output that reports a reply? A reply carries a
+ * round-trip time on every platform — Linux/macOS "time=0.2 ms", Windows
+ * "time=1ms" or "time<1ms" — while a timeout or unreachable line has none.
+ */
+function isPingReply(line) {
+  return /time[=<]/i.test(line);
+}
+
+/**
+ * Read host liveness from a persistent pinger's record: true (a reply landed
+ * within PING_FRESH_MS), false (running past warm-up with no recent reply, i.e.
+ * gone), or null (no evidence yet — warming up, or the pinger could not run).
+ * null changes nothing downstream.
+ */
+function pingLiveness(p, now) {
+  if (!p) return null;
+  if (p.lastReplyAt !== null) return (now - p.lastReplyAt) <= PING_FRESH_MS;
+  if (p.dead) return null;                                 // could not run
+  if (now - p.startedAt < PING_WARMUP_MS) return null;     // first reply not due
+  return false;                                            // up long enough, silent
+}
+
+/**
+ * Whether _ensurePinger should (re)spawn for a host now: yes when there is no
+ * pinger, no while a live one is running, and for a dead one only once the
+ * respawn backoff has elapsed — so a `ping` that cannot spawn at all is retried
+ * occasionally rather than on every probe.
+ */
+function shouldRespawn(existing, now) {
+  if (!existing) return true;
+  if (!existing.dead) return false;
+  return (now - existing.lastSpawnAttemptAt) >= PINGER_RESPAWN_BACKOFF_MS;
 }
 
 /**
@@ -2033,4 +2144,7 @@ EncoderLink.pingRunner = process.env.NODE_TEST_CONTEXT
   }
   : null;
 
-module.exports = { EncoderLink, normaliseConfig, assertSafeValue, hostProvenBack };
+module.exports = {
+  EncoderLink, normaliseConfig, assertSafeValue, hostProvenBack,
+  isPingReply, pingLiveness, shouldRespawn
+};
