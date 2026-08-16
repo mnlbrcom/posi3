@@ -313,7 +313,6 @@ class EncoderLink extends EventEmitter {
     // transport would have got its own uncoordinated limit, or none at all.
     // The encoder's flash is rated ~100,000 writes; the policy belongs to the
     // device, so it lives with the device.
-    this._flashPending = null; // { sinceMs, timer }
 
     /** Which `set` syntax this encoder answered to. See write(). */
     this._setDialect = null;
@@ -796,7 +795,9 @@ class EncoderLink extends EventEmitter {
 
     switch (r.kind) {
       case KIND.EVENT:
-        this._resolveFlash('confirmed');
+        // Some firmware does broadcast a commit; when it does, surface it as a
+        // bonus. The write was already confirmed on its echo, so nothing waits
+        // on this.
         this.emit('encoderEvent', { id: this.id, kind: 'paramsWritten', text: 'Parameters successfully written!' });
         break;
       case KIND.STATUS:
@@ -1552,6 +1553,7 @@ class EncoderLink extends EventEmitter {
   /** Write several variables in one rate-limited batch. Never throws per entry. */
   async writeMany(entries) {
     this.beginWriteBatch();
+    this._flashStarted(entries.map((e) => `${e.variable}=${e.value}`).join(', '));
     const results = [];
     for (const e of entries) {
       try {
@@ -1561,7 +1563,12 @@ class EncoderLink extends EventEmitter {
         results.push({ variable: e.variable, value: e.value, ok: false, error: err.message });
       }
     }
-    if (results.some((r) => r.ok)) this._armFlash();
+    const landed = results.filter((r) => r.ok).map((r) => ({ variable: r.variable, value: r.value }));
+    if (landed.length) this._flashConfirmed(landed);
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length) {
+      this._log('warn', 'app', `flash write refused — ${failed.map((f) => `${f.variable} (${f.error})`).join(', ')}`);
+    }
     return results;
   }
 
@@ -1632,72 +1639,53 @@ class EncoderLink extends EventEmitter {
 
     if (!readable && !force) {
       this.beginWriteBatch();
+      this._flashStarted(`Preset=${target}`);
       const r = await this.write('Preset', String(target));
-      this._armFlash();
+      this._flashConfirmed([{ variable: 'Preset', value: String(target) }]);
       return { written: target, cycles: 1, previous: null, verified: false, reply: r && r.value };
     }
 
     if (current === target) {
-      // Only reachable with force: the assert above throws otherwise.
+      // Only reachable with force: the assert above throws otherwise. The
+      // firmware refuses the same value twice in a row, so go value+1 then
+      // value — the two differ, so each is accepted on its own echo.
       this.beginWriteBatch();
+      this._flashStarted(`Preset=${target + 1}, then Preset=${target}`);
       await this.write('Preset', String(target + 1));
-      this._armFlash();
-      await this._awaitFlash();
       await this.write('Preset', String(target));
-      this._armFlash();
+      this._flashConfirmed([{ variable: 'Preset', value: String(target) }]);
       return { written: target, cycles: 2, previous: current };
     }
 
     this.beginWriteBatch();
+    this._flashStarted(`Preset=${target}`);
     await this.write('Preset', String(target));
-    this._armFlash();
+    this._flashConfirmed([{ variable: 'Preset', value: String(target) }]);
     return { written: target, cycles: 1, previous: current };
   }
 
-  /** True while the encoder may still be committing to flash. */
-  get flashPending() {
-    return !!this._flashPending;
+  /**
+   * A flash write is starting — log the risk window on the server, where Export
+   * can find it. Every banner has a log line (banner-log-parity.test.js), and
+   * "do not power off" is the highest-consequence message this app produces.
+   */
+  _flashStarted(what) {
+    this._log('warn', 'app', `flash write started — do not power off — ${what}`);
   }
 
   /**
-   * Start the "do not power off" window. It closes when the encoder broadcasts
-   * `Parameters successfully written!`, or times out — previously
-   * `FLASH_COMMIT_MS` was declared but never used, so the UI's "waiting for
-   * confirmation" state had nothing behind it and could wait forever.
+   * The write is confirmed. The encoder echoes a `set` by name and *value* —
+   * and `write()` only resolves when that echoed value matches what was asked,
+   * rejecting a refusal that carries the old value back — so the echo, in under
+   * a second, is the confirmation. There is no separate broadcast to wait for:
+   * this firmware does not reliably send one (an IP or CycleTime write is
+   * accepted and never announced). `flashConfirmed` clears the "do not power
+   * off" banner in every browser.
    */
-  _armFlash() {
-    this._resolveFlash('superseded');
-    const sinceMs = Date.now();
-    const timer = setTimeout(() => this._resolveFlash('timeout'), TIMEOUTS.FLASH_COMMIT_MS);
-    if (timer.unref) timer.unref();
-    this._flashPending = { sinceMs, timer, waiters: [] };
-    this.emit('encoderEvent', {
-      id: this.id,
-      kind: 'flashPending',
-      text: 'Writing to flash — do not power off the encoder.'
-    });
-  }
-
-  _resolveFlash(outcome) {
-    const pending = this._flashPending;
-    if (!pending) return;
-    clearTimeout(pending.timer);
-    this._flashPending = null;
-    for (const done of pending.waiters) done(outcome);
-    if (outcome === 'timeout') {
-      this.emit('encoderEvent', {
-        id: this.id,
-        kind: 'flashTimeout',
-        text: 'No flash-write confirmation after 30s. Verify the value before power-cycling the encoder.'
-      });
-      this._log('warn', 'app', 'flash commit not confirmed within 30s');
-    }
-  }
-
-  /** Resolves when the current flash write commits, times out, or is superseded. */
-  _awaitFlash() {
-    if (!this._flashPending) return Promise.resolve('none');
-    return new Promise((resolve) => this._flashPending.waiters.push(resolve));
+  _flashConfirmed(written) {
+    const what = written.map((w) => `${w.variable}=${w.value}`).join(', ');
+    this.emit('encoderEvent', { id: this.id, kind: 'flashConfirmed', text: `written and confirmed — ${what}` });
+    this._log('info', 'app', `flash write confirmed — ${what}`);
   }
 
   run() {
@@ -1810,10 +1798,6 @@ class EncoderLink extends EventEmitter {
       this._reconnectTimer = null;
     }
     this._stopWatchdog();
-    // A pending flash write cannot be confirmed once the socket is gone: the
-    // confirmation is an unsolicited broadcast we would no longer be there to
-    // hear. Release any waiter rather than leaving it hanging.
-    this._resolveFlash('disconnected');
   }
 
   /**

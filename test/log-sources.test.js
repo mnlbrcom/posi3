@@ -461,8 +461,7 @@ test('a Preset written from the config table goes through setPreset', async () =
   assert.deepEqual(calls, [{ value: 1000, opts: { force: false } }],
     'Preset must reach setPreset, and nothing else should');
   const preset = results.find((r) => r.variable === 'Preset');
-  assert.equal(preset.verified, null,
-    'Preset is never read back, so it is unverifiable rather than unverified');
+  assert.equal(preset.ok, true, 'the Preset write is confirmed on its echo');
   assert.ok(results.find((r) => r.variable === 'CycleTime'),
     'the other variables still go the ordinary way');
 });
@@ -481,22 +480,6 @@ test('the two-cycle detour is asked for, not assumed', async () => {
   await api.encoderWriteMany({ id: conn.id, entries: [{ variable: 'Preset', value: '0' }], force: true });
 
   assert.deepEqual(seen, [false, true], 'force only when the caller says so');
-});
-
-test('a write-only variable is not reported unconfirmed for failing to read back', async () => {
-  // `read Preset` answers "Preset is an unknown variable", so verifying a write
-  // by reading it back always failed -- and every Preset write was reported
-  // unconfirmed, including the ones that plainly worked.
-  const discover = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'core', 'discover.js'), 'utf8');
-  assert.match(discover, /verifying = done\.filter\(\(r\) => !isWriteOnly\(r\.variable\)\)/,
-    'write-only variables are excluded from the read-back');
-  assert.match(discover, /if \(isWriteOnly\(r\.variable\)\) r\.verified = null;/,
-    'and marked unverifiable rather than unverified');
-
-  const api = fs.readFileSync(path.join(__dirname, '..', 'src', 'server', 'api.js'), 'utf8');
-  assert.match(api, /results\.filter\(\(r\) => r\.verified === false\)/,
-    'only an actual failure counts as not confirmed');
 });
 
 test('every indicator change writes one line; an unchanged pill writes none', async (t) => {

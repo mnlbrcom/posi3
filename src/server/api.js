@@ -287,15 +287,24 @@ function createApi(ctx) {
           onLog: offlineLogger(conn.id)
         });
         promoteIfAnswered(conn, host);
-        // `verified === null` is "this variable cannot be read back", not a
-        // failure — only `false` is. Treating them alike reported every Preset
-        // write as unconfirmed, including the ones that worked.
-        const bad = results.filter((r) => r.verified === false);
+        // A write is confirmed on its echo (matched by value); a refusal echoes
+        // the old value and is marked not-ok. Same as the running path.
+        const bad = results.filter((r) => !r.ok);
         appLog(conn.id, bad.length
-          ? `flash write finished — ${results.length - bad.length} of ${results.length} verified, ` +
-            `not confirmed: ${bad.map((r) => r.variable).join(', ')}`
+          ? `flash write — ${results.length - bad.length} of ${results.length} confirmed, ` +
+            `refused: ${bad.map((r) => r.variable).join(', ')}`
           : `flash write confirmed — ${what}`,
         bad.length ? 'warn' : 'info');
+        // The running path emits this from EncoderLink; the offline path has no
+        // link, so emit it here — otherwise a stopped-connection write confirms
+        // in the log but shows nothing on screen.
+        const landed = results.filter((r) => r.ok);
+        if (landed.length) {
+          manager.emit('encoderEvent', {
+            id: conn.id, kind: 'flashConfirmed',
+            text: `written and confirmed — ${landed.map((r) => `${r.variable}=${r.value}`).join(', ')}`
+          });
+        }
         return results;
       } catch (err) { last = err; }
     }
@@ -328,7 +337,7 @@ function createApi(ctx) {
    * device is power-cycled.
    */
   const recordPendingAddress = async (id, results) => {
-    const written = results.find((r) => r.ok && r.verified && r.variable === 'IP');
+    const written = results.find((r) => r.ok && r.variable === 'IP');
     if (!written) return;
     const conn = store.find(checkId(id));
     if (!conn || conn.encoder.host === written.value) return;
@@ -1065,7 +1074,7 @@ function createApi(ctx) {
     encoderCached: ({ id }) => {
       const link = manager.get(checkId(id));
       if (!link) fail('ENOENT', 'No such connection');
-      return { vars: link.cachedVars(), flashPending: link.flashPending };
+      return { vars: link.cachedVars() };
     },
 
     encoderWrite: ({ id, variable, value }) => {
@@ -1101,11 +1110,7 @@ function createApi(ctx) {
         const results = rest.length ? await link.writeMany(rest) : [];
         for (const p of presets) {
           const r = await link.setPreset(Number(p.value), { force: !!force });
-          results.push({
-            variable: 'Preset', value: p.value, ok: true,
-            // Never read back, so never `false`: the echo is the confirmation.
-            verified: null, cycles: r.cycles
-          });
+          results.push({ variable: 'Preset', value: p.value, ok: true, cycles: r.cycles });
         }
         await recordPendingAddress(id, results);
         return results;

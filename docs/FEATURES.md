@@ -5684,3 +5684,91 @@ Removed all four layers of it, top to bottom: the web shim entry
 (`src/core/config-store.js`). `checkId`, the only shared helper the operation
 touched, stays — nine other operations use it. No test referenced any of the
 removed code; the suite is unchanged and green at 333.
+
+## 2026-08-15 — A flash write confirms on its echo, and every banner has a log line
+
+**Reported:** `set CycleTime=1` was accepted (`rx CycleTime=1` in 4 ms, "cycle
+time changed 10 ms → 1 ms"), then 30 s later the log warned "flash commit not
+confirmed within 30s" — a false alarm over a write that had plainly worked — and
+the "FLASH WRITE IN PROGRESS — do not power off" banner never cleared.
+
+**Cause.** The live-write path opened a 30-second flash-commit window that only
+closed on the encoder broadcasting `Parameters successfully written!`, and warned
+if it never arrived. But the broadcast is unreliable on this firmware — an IP or
+CycleTime write is accepted, stored, and never announced. So the window ran its
+full 30 s and warned, and nothing dismissed the banner.
+
+**Fix — confirm on the echo.** The encoder echoes a `set` by name *and* value,
+and `write()` only resolves when that echoed value matches what was asked (a
+refusal carries the old value back and throws). So the echo — in under a second
+— is the confirmation; there is no separate broadcast worth waiting for. On a
+successful write `EncoderLink` now emits `flashConfirmed` at once, which clears
+the "do not power off" banner in every browser (Encoder Config *and* the Controls
+popup), and logs `flash write confirmed — …`. A refused write logs
+`flash write refused — …`. The 30-second window, the read-back, and the
+`flashTimeout` warning are all gone. (A first pass confirmed by an explicit
+read-back at the 30 s mark; that was replaced when it proved the echo already
+had the answer and 30 s was too long to leave the banner up.)
+
+**Banner = log line, on both ends.** A long-standing rule (`banner-log-parity.
+test.js`): anything worth a banner is worth a log entry, written on the server so
+Export carries it. The live path violated it — it showed the "do not power off"
+banner with no server log (only the offline writer logged it). Now
+`writeMany`/`setPreset` log `flash write started — do not power off — …` when the
+write goes out and `flash write confirmed — …` when the echo lands, so the two
+highest-consequence banners this app raises are both on the record.
+
+**The banner clears on both paths, and a logless banner is gone.** The
+"FLASH WRITE IN PROGRESS — do not power off" banner was cleared by the
+`flashConfirmed` event — which only the *running* path sends. On a stopped
+connection the write confirmed (and logged it) but no event came, so the banner
+sat until a 15 s browser-side timer replaced it with "write status unknown — the
+encoder did not confirm" — a banner with no log line behind it, raised over a
+write that had succeeded. Encoder Config now clears the do-not-power-off banner
+when the write settles (in a `finally`, so it covers the stopped-connection path
+too), and the timer and its logless "status unknown" banner are removed. Every
+banner this screen raises now has a server log line: `flash write started — do
+not power off` (both paths), and the unreachable-on-read error.
+
+**The offline path, too.** Writing to a *stopped* connection went through a
+separate writer (`discover.js writeVariablesOnce`) that read every value back
+and then waited up to 30 s for the commit broadcast before saying "confirmed" —
+tested against a stopped connection, the confirmation landed a full 30 s after
+the `rx` echo, and the "do not power off" banner sat there the whole time. It
+now confirms on the echo like the running path: no read-back, no wait. The echo
+is matched by value, so a refusal (the old value echoed back) is still caught
+and reported. The trade, accepted deliberately: a "lying echo" — the encoder
+echoing a value it does not actually store — is no longer caught by a read-back;
+the running path never caught it either, and every write path now takes the echo
+as the confirmation, for every `set <Variable>=<Value>`.
+
+## 2026-08-16 — Controls: Preset 0 and Offset 0 as explained, critical actions
+
+**Asked:** in the Controls dialog, keep Preset 0, add an Offset 0 button; move
+both onto their own lines like Delete, behind a separator, each with a line of
+explanation; head the pair "CRITICAL FLASH MEMORY ACTIONS" with a flash-safety
+note.
+
+The two flash-write actions move out of the quick-controls row into a section of
+their own, set apart by a rule and headed **CRITICAL FLASH MEMORY ACTIONS**
+(amber), with a note on flash lifespan, the consecutive-Preset rule, and the
+do-not-power-off caution. Each button sits on its own row beside what it does:
+
+- **Preset 0** — "Set output value to 0 for the current physical position and
+  calculate Offset." (writes `Preset=0`, unchanged path).
+- **Offset 0** — "Resets to Initial State (Raw Uncalibrated Physical Reading)."
+  New: writes `Offset=0` through the standard write path, behind the same
+  flash-write confirm modal, with a refusal surfaced from the results.
+
+The quick-controls row keeps `[status · Start/Stop · Run!]`; Delete stays its own
+set-apart danger row.
+
+The safety note first said "wait for the response 'Parameters successfully
+written!'" — the exact broadcast this firmware does not reliably send and that
+posi3 stopped depending on. Reworded to "wait for posi3 to report 'flash write
+confirmed'", which is what actually appears. And the confirmation is now shown on
+both paths: a stopped-connection write goes through `writeOffline`, which had no
+link to raise the `flashConfirmed` event, so the write confirmed in the log but
+nothing appeared on screen — `api.js` now emits `flashConfirmed` on the manager
+for the offline path, so the "written and confirmed" toast fires whether the
+connection is running or stopped.

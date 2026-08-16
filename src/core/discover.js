@@ -27,22 +27,6 @@ const net = require('node:net');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
 
-const { ENCODER_VAR_BY_NAME } = require('../shared/constants');
-
-/**
- * A variable the encoder will not read back.
- *
- * `Preset` is the one: `read Preset` answers "Preset is an unknown variable".
- * Reading it back to confirm a write therefore always fails, which reported
- * every Preset write as unconfirmed — including the ones that plainly worked.
- * The echo of the `set` is the only confirmation this variable has, and it is
- * already checked.
- */
-const isWriteOnly = (name) => {
-  const spec = ENCODER_VAR_BY_NAME.get(String(name).toLowerCase());
-  return !!(spec && spec.writeOnly);
-};
-
 const ENCODER_PORT = 6000;
 
 /** Hosts probed at once. High enough to finish a /24 in seconds, low enough
@@ -376,20 +360,19 @@ function readVariablesOnce(host, names, { port = ENCODER_PORT, localAddress = nu
 /**
  * Write variables to an encoder that is not connected.
  *
- * Shaped by one fact about the device: it acknowledges a `set` immediately with
- * `<Variable>=<Value>`, and only *commits to flash* some seconds later,
- * announcing `Parameters successfully written!` to every client. A socket that
- * closed when the write returned would miss that, and the operator would be
- * told the status was unknown for a write that had in fact succeeded — so the
- * session is held open until the commit arrives or the wait runs out.
- *
- * The acknowledgement is matched by *value*, not just by name: a refusal looks
- * identical apart from carrying the old value back.
+ * The device acknowledges a `set` by echoing `<Variable>=<Value>` — the new
+ * value on success, the *old* one on a refusal — so the echo, matched by value
+ * (not just by name), is the confirmation. It commits to flash a moment later
+ * and *sometimes* announces `Parameters successfully written!`, but that
+ * broadcast is unreliable (an IP or CycleTime write is accepted and never
+ * announced), so nothing waits for it: the echo is enough, the same as the
+ * running-connection path. `committed` reports whether a broadcast happened to
+ * arrive before the writes finished — a bonus, never depended on.
  *
  * @returns {Promise<{results: Array, committed: boolean}>}
  */
 function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress = null,
-  connectTimeoutMs = 2000, perWriteMs = 2000, commitMs = 30000, onLog = null } = {}) {
+  connectTimeoutMs = 2000, perWriteMs = 2000, onLog = null } = {}) {
   const log = onLog || (() => {});
   const fold = (v) => String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
 
@@ -402,8 +385,6 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
     let timer = null;
     let settled = false;
     let committed = false;
-    let verifying = [];
-    let checking = false;
 
     const opts = { host, port };
     if (localAddress) opts.localAddress = localAddress;
@@ -417,58 +398,15 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
       socket.removeAllListeners();
       socket.destroy();
       if (err) reject(err);
-      // Every entry proved, not merely "nothing left unproved" — a write marked
-      // failed on read-back would otherwise satisfy the weaker form.
-      else resolve({ results, committed, verified: results.length > 0 && results.every((r) => r.verified === true) });
-    };
-
-    /**
-     * Everything written: prove it, then wait briefly for the flash commit.
-     *
-     * The commit broadcast is not reliable evidence. An `IP` write on this
-     * firmware is accepted, stored, and never announced — measured: the value
-     * read back changed, and no `Parameters successfully written!` arrived in
-     * thirty seconds. Waiting for it reported "status unknown" for a write that
-     * had plainly worked.
-     *
-     * So the value is read back instead. That is stronger evidence anyway: the
-     * broadcast says something was committed, a read-back says *this* was.
-     */
-    const verify = () => {
-      clearTimeout(timer);
-      current = null;
-      const done = results.filter((r) => r.ok);
-      // A write-only variable cannot be read back, so asking would produce an
-      // ERROR and mark a good write unconfirmed. Its acknowledgement is the
-      // echo of the `set`, which `next()` has already matched by value.
-      for (const r of done) {
-        if (isWriteOnly(r.variable)) r.verified = null;
-      }
-      verifying = done.filter((r) => !isWriteOnly(r.variable));
-      if (!verifying.length) return finish(null);
-      readBack();
-    };
-
-    const readBack = () => {
-      clearTimeout(timer);
-      if (!verifying.length) {
-        // Give the commit a moment to arrive, but do not hang on it.
-        log('info', 'tx', 'waiting for the encoder to confirm the flash write…');
-        timer = setTimeout(() => finish(null), commitMs);
-        return;
-      }
-      current = verifying.shift();
-      checking = true;
-      timer = setTimeout(readBack, perWriteMs);
-      log('info', 'tx', `read ${current.variable}`);
-      socket.write(`read ${current.variable}\r\n`);
+      else resolve({ results, committed });
     };
 
     const send = (line) => { log('info', 'tx', line); socket.write(`${line}\r\n`); };
 
     const next = () => {
       clearTimeout(timer);
-      if (!queue.length) return verify();
+      // Every write echoed and matched by value — that is the confirmation.
+      if (!queue.length) return finish(null);
       current = queue.shift();
       usedBare = false;
       timer = setTimeout(() => {
@@ -506,19 +444,6 @@ function writeVariablesOnce(host, entries, { port = ENCODER_PORT, localAddress =
         if (!current) continue;
 
         const m = new RegExp(`^${current.variable}\\s*=\\s*(.*)$`, 'i').exec(line);
-        if (m && checking) {
-          const got = m[1].trim();
-          log('info', 'rx', `${current.variable}=${got}`);
-          const holds = fold(got) === fold(current.value);
-          const entry = results.find((r) => r.variable === current.variable);
-          if (entry) {
-            entry.verified = holds;
-            if (!holds) { entry.ok = false; entry.error = `did not stick — the encoder reports ${got}`; }
-          }
-          checking = false;
-          readBack();
-          continue;
-        }
         if (m) {
           const got = m[1].trim();
           log('info', 'rx', `${current.variable}=${got}`);
