@@ -5975,3 +5975,40 @@ the interface it is served on.
 Version bumped to **3.0.1**; the v3.0.0 release built from `--publish never`
 still stands, this supersedes it. (Electron-main code, not covered by the
 `node --test` suite — verified by the release build and a Windows run.)
+
+## 2026-08-17 — A pass of connection & controls UI fixes
+
+Six fixes reported from real use, on one branch:
+
+- **Modals keep a Close button and stop closing on a stray click.** The dialog
+  shell (`ui.js modalShell`, used by Controls, and by Add/Edit Connection) now
+  has a top-right **×** in its header, and no longer dismisses on a backdrop
+  click — real work in these dialogs used to vanish on a click beside the
+  window. Escape still closes.
+- **The Controls Start/Stop button follows the link.** Its label was set once at
+  open, so pressing Start left it reading "Start" though the link had started.
+  It now subscribes to the link's state while the dialog is open (and drops the
+  subscription when it closes).
+- **Segmented pickers select on click, not on save.** `ui.js segmented`
+  (Zero / From encoder, Forward every / Newest only) recoloured only on the
+  next re-render — for the connection editor that was after Save, so the control
+  felt dead though the click had registered. The selection now moves under your
+  finger.
+- **The connection's rate shows the encoder's rate.** The Connections card
+  printed `txHz`, which counts one packet per destination — a connection fanning
+  out to N disguise machines read N× the true rate. It now shows `rxHz`, the
+  encoder's own rate. (The dashboard still shows RX and TX side by side and
+  keeps its labelled "Packets out" total — those name what they are.)
+- **"Ask disguise" reads a proxy error instead of dumping HTML.** A reverse
+  proxy (nginx) in front of Designer answers a 5xx with a full HTML page;
+  the message used to carry 200 characters of `<html>…`. It now reads
+  `<host> answered 502 Bad Gateway — the machine is reachable but disguise's API
+  is not answering (is Designer running?)`. New `briefError` helper, covered by
+  a test in `disguise-inspect.test.js`.
+- **The IP power-cycle warning is prominent.** Changing IP/NetMask/Gateway needs
+  a power cycle to take effect; the note was a faint hint. It is now a warning
+  box (`.flash-warn`) leading with the requirement, and the write-confirm dialog
+  bolds it too.
+
+Full suite green (341, one added for the disguise error); lint and the UI audit
+clean; the modal, segmented and rate changes verified in a headless browser.

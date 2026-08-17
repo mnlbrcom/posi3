@@ -121,7 +121,11 @@ export function renderConnections(root) {
       for (const l of live) {
         const t = store.telemetryOf(l.id);
         setText(l.cells.pos, t ? groupDigits(t.pos) : null);
-        setText(l.cells.rate, t && t.txHz > 0.5 ? `${hz(l.steadyRate(t.txHz))} Hz` : null);
+        // The encoder's own rate (rxHz), not the outbound txHz — that counts one
+        // packet per destination, so a connection fanning out to N disguise
+        // machines read N× the true rate. The dashboard still shows RX and TX
+        // side by side; this single figure is the encoder's.
+        setText(l.cells.rate, t && t.rxHz > 0.5 ? `${hz(l.steadyRate(t.rxHz))} Hz` : null);
 
         // Only on a real change: this runs every animation frame, and
         // rebuilding the pill or reassigning `disabled` each time is what made

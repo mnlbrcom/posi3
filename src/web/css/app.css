@@ -786,7 +786,18 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* Opt-in for dialogs holding controls rather than a form — the segmented
    pickers need the width or their options wrap two to a line. */
 .modal-wide { width: min(720px, 92vw); }
-.modal h3 { margin: 0; padding: 14px 18px; font-size: var(--fs-head); border-bottom: 1px solid var(--border); }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.modal h3 { margin: 0; padding: 14px 18px; font-size: var(--fs-head); }
+.modal-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-faint); font-size: var(--fs-head); line-height: 1;
+  padding: 10px 16px; align-self: stretch;
+}
+.modal-close:hover { color: var(--text); }
+.modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .modal .modal-body { padding: 16px 18px; }
 .modal .modal-foot {
   display: flex; gap: 9px; justify-content: flex-end;

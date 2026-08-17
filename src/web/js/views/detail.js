@@ -49,6 +49,20 @@ export function openControls(conn) {
     onclick: () => toggleLink(conn)
   });
 
+  // The button both starts and stops, so its label has to follow the link's
+  // actual state — pressing Start and watching it stay "Start" read as broken.
+  // Subscribe while the dialog is open; drop the subscription once the button
+  // leaves the DOM (any close path), so it never leaks or fires into nothing.
+  let unsub = null;
+  const syncRunStop = () => {
+    if (!runStop.isConnected) { if (unsub) unsub(); return; }
+    const s = store.stateOf(conn.id);
+    const on = s !== 'idle' && s !== 'error';
+    runStop.textContent = on ? 'Stop' : 'Start';
+    runStop.className = on ? 'btn' : 'btn primary';
+  };
+  unsub = store.subscribe((reason) => { if (reason === 'linkState') syncRunStop(); });
+
   const close = openModal({
     title: `${conn.name} · Controls`,
     closeLabel: 'Done',

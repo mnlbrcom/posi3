@@ -245,14 +245,23 @@ export function select(options, value, onchange) {
 
 export function segmented(options, value, onchange) {
   const wrap = el('div', { class: 'seg' });
+  const buttons = [];
   for (const o of options) {
     const opt = typeof o === 'string' ? { value: o, label: o } : o;
-    wrap.appendChild(el('button', {
+    const btn = el('button', {
       class: String(opt.value) === String(value) ? 'on' : '',
       text: opt.label,
       title: opt.title || '',
-      onclick: () => onchange(opt.value)
-    }));
+      onclick: () => {
+        // Move the selection to this button now, not on the next re-render
+        // (which for the connection editor is only after Save). Without this the
+        // control looked dead though the click had registered.
+        for (const b of buttons) b.classList.toggle('on', b === btn);
+        onchange(opt.value);
+      }
+    });
+    buttons.push(btn);
+    wrap.appendChild(btn);
   }
   return wrap;
 }
@@ -298,13 +307,19 @@ function modalShell({ title, body, wide = false }, buildFoot, onDismiss) {
     if (dismissed && onDismiss) onDismiss();
   }
 
-  const backdrop = el('div', {
-    class: 'modal-backdrop',
-    onclick: (e) => { if (e.target === backdrop) close(true); }
-  }, el('div', { class: `modal${wide ? ' modal-wide' : ''}` },
-    el('h3', { text: title }),
-    el('div', { class: 'modal-body' }, ...[].concat(body)),
-    el('div', { class: 'modal-foot' }, ...buildFoot(() => close(false)))));
+  // No backdrop-click dismissal: these dialogs hold real work (connection edits,
+  // flash controls) and a stray click beside the window used to throw it away.
+  // The header's × and Escape are the deliberate ways out.
+  const backdrop = el('div', { class: 'modal-backdrop' },
+    el('div', { class: `modal${wide ? ' modal-wide' : ''}` },
+      el('div', { class: 'modal-head' },
+        el('h3', { text: title }),
+        el('button', {
+          class: 'modal-close', type: 'button', title: 'Close', 'aria-label': 'Close',
+          text: '×', onclick: () => close(true)
+        })),
+      el('div', { class: 'modal-body' }, ...[].concat(body)),
+      el('div', { class: 'modal-foot' }, ...buildFoot(() => close(false)))));
 
   document.addEventListener('keydown', onKey);
   clear(root).appendChild(backdrop);
