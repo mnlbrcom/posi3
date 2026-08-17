@@ -36,6 +36,24 @@ const DEFAULT_API_PORT = 80;
 function tryParse(v) {
   try { return JSON.parse(v); } catch { return v; }
 }
+
+/**
+ * A short, human line from an HTTP error body. A reverse proxy in front of
+ * Designer (nginx is common) answers a 5xx with a full HTML page; this returns
+ * its <title> ("502 Bad Gateway"), with any leading copy of the status code
+ * dropped so the caller can print `answered 502 Bad Gateway` rather than
+ * `502 502 …`. Falls back to a trimmed, tag-stripped snippet, and is empty when
+ * there is nothing readable to add.
+ */
+function briefError(text, status) {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  const title = t.match(/<title[^>]*>([^<]{1,120})<\/title>/i);
+  let line = (title ? title[1] : (t[0] === '<' ? t.replace(/<[^>]+>/g, ' ') : t)).replace(/\s+/g, ' ').trim();
+  if (status) line = line.replace(new RegExp(`^${status}\\s*[-:]?\\s*`), '').trim();
+  return line.slice(0, 120);
+}
+
 const DEFAULT_TIMEOUT_MS = 4000;
 
 /**
@@ -163,11 +181,22 @@ async function inspectReceivers(host, opts = {}) {
     // there — which is what an older Designer looks like, since the Python API
     // was added later. Worth saying, because "404" invites the reading that the
     // address is wrong when the address is fine.
+    // A 5xx from a reverse proxy (Designer is commonly behind nginx) arrives as
+    // a full HTML error page. Dumping 200 characters of `<html>…` at the
+    // operator said nothing; briefError pulls the human line out of it ("Bad
+    // Gateway"), and a 5xx gets a plain reading of what that means on a rig.
+    const reason = briefError(text, res.status);
+    // Only the gateway codes mean "the proxy is up but the upstream is not":
+    // a bare 500 can be Designer's own API answering and erroring, where "not
+    // answering" would be wrong.
+    const gateway = [502, 503, 504].includes(res.status)
+      ? " — the machine is reachable but disguise's API is not answering (is Designer running?)"
+      : '';
     const e = new Error(res.status === 404
       ? `No API call possible with the disguise version on ${host} — it is serving HTTP but has ` +
         `no ${new URL(url).pathname}. Either Designer predates the Python API, or what is ` +
         'answering on that address is not Designer.'
-      : `${host} answered ${res.status} — ${text.slice(0, 200)}`);
+      : `${host} answered ${res.status}${reason ? ` ${reason}` : ''}${gateway}`);
     e.code = res.status === 404 ? 'EDISGUISE_NO_API' : 'EDISGUISE_API';
     throw e;
   }
@@ -176,7 +205,7 @@ async function inspectReceivers(host, opts = {}) {
   try {
     body = JSON.parse(text);
   } catch {
-    const e = new Error(`${host} answered something that is not JSON: ${text.slice(0, 120)}`);
+    const e = new Error(`${host} answered something that is not JSON: ${briefError(text)}`);
     e.code = 'EDISGUISE_API';
     throw e;
   }

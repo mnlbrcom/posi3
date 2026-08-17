@@ -245,14 +245,23 @@ export function select(options, value, onchange) {
 
 export function segmented(options, value, onchange) {
   const wrap = el('div', { class: 'seg' });
+  const buttons = [];
   for (const o of options) {
     const opt = typeof o === 'string' ? { value: o, label: o } : o;
-    wrap.appendChild(el('button', {
+    const btn = el('button', {
       class: String(opt.value) === String(value) ? 'on' : '',
       text: opt.label,
       title: opt.title || '',
-      onclick: () => onchange(opt.value)
-    }));
+      onclick: () => {
+        // Move the selection to this button now, not on the next re-render
+        // (which for the connection editor is only after Save). Without this the
+        // control looked dead though the click had registered.
+        for (const b of buttons) b.classList.toggle('on', b === btn);
+        onchange(opt.value);
+      }
+    });
+    buttons.push(btn);
+    wrap.appendChild(btn);
   }
   return wrap;
 }
@@ -283,9 +292,11 @@ export function panel(title, bodyChildren, headExtras, note) {
  * `buildFoot` receives the close function so a caller decides what its buttons
  * do. `onDismiss` fires only for the backdrop and Escape paths, which is what
  * lets a promise-based dialog settle when the user walks away from it rather
- * than leaving the caller waiting.
+ * than leaving the caller waiting. `onClose` fires on *every* close path (×,
+ * Escape, a footer button), so a dialog that wired up a subscription can tear
+ * it down deterministically rather than leaking it.
  */
-function modalShell({ title, body, wide = false }, buildFoot, onDismiss) {
+function modalShell({ title, body, wide = false, onClose }, buildFoot, onDismiss) {
   const root = document.getElementById('modal-root');
   let closed = false;
 
@@ -295,16 +306,23 @@ function modalShell({ title, body, wide = false }, buildFoot, onDismiss) {
     closed = true;
     document.removeEventListener('keydown', onKey);
     clear(root);
+    if (onClose) onClose();
     if (dismissed && onDismiss) onDismiss();
   }
 
-  const backdrop = el('div', {
-    class: 'modal-backdrop',
-    onclick: (e) => { if (e.target === backdrop) close(true); }
-  }, el('div', { class: `modal${wide ? ' modal-wide' : ''}` },
-    el('h3', { text: title }),
-    el('div', { class: 'modal-body' }, ...[].concat(body)),
-    el('div', { class: 'modal-foot' }, ...buildFoot(() => close(false)))));
+  // No backdrop-click dismissal: these dialogs hold real work (connection edits,
+  // flash controls) and a stray click beside the window used to throw it away.
+  // The header's × and Escape are the deliberate ways out.
+  const backdrop = el('div', { class: 'modal-backdrop' },
+    el('div', { class: `modal${wide ? ' modal-wide' : ''}` },
+      el('div', { class: 'modal-head' },
+        el('h3', { text: title }),
+        el('button', {
+          class: 'modal-close', type: 'button', title: 'Close', 'aria-label': 'Close',
+          text: '×', onclick: () => close(true)
+        })),
+      el('div', { class: 'modal-body' }, ...[].concat(body)),
+      el('div', { class: 'modal-foot' }, ...buildFoot(() => close(false)))));
 
   document.addEventListener('keydown', onKey);
   clear(root).appendChild(backdrop);
@@ -328,8 +346,8 @@ export function confirmModal({ title, body, confirmLabel = 'Confirm', danger = f
  * are used, so its only footer button closes it. Returns that close function,
  * so a control inside can dismiss the dialog before navigating.
  */
-export function openModal({ title, body, closeLabel = 'Close', wide = false }) {
-  return modalShell({ title, body, wide },
+export function openModal({ title, body, closeLabel = 'Close', wide = false, onClose }) {
+  return modalShell({ title, body, wide, onClose },
     (close) => [el('button', { class: 'btn', text: closeLabel, onclick: close })]);
 }
 

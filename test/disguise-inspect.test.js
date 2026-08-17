@@ -107,6 +107,25 @@ test('an error from Designer is surfaced, not swallowed', async (t) => {
     (err) => err.code === 'EDISGUISE_API' && /NameError/.test(err.message));
 });
 
+test('a proxy 502 is read as a gateway error, not dumped as raw HTML', async (t) => {
+  // Measured on the rig: a reverse proxy (nginx) in front of Designer answered
+  // 502 with a full HTML error page, and the old code showed the operator 200
+  // characters of `<html>…`. The message must name the failure and say what it
+  // means, and never carry the markup.
+  const d = await fakeDesigner(t, (req, res) => {
+    res.writeHead(502, { 'Content-Type': 'text/html' });
+    res.end('<html>\n<head><title>502 Bad Gateway</title></head>\n' +
+      '<body>\n<center><h1>502 Bad Gateway</h1></center>\n<hr><center>nginx/1.22.0</center>\n</body>\n</html>');
+  });
+  await assert.rejects(
+    () => inspectReceivers(d.host, { apiPort: d.apiPort }),
+    (err) => err.code === 'EDISGUISE_API'
+      && /502/.test(err.message) && /Bad Gateway/.test(err.message) // the status, read plainly
+      && !/</.test(err.message)      // no markup survives
+      && !/nginx/.test(err.message)  // nor the proxy's own footer — only the title line
+      && err.message.length < 200);  // not a raw-body dump
+});
+
 test('a session with no receiver at all is not mistaken for a list', async (t) => {
   const d = await fakeDesigner(t, ok({ logging: 'ran fine', result: undefined }));
   await assert.rejects(

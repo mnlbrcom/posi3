@@ -167,11 +167,12 @@ function encoderCard(conn) {
       }),
       el('div', { class: 'cfg-body' },
         danger
-          ? el('p', { class: 'help faint' },
-            'A new IP address only takes effect after the encoder is power-cycled. ' +
-            'If hardware switch 2 in the connection cap is ON, the encoder stays at ' +
+          ? el('div', { class: 'flash-warn' },
+            el('strong', { text: 'A new IP address takes effect only after the encoder is power-cycled.' }),
+            ' Power it off and on after applying, or it keeps answering on the current ' +
+            'address. If hardware switch 2 in the connection cap is ON, the encoder stays at ' +
             `${store.info.constants.DEFAULT_ENCODER_IP} no matter what is programmed here — ` +
-            'that is the most common reason a changed address appears to do nothing.')
+            'the most common reason a changed address appears to do nothing.')
           : null,
         table)));
   }
@@ -292,7 +293,10 @@ function encoderCard(conn) {
         el('div', { class: 'cmd-preview' },
           ...entries.map((e) => el('div', { text: `set ${e.variable}=${e.value}` }))),
         entries.some((e) => ['IP', 'NetMask', 'Gateway'].includes(e.variable))
-          ? el('p', { class: 'warn-text', text: 'This includes a network change: the connection will drop, and the new address only applies after a power cycle.' })
+          ? el('p', { class: 'warn-text' },
+            'This includes a network change: the connection will drop, and ',
+            el('strong', { text: 'the new address only takes effect after a power cycle' }),
+            '.')
           : null
       ],
       confirmLabel: 'Write to encoder',
