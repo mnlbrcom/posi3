@@ -309,8 +309,6 @@ const TIMEOUTS = {
   READ_MS: 2000,
   WRITE_MS: 5000,
   RUN_MS: 1500,
-  /** How long to wait for the unsolicited "Parameters successfully written!". */
-  FLASH_COMMIT_MS: 30000,
   /** Minimum gap between batched writes, to spare the flash. */
   WRITE_RATE_LIMIT_MS: 5000
 };

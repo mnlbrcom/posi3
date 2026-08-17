@@ -287,7 +287,7 @@ function encoderCard(conn) {
       body: [
         el('div', { class: 'flash-warn' },
           el('strong', { text: 'Do not power off the encoder or unplug its network cable ' }),
-          'until “Parameters successfully written!” appears. The encoder commits these to flash a ' +
+          'until posi3 confirms the write. The encoder commits these to flash a ' +
           'few seconds after accepting them, and interrupting that can damage its configuration.'),
         el('div', { class: 'cmd-preview' },
           ...entries.map((e) => el('div', { text: `set ${e.variable}=${e.value}` }))),
