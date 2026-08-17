@@ -6023,6 +6023,31 @@ Designer's own API answering and erroring. A third suggestion (roll back the
 optimistic segmented selection on failure) was dismissed: those `onchange`
 callbacks are synchronous local assignments that cannot fail.
 
+## 2026-08-17 — Windows: quit actually quits, and the exe names itself "posi3"
+
+**Reported (Windows portable):** after **Quit** from the tray, a posi3 process
+was still in Task Manager and the portable `.exe` could not be deleted ("File in
+Use"), and that dialog — plus Task Manager — showed the whole long description
+sentence.
+
+- **The quit didn't finish tearing down.** `before-quit` was an `async` handler
+  with no `event.preventDefault()`. Electron's `before-quit` is synchronous, so
+  it did not wait for `await svc.stop()` — the process exited mid-teardown,
+  leaving the server, the single-instance lock, the `ping` children, and the
+  portable launcher's hold on the `.exe` half-released. It now prevents the first
+  quit, runs the teardown to completion (`manager.dispose()` + server close +
+  lock release), then quits for real; a 3 s watchdog forces the exit if teardown
+  ever wedges, so quitting can never hang.
+- **The exe now names itself "posi3".** Windows takes the `.exe` FileDescription
+  (shown in Task Manager and the "File in Use" dialog) from package.json
+  `description`, which was the full one-sentence blurb. Shortened to `posi3`, so
+  the dialog reads "the file is open in posi3" and Task Manager is legible. The
+  stale build-config note claiming it "fell back to the product name" is
+  corrected.
+
+Electron-main / packaging, outside the `node --test` suite; full suite still
+green (341). Verified for real by a v3.0.2 Windows build.
+
 ## 2026-08-17 — Modal close × sized for a phone
 
 Reported: the top-right × was hard to hit on a phone screen. It now sits in a
