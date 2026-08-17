@@ -21,3 +21,7 @@ description.md
 
 # pr-agent user config (model/instructions); machine-specific
 .pr_agent.toml
+
+# RTK (Rust Token Killer) — local AI-tooling setup, kept out of the (public) repo
+.rtk/
+/CLAUDE.md
