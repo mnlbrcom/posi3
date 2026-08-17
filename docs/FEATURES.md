@@ -5189,7 +5189,7 @@ same words.
 
 **Asked:** "make sure the core application … stay[s] clean and its integrety
 is given at all times" — with the decision to *measure first* before touching
-the ping engine. (Full triage in `change.md`.)
+the ping engine.
 
 **Bench honesty:** `tools/latency-bench.js` gained `--probes off|real`
 (off = a no-op ping runner, the pure path; real = the production
@@ -5931,3 +5931,28 @@ affected (Nagle has no effect there), which is why the local app looked fine and
 only a second computer saw the lag. No behaviour change on the wire otherwise;
 full suite green. The frame-to-frame interpolation on the client (`dial.js`) is a
 separate change, held until the remote test.
+
+## 2026-08-17 — Drop old-repo cruft and one outdated statement
+
+**Asked:** find dead code and outdated statements carried over from the original
+repo copy, plus leftover Dropbox references now that the project no longer lives
+in a Dropbox folder.
+
+- **`change.md` deleted.** A planning/triage scratchpad ("nothing here is
+  executed yet") long since shipped and superseded by this file. The one pointer
+  to it (in the 2026-08-06 bench entry) is removed.
+- **`.npmrc` trimmed.** The cache-relocation line and its comment existed only to
+  keep npm's cache out of the Dropbox-synced directory; the project isn't in
+  Dropbox, and `cache=${HOME}/.npm` was npm's default anyway. Kept the real
+  prefs (`fund`/`audit`/`save-exact`).
+- **`FLASH_COMMIT_MS` removed** from `constants.js` — dead since the flash write
+  switched to confirm-on-echo; it was the timeout for the old "wait 30 s for the
+  *Parameters successfully written!* broadcast" path, referenced nowhere.
+- **Encoder-Config flash dialog corrected.** It told the operator to wait "until
+  *Parameters successfully written!* appears" — the unreliable broadcast. Now it
+  says wait "until posi3 confirms the write," matching the echo-based
+  confirmation (and the README fix).
+
+Left in place after checking: the `paramsWritten` broadcast handler (a deliberate
+secondary confirmation alongside the echo), all `d3driver` references (accurate
+history), and `tools/cli-args.js` (a shared module the tool scripts require).
