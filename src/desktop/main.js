@@ -568,15 +568,34 @@ app.on('activate', () => { if (svc) showWindow(); });
 // and if it does, the bridge must keep running.
 app.on('window-all-closed', () => {});
 
-app.on('before-quit', async () => {
+// before-quit is synchronous: an `async` handler here does NOT hold the quit
+// open, so the process tore down while svc.stop() was still in flight —
+// leaving the server, the single-instance lock, the ping children, and (on
+// Windows) the portable launcher's hold on the .exe half-released. That is why
+// a tray "Quit" left a process behind and the portable exe could not be deleted.
+// So: the first pass prevents the quit and runs the teardown to completion, then
+// quits for real; the second pass sees the flag and lets it through. A watchdog
+// forces the exit if teardown ever wedges, so quitting can never hang.
+let teardownDone = false;
+app.on('before-quit', (event) => {
+  if (teardownDone) return;
+  event.preventDefault();
   quitting = true;
-  if (powerBlockerId !== null) {
-    powerSaveBlocker.stop(powerBlockerId);
-    powerBlockerId = null;
-  }
-  // Close encoder sockets cleanly: a half-open session can occupy one of the
-  // encoder's few TCP client slots until it times out.
-  if (svc) {
-    try { await svc.stop(); } catch { /* going down anyway */ }
-  }
+  const hardExit = setTimeout(() => app.exit(0), 3000);
+  if (hardExit.unref) hardExit.unref();
+  (async () => {
+    if (powerBlockerId !== null) {
+      powerSaveBlocker.stop(powerBlockerId);
+      powerBlockerId = null;
+    }
+    // Close encoder sockets cleanly (a half-open session can hold one of the
+    // encoder's few TCP client slots), stop the links and their ping children,
+    // close the server, and release the lock — all before the process exits.
+    if (svc) {
+      try { await svc.stop(); } catch { /* going down anyway */ }
+    }
+    clearTimeout(hardExit);
+    teardownDone = true;
+    app.quit();
+  })();
 });

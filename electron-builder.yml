@@ -21,9 +21,10 @@ files:
 
 asar: true
 
-# Note: FileDescription (what Windows shows in Task Manager and in Properties)
-# is not being stamped — neither package.json "description" nor extraMetadata
-# took. Windows falls back to the product name, "posi3". Cosmetic, unresolved.
+# FileDescription (what Windows shows in Task Manager and the "File in Use"
+# dialog) IS the package.json "description" — kept to "posi3" so those read
+# cleanly. The earlier note here claimed it fell back to the product name; a
+# venue proved otherwise: the full sentence description showed up in the dialog.
 
 mac:
   category: public.app-category.utilities
