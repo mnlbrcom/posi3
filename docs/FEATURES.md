@@ -6047,3 +6047,11 @@ sentence.
 
 Electron-main / packaging, outside the `node --test` suite; full suite still
 green (341). Verified for real by a v3.0.2 Windows build.
+
+## 2026-08-17 — Modal close × sized for a phone
+
+Reported: the top-right × was hard to hit on a phone screen. It now sits in a
+**48×48 px tap target** (the touch-target floor) with the glyph enlarged to
+`1.5rem` — a control mark, so like the dial's figures it is sized outside the
+reading type scale. Verified at 480 px width in a fresh headless browser:
+computed box 48×48, glyph 18.75 px (the app's root font is 12.5 px).
