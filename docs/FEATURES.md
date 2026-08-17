@@ -6022,3 +6022,11 @@ limited to the true gateway codes (502/503/504), since a bare 500 can be
 Designer's own API answering and erroring. A third suggestion (roll back the
 optimistic segmented selection on failure) was dismissed: those `onchange`
 callbacks are synchronous local assignments that cannot fail.
+
+## 2026-08-17 — Modal close × sized for a phone
+
+Reported: the top-right × was hard to hit on a phone screen. It now sits in a
+**48×48 px tap target** (the touch-target floor) with the glyph enlarged to
+`1.5rem` — a control mark, so like the dial's figures it is sized outside the
+reading type scale. Verified at 480 px width in a fresh headless browser:
+computed box 48×48, glyph 18.75 px (the app's root font is 12.5 px).
