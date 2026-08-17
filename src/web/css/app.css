@@ -793,8 +793,13 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .modal h3 { margin: 0; padding: 14px 18px; font-size: var(--fs-head); }
 .modal-close {
   background: none; border: none; cursor: pointer;
-  color: var(--text-faint); font-size: var(--fs-head); line-height: 1;
-  padding: 10px 16px; align-self: stretch;
+  color: var(--text-faint); line-height: 1;
+  /* A control glyph, not reading text — like the dial's figures it sits outside
+     the type scale, sized for touch: a clearly larger × in a 48px tap target,
+     which is the phone-hit floor. */
+  font-size: 1.5rem;
+  display: flex; align-items: center; justify-content: center;
+  min-width: 48px; min-height: 48px; align-self: stretch;
 }
 .modal-close:hover { color: var(--text); }
 .modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
