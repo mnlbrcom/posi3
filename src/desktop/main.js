@@ -457,8 +457,15 @@ function webUrlWithToken() {
  * allowed, so the window loads loopback and never asks.
  */
 function windowUrl() {
-  const port = (svc.http.server.address() || {}).port || svc.store.settings.webPort;
-  const base = `http://127.0.0.1:${port}`;
+  const addr = svc.http.server.address() || {};
+  const port = addr.port || svc.store.settings.webPort;
+  // Load the address the server actually bound. Bound to a specific NIC, loopback
+  // is not listening, so http://127.0.0.1 loads nothing — a black window. For a
+  // loopback or wildcard bind, 127.0.0.1 is reachable and preferred (always up,
+  // independent of the NIC). This matches how Companion follows its bound NIC.
+  const bound = addr.address;
+  const host = (!bound || bound === '0.0.0.0' || bound === '::') ? '127.0.0.1' : bound;
+  const base = `http://${host.includes(':') ? `[${host}]` : host}:${port}`;
   // An explicit token outranks loopback by design, so the window presents it.
   return svc.token ? `${base}/?token=${encodeURIComponent(svc.token)}` : base;
 }
