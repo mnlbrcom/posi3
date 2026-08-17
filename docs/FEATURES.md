@@ -6012,3 +6012,13 @@ Six fixes reported from real use, on one branch:
 
 Full suite green (341, one added for the disguise error); lint and the UI audit
 clean; the modal, segmented and rate changes verified in a headless browser.
+
+**Review hardening (pr-agent on the PR).** Two real findings fixed: the Controls
+Start/Stop subscription now unsubscribes deterministically through a new
+`onClose` hook on the modal shell (fires on every close path) rather than lazily
+on the next state event — so opening and closing the dialog with no state change
+afterward no longer leaks the listener; and the "not answering" gateway hint is
+limited to the true gateway codes (502/503/504), since a bare 500 can be
+Designer's own API answering and erroring. A third suggestion (roll back the
+optimistic segmented selection on failure) was dismissed: those `onchange`
+callbacks are synchronous local assignments that cannot fail.

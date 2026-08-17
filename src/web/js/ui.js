@@ -292,9 +292,11 @@ export function panel(title, bodyChildren, headExtras, note) {
  * `buildFoot` receives the close function so a caller decides what its buttons
  * do. `onDismiss` fires only for the backdrop and Escape paths, which is what
  * lets a promise-based dialog settle when the user walks away from it rather
- * than leaving the caller waiting.
+ * than leaving the caller waiting. `onClose` fires on *every* close path (×,
+ * Escape, a footer button), so a dialog that wired up a subscription can tear
+ * it down deterministically rather than leaking it.
  */
-function modalShell({ title, body, wide = false }, buildFoot, onDismiss) {
+function modalShell({ title, body, wide = false, onClose }, buildFoot, onDismiss) {
   const root = document.getElementById('modal-root');
   let closed = false;
 
@@ -304,6 +306,7 @@ function modalShell({ title, body, wide = false }, buildFoot, onDismiss) {
     closed = true;
     document.removeEventListener('keydown', onKey);
     clear(root);
+    if (onClose) onClose();
     if (dismissed && onDismiss) onDismiss();
   }
 
@@ -343,8 +346,8 @@ export function confirmModal({ title, body, confirmLabel = 'Confirm', danger = f
  * are used, so its only footer button closes it. Returns that close function,
  * so a control inside can dismiss the dialog before navigating.
  */
-export function openModal({ title, body, closeLabel = 'Close', wide = false }) {
-  return modalShell({ title, body, wide },
+export function openModal({ title, body, closeLabel = 'Close', wide = false, onClose }) {
+  return modalShell({ title, body, wide, onClose },
     (close) => [el('button', { class: 'btn', text: closeLabel, onclick: close })]);
 }
 

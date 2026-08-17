@@ -186,7 +186,10 @@ async function inspectReceivers(host, opts = {}) {
     // operator said nothing; briefError pulls the human line out of it ("Bad
     // Gateway"), and a 5xx gets a plain reading of what that means on a rig.
     const reason = briefError(text, res.status);
-    const gateway = res.status >= 500
+    // Only the gateway codes mean "the proxy is up but the upstream is not":
+    // a bare 500 can be Designer's own API answering and erroring, where "not
+    // answering" would be wrong.
+    const gateway = [502, 503, 504].includes(res.status)
       ? " — the machine is reachable but disguise's API is not answering (is Designer running?)"
       : '';
     const e = new Error(res.status === 404
