@@ -5956,3 +5956,22 @@ in a Dropbox folder.
 Left in place after checking: the `paramsWritten` broadcast handler (a deliberate
 secondary confirmation alongside the echo), all `d3driver` references (accurate
 history), and `tools/cli-args.js` (a shared module the tool scripts require).
+
+## 2026-08-17 — v3.0.1: the desktop window follows the bound NIC (black-window fix)
+
+**Reported (Windows portable v3.0.0):** the app window rendered **black** while a
+browser reached the UI fine. Cause: `windowUrl()` hardcoded `http://127.0.0.1`,
+but when **Web interface → Reachable from** is set to a **specific NIC**
+(e.g. `192.168.100.x`), the server binds only that address — loopback is not
+listening — so the window loaded nothing. With "Any interface" (`0.0.0.0`)
+loopback is covered, which is why switching to it fixed the render.
+
+**Fix:** `windowUrl()` now loads the address the server actually bound
+(`server.address().address`), falling back to `127.0.0.1` for a loopback or
+wildcard bind (where loopback is up and preferred). IPv6 hosts are bracketed.
+This matches how Bitfocus Companion follows its bound NIC — the local UI tracks
+the interface it is served on.
+
+Version bumped to **3.0.1**; the v3.0.0 release built from `--publish never`
+still stands, this supersedes it. (Electron-main code, not covered by the
+`node --test` suite — verified by the release build and a Windows run.)
