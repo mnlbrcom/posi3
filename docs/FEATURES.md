@@ -6088,3 +6088,42 @@ for a manually-run dev tool; per-run targeting if that ever matters.
 Verified: reachability-fail run, early Ctrl-C, and Ctrl-C with the full 6-process
 tree up each leave **0 Chrome processes and 0 temp dirs**. Standalone CLI, not in
 the `node --test` suite; full suite still green (341).
+
+## 2026-09-01 — PR review moved onto the Claude subscription, pr-agent removed
+
+**Asked:** run the automated PR review as a GitHub Action billed against the
+Claude subscription instead of Anthropic API credits.
+
+Background: pr-agent is bring-your-own-key by design — its own install doc sets
+a model API key in a repo secret, and it calls the provider API directly through
+LiteLLM whether it runs in CI, in Docker, or from a workstation. So it was always
+a **second bill** on top of the subscription, and on 2026-09-01 it stopped
+reviewing entirely:
+
+```
+litellm.BadRequestError: AnthropicException
+"Your credit balance is too low to access the Anthropic API."
+```
+
+That balance had quietly funded every review from #12 to #26 (each PR is three
+calls of roughly 4–5k tokens) until it reached zero. Note the venue was never the
+cost: GitHub Actions compute is free on this public repo. The **credential**
+decides the bill, not where the job runs.
+
+`.github/workflows/claude-review.yml` replaces it with `anthropics/claude-code-action@v1`
+authenticated by `claude_code_oauth_token` — a token generated with
+`claude setup-token` and stored as the `CLAUDE_CODE_OAUTH_TOKEN` repo secret.
+Same venue, same triggers, no API credits. Reviews now draw on the subscription's
+own usage allowance.
+
+The review prompt is specific to this repo rather than a generic checklist: the
+allocation-free hot path and the `<devid>:<pos>,<vel>;\n` wire contract first,
+then real defects only, then the standing project rules (disguise API read-only,
+no encoder-hardware writes, FEATURES entry required under `src/`, tests assert
+facts not phrasing), then three-engine browser support.
+
+`.github/workflows/pr-agent.yml` is deleted; it is in git history if the
+subscription route ever needs to be reversed. The open PR #27, which fixed
+pr-agent's `synchronize` skip, is moot with pr-agent gone.
+
+CI config only, no `src/` change.
