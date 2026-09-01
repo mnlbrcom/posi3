@@ -26,6 +26,10 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  # Required by claude-code-action: it exchanges a GitHub OIDC token as part of
+  # its own auth, and fails with "Could not fetch an OIDC token" without this,
+  # regardless of how the Claude credential itself is supplied.
+  id-token: write
 
 jobs:
   review:
