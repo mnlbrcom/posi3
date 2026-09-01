@@ -82,7 +82,7 @@ still reached through the Electron IPC bridge until the desktop window switches 
 | `shaft-check.js` | Confirms an encoder's scaling by turning it. Waits for motion, accumulates wrap-aware displacement, reports measured counts/rev against what the device claims. Hand accuracy is enough — the failure modes worth catching are off by whole multiples, not percent. `npm run shaft`. |
 | `desktopcheck.js` | Drives the real Electron window. Clicks at element coordinates rather than through `element.click()`, so the page's own hit-testing is exercised, and computes every interactive control's effective `-webkit-app-region` from the live window — a control that inherits `drag` is unclickable in the desktop app and fine in a browser. 12 checks, non-zero exit on the first failure. `npm run desktopcheck`. |
 | `cdp.js` | Shared DevTools-protocol client for `uicheck` and `desktopcheck` — connect, send, wait for the endpoint. Node's built-in WebSocket, no dependencies. |
-| `uicheck.js` | Headless layout audit. Drives Chrome over the DevTools protocol at a range of viewport widths, reports anything overflowing its container and any console error, optionally writes screenshots. Zero dependencies — Node's built-in WebSocket speaks CDP. `npm run uicheck`. |
+| `uicheck.js` | Headless layout audit. Drives Chrome over the DevTools protocol at a range of viewport widths, reports anything overflowing its container and any console error, optionally writes screenshots. Zero dependencies — Node's built-in WebSocket speaks CDP. Reaps its headless Chrome on every exit path (completion, error, `process.exit`, Ctrl-C/kill) and sweeps any stragglers from an earlier crashed run at startup. `npm run uicheck`. |
 | `make-app-icon.js` | Generates `build/icon.png` and, on macOS, `build/icon.icns` via Apple's `iconutil` — each size rendered at its true size, the two smallest without the needle. |
 | `make-tray-icon.js` | Generates the tray icon into `src/desktop/tray-icon.js` as base64. |
 
@@ -6055,3 +6055,36 @@ Reported: the top-right × was hard to hit on a phone screen. It now sits in a
 `1.5rem` — a control mark, so like the dial's figures it is sized outside the
 reading type scale. Verified at 480 px width in a fresh headless browser:
 computed box 48×48, glyph 18.75 px (the app's root font is 12.5 px).
+
+## 2026-09-01 — uicheck leaked headless Chrome; now reaps it reliably
+
+**Reported (from a bench session):** `npm run uicheck` was leaving its headless
+Chrome running. Five instances had accumulated — the oldest weeks old — totalling
+~45 Chrome processes, and the windowless instances even stole Dock clicks from
+the user's real Chrome, blocking it from launching.
+
+Three exit paths bypassed the `finally` that was supposed to kill Chrome:
+
+- **Signals.** Ctrl-C / `kill` terminate Node without running `finally`. Added
+  `SIGINT`/`SIGTERM` handlers that route into `process.exit()`.
+- **`process.exit()`.** The reachability check exits with code 2 directly, which
+  also skips `finally`. Teardown is now registered on `process.on('exit', …)`,
+  so it runs on **every** JavaScript exit — completion, thrown error, or any
+  `process.exit`. `finally` is kept too; teardown is idempotent.
+- **The kill itself missed the tree.** `chrome.kill()` (SIGTERM) hits the parent
+  stub only; `--headless=new`'s helper processes (gpu, network, renderers) run
+  under launchd, not our process group, and outlived it. Teardown now
+  `pkill -9 -f`s the run's **unique** profile path, which reaps the whole tree
+  and only that run's.
+- **Startup sweep.** Before spawning, `sweepStale()` `pkill`s any leftover
+  `posi3-uicheck-*` Chrome and deletes the stale temp profiles — the backstop for
+  the one uncatchable case (SIGKILL of the Node process). On first run after the
+  fix it cleared 255 accumulated temp profiles.
+
+`ponytail:` the startup sweep and the profile-path `pkill` match all
+`posi3-uicheck-*`, so a second concurrent run would be swept/killed too — fine
+for a manually-run dev tool; per-run targeting if that ever matters.
+
+Verified: reachability-fail run, early Ctrl-C, and Ctrl-C with the full 6-process
+tree up each leave **0 Chrome processes and 0 temp dirs**. Standalone CLI, not in
+the `node --test` suite; full suite still green (341).

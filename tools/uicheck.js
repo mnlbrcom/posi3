@@ -22,7 +22,7 @@
  * Exits non-zero if anything overflows, so it can gate CI.
  */
 
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -160,10 +160,32 @@ const AUDIT = `(() => {
 
 // ---------------------------------------------------------------------------
 
+// Kill any headless Chrome and delete any temp profile a previous run left
+// behind. A run interrupted before its teardown (Ctrl-C, `kill -9`, a crash)
+// orphans a windowless Chrome plus its `posi3-uicheck-*` profile; these once
+// piled up to five instances / 45 processes and blocked the user's real Chrome
+// from launching. Runs at startup, before we spawn our own, so it only ever
+// hits stragglers. `pkill -f` matches the profile path in Chrome's argv.
+// ponytail: sweeps ALL posi3-uicheck instances — a second concurrent run would
+// be killed too. This is a manually-run dev tool; per-run targeting if that
+// ever matters.
+function sweepStale() {
+  try { spawnSync('pkill', ['-9', '-f', 'posi3-uicheck-'], { stdio: 'ignore' }); } catch { /* pkill absent */ }
+  try {
+    for (const name of fs.readdirSync(os.tmpdir())) {
+      if (name.startsWith('posi3-uicheck-')) {
+        fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
+      }
+    }
+  } catch { /* best effort */ }
+}
+
 async function main() {
   const widths = String(opts.widths).split(',').map((n) => Number(n.trim())).filter(Boolean);
   const views = String(opts.views).split(',').map((v) => v.trim()).filter(Boolean);
   const port = 9333 + (process.pid % 200);
+
+  sweepStale();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'posi3-uicheck-'));
 
   if (!fs.existsSync(opts.chrome)) {
@@ -182,6 +204,29 @@ async function main() {
 
   let failures = 0;
   let cdp = null;
+
+  // Single idempotent teardown, registered on 'exit' so it runs on EVERY
+  // JavaScript exit path — normal completion, a thrown error, or any
+  // process.exit() (the reachability check has one). 'exit' handlers must be
+  // synchronous; every call here is. Signals don't fire 'exit' on their own, so
+  // route them through process.exit(); only SIGKILL escapes, and the next run's
+  // sweepStale() reaps whatever it leaves. This is the leak the tool had.
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    try { if (cdp) cdp.close(); } catch { /* already gone */ }
+    // Reap the whole Chrome tree by its unique profile path. chrome.kill() hits
+    // the parent stub only; --headless=new's helper processes (gpu, network,
+    // renderers) run under launchd — not our process group — and outlive it.
+    // The profile basename is unique per run, so this targets just our tree.
+    try { spawnSync('pkill', ['-9', '-f', path.basename(profile)], { stdio: 'ignore' }); } catch { /* pkill absent */ }
+    try { chrome.kill('SIGKILL'); } catch { /* already gone */ }
+    try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* leave it to the OS */ }
+  };
+  process.on('exit', cleanup);
+  process.once('SIGINT', () => process.exit(130));
+  process.once('SIGTERM', () => process.exit(143));
 
   try {
     cdp = await CDP.connect(await waitForEndpoint(port));
@@ -326,10 +371,7 @@ async function main() {
     if (opts.shots) process.stdout.write(`\nscreenshots: ${opts.shots}\n`);
     process.stdout.write(failures ? `\n${failures} problem(s)\n` : '\nno layout problems found\n');
   } finally {
-    if (cdp) cdp.close();
-    chrome.kill();
-    // Chrome may still be flushing its profile; the temp dir is disposable.
-    try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* leave it to the OS */ }
+    cleanup();
   }
 
   process.exit(failures ? 1 : 0);
