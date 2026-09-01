@@ -6117,3 +6117,34 @@ never reads it — its model/options come from the workflow env. That split is b
 design; the local file's stale model name was refreshed in place, off the repo.
 
 CI config only, no `src/` change; full suite unaffected.
+
+## 2026-09-01 — the pr-agent check can now report its own failure
+
+**Found by an afternoon of debugging that the check itself never flagged.** An
+API key rotation left pr-agent unable to reach any model. Six runs in a row
+called Sonnet, failed, called Opus, failed, posted "Failed to review PR" on the
+PR — and reported **success**. Every diagnosis in that session came from reading
+raw run logs by hand; the green check contributed nothing, and would have gone
+on hiding the outage indefinitely.
+
+The cause is upstream and not configurable: pr-agent's action has no exit or
+raise path anywhere in `servers/github_action_runner.py`. Whatever happens, the
+container exits 0. Failure is reported only as a comment on the PR.
+
+So the workflow now turns that comment into the job's exit status. A step before
+pr-agent records the time; a step after it (`if: always()`) asks the API for
+comments on the PR newer than that timestamp, from `github-actions*`, whose body
+opens with "Failed to" — the shape of every pr-agent failure notice ("Failed to
+review PR", "Failed to generate code suggestions for PR"). One match fails the
+job with the comment's first line as the error. The timestamp window matters:
+without it an old failure comment would fail every later run on the same PR.
+
+Deliberate ceiling, noted in the workflow: this detects a failure comment, not
+the absence of a success one. `auto_describe` edits the PR description rather
+than commenting, so "posted nothing" is not by itself an error. A silent failure
+mode would still slip through; tighten only if one turns up.
+
+Verified: the detector was run against PR #27's real comment history before
+committing — it finds `Failed to review PR` in the window covering the failed
+run, and nothing in a window after it. CI config only, no `src/` change; full
+suite unaffected.

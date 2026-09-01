@@ -30,6 +30,21 @@ jobs:
     runs-on: ubuntu-latest
     name: Review, describe and suggest on each PR
     steps:
+      # pr-agent's action never exits non-zero, not even when every LLM call
+      # fails — its runner has no exit or raise path at all (checked against
+      # servers/github_action_runner.py). It reports failure ONLY as a comment
+      # on the PR, so a review that produced nothing still finished green. That
+      # happened six times in one afternoon while an API key problem went
+      # undiagnosed: the check said "success" every time, and the actual cause
+      # was only ever visible by reading the raw run log by hand.
+      #
+      # These two steps make the comment the job's exit status: note the time
+      # before pr-agent runs, then afterwards look for a failure comment posted
+      # since then.
+      - name: Note the start time
+        id: t0
+        run: echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: pr-agent
         uses: qodo-ai/pr-agent@main
         env:
@@ -51,3 +66,34 @@ jobs:
           # which is what the trigger list and the concurrency rule above
           # already assumed.
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
+
+      - name: Fail if pr-agent reported a failure
+        # always(): the point is to report a bad outcome, so it has to run even
+        # when the step above went wrong.
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # pull_request events carry the number one way, issue_comment the other.
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+          SINCE: ${{ steps.t0.outputs.ts }}
+        run: |
+          # Every pr-agent failure comment opens with "Failed to ..." — "Failed
+          # to review PR", "Failed to generate code suggestions for PR". Only
+          # comments newer than SINCE count, so an older failure on the same PR
+          # can't fail a later run that went fine.
+          #
+          # ponytail: this detects a failure comment, not the absence of a
+          # success one. auto_describe edits the PR description instead of
+          # commenting, so "posted nothing" is not by itself wrong. If a failure
+          # mode ever turns up that stays completely silent, tighten it then.
+          failed=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq '[ .[]
+                    | select(.created_at >= env.SINCE)
+                    | select(.user.login | startswith("github-actions"))
+                    | select(.body | startswith("Failed to"))
+                    | .body | split("\n")[0] ] | .[]')
+          if [ -n "$failed" ]; then
+            echo "::error::pr-agent produced no review: $failed"
+            exit 1
+          fi
+          echo "No pr-agent failure comment on PR #$PR since $SINCE."
