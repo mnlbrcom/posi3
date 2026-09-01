@@ -6088,3 +6088,32 @@ for a manually-run dev tool; per-run targeting if that ever matters.
 Verified: reachability-fail run, early Ctrl-C, and Ctrl-C with the full 6-process
 tree up each leave **0 Chrome processes and 0 temp dirs**. Standalone CLI, not in
 the `node --test` suite; full suite still green (341).
+
+## 2026-09-01 — pr-agent now reviews re-pushes, not just newly-opened PRs
+
+**Found while checking whether pr-agent still worked after an API-key rotation.**
+It did — but its log showed a second, quieter problem:
+
+```
+INFO | github_action_runner:run_action:244 - Skipping action: synchronize
+```
+
+The workflow triggers on `synchronize` (every push to an open PR), so a re-push
+started the job and the check went **green — having reviewed nothing**. pr-agent's
+own `github_action_config.pr_actions` defaults to
+`["opened", "reopened", "ready_for_review", "review_requested"]`, which omits
+`synchronize`; verified against the action's source, not guessed. So a passing
+pr-agent check on a re-push meant only "the job ran", and the fix pushed in
+response to a review was never itself reviewed — the case where a second look
+matters most.
+
+`pr_actions` is now set explicitly to the default four **plus** `synchronize`,
+which is what the trigger list and the `cancel-in-progress` concurrency rule
+("a fresh push supersedes the previous review") already assumed.
+
+Not changed, deliberately: the repo-root `.pr_agent.toml` is gitignored (863610e)
+as machine-local config for running a review from a workstation, so the Action
+never reads it — its model/options come from the workflow env. That split is by
+design; the local file's stale model name was refreshed in place, off the repo.
+
+CI config only, no `src/` change; full suite unaffected.
