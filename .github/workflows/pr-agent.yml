@@ -43,3 +43,11 @@ jobs:
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
+          # Which PR events actually get reviewed. pr-agent's own default omits
+          # "synchronize", so a push to an open PR started this job, logged
+          # "Skipping action: synchronize", and went green WITHOUT reviewing —
+          # a passing pr-agent check that had reviewed nothing. Listing the
+          # default four plus synchronize makes a re-push get a fresh review,
+          # which is what the trigger list and the concurrency rule above
+          # already assumed.
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested", "synchronize"]'
