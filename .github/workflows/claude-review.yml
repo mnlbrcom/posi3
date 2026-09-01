@@ -45,6 +45,12 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Operate as the workflow's own token instead of the Claude Code GitHub
+          # App, so the repo needs no app installed. Per the action FAQ: "If you
+          # wish to not use the GitHub app, you can instead provide a
+          # github_token input for Claude to operate with." Trade-off: review
+          # comments appear as github-actions rather than claude[bot].
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
