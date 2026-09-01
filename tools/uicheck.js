@@ -171,13 +171,13 @@ const AUDIT = `(() => {
 // ever matters.
 function sweepStale() {
   try { spawnSync('pkill', ['-9', '-f', 'posi3-uicheck-'], { stdio: 'ignore' }); } catch { /* pkill absent */ }
-  try {
-    for (const name of fs.readdirSync(os.tmpdir())) {
-      if (name.startsWith('posi3-uicheck-')) {
-        fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
-      }
-    }
-  } catch { /* best effort */ }
+  let names = [];
+  try { names = fs.readdirSync(os.tmpdir()); } catch { /* best effort */ }
+  for (const name of names) {
+    if (!name.startsWith('posi3-uicheck-')) continue;
+    // Each dir independently: one un-removable straggler must not skip the rest.
+    try { fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true }); } catch { /* best effort */ }
+  }
 }
 
 async function main() {
